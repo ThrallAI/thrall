@@ -1,0 +1,16 @@
+{
+  "name": "thrall-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "icons": "node scripts/mark-svg.mjs && tauri icon icons/mark.svg -o icons",
+    "dev": "tauri dev --no-watch",
+    "bundle": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.2"
+  }
+}

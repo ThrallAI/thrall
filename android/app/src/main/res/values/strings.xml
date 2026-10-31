@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Thrall</string>
+    <string name="widget_label">Talk to Thrall</string>
+    <string name="widget_mic">🎤</string>
+    <string name="widget_description">Opens your last chat with Thrall, listening.</string>
+    <string name="tile_label">Talk to Thrall</string>
+    <string name="share_label">Thrall</string>
+</resources>

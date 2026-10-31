@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thrall bench</title>
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --fg: #1d1c1a; --muted: #6b6760; --line: #dedad2;
+  --accent: #6b4fd8; --accent-fg: #ffffff; --good: #1f7a4a; --bad: #b3261e; --warn: #9a6400;
+  --thinker: #6b4fd8; --doer: #1f7a8c; --ask: #b06a00; --chat: #6b6760;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161514; --panel: #201f1d; --fg: #ece9e3; --muted: #9c978e; --line: #34322e;
+    --accent: #9d86ff; --accent-fg: #161514; --good: #5cc08a; --bad: #ff8a80; --warn: #e0a640;
+    --thinker: #9d86ff; --doer: #5cc0d0; --ask: #e0a640; --chat: #9c978e;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1400px; margin: 0 auto; padding: 20px 16px 60px; display: grid; gap: 18px; }
+h1 { font-size: 20px; margin: 0; }
+h1 small { font-weight: 400; color: var(--muted); font-size: 13px; margin-left: 8px; }
+h2 { font-size: 15px; margin: 0 0 10px; }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+input, select, textarea, button { font: inherit; color: var(--fg); }
+input, select, textarea { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-width: 0; }
+textarea { width: 100%; min-height: 90px; resize: vertical; }
+button { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
+button.danger { color: var(--bad); }
+button:disabled { opacity: .5; cursor: default; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.grow { flex: 1 1 260px; }
+.lane-edit { display: grid; grid-template-columns: 150px 130px 1fr 1fr auto; gap: 8px; align-items: end; padding: 8px 0; border-top: 1px dashed var(--line); }
+.lane-edit:first-child { border-top: 0; }
+@media (max-width: 800px) { .lane-edit { grid-template-columns: 1fr 1fr; } }
+.hint { color: var(--muted); font-size: 12px; }
+.err { color: var(--bad); }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+.card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 8px; background: var(--panel); min-width: 0; }
+.card h3 { margin: 0; font-size: 14px; display: flex; justify-content: space-between; gap: 8px; }
+.badge { font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; }
+.s-running, .s-preparing, .s-checking, .s-stopping { color: var(--accent); }
+.s-done { color: var(--good); }
+.s-failed, .s-over-budget { color: var(--bad); }
+.s-stopped { color: var(--warn); }
+.nums { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.num { background: var(--bg); border-radius: 6px; padding: 6px; }
+.num b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; }
+.num span { font-size: 11px; color: var(--muted); }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); font-size: 12px; }
+th { color: var(--muted); font-weight: 500; }
+td.r, th.r { text-align: right; }
+.scroll { overflow-x: auto; }
+.role { font-size: 11px; padding: 1px 6px; border-radius: 4px; color: var(--panel); }
+.role-thinker { background: var(--thinker); } .role-doer { background: var(--doer); }
+.role-ask { background: var(--ask); } .role-chat { background: var(--chat); }
+.feed { font: 12px/1.4 ui-monospace, Consolas, monospace; background: var(--bg); border-radius: 6px; padding: 8px; height: 190px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.reply { white-space: pre-wrap; font-size: 13px; max-height: 240px; overflow: auto; }
+.check-pass { color: var(--good); font-weight: 600; } .check-fail { color: var(--bad); font-weight: 600; }
+.history button { text-align: left; width: 100%; margin-top: 6px; }
+.best { font-weight: 700; color: var(--good); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Thrall bench <small>same prompt, side by side — each lane in its own sandbox, real money</small></h1>
+
+  <section id="setup">
+    <h2>Setup</h2>
+    <div class="row">
+      <label class="grow">Task (copied into each lane; its check scores the result)
+        <select id="task"><option value="">— none: empty folder, no check —</option></select>
+      </label>
+      <label>Budget per lane ($)
+        <input id="budget" type="number" min="0.05" step="0.05" value="2" style="width:110px">
+      </label>
+    </div>
+    <label style="margin-top:10px">Prompt (every lane gets exactly this)
+      <textarea id="prompt" placeholder="What every lane is asked to do"></textarea>
+    </label>
+    <h2 style="margin-top:14px">Lanes</h2>
+    <div id="lanes"></div>
+    <div class="row" style="margin-top:8px">
+      <button id="add-single">+ Single model</button>
+      <button id="add-split">+ Thinker + Doer</button>
+      <button id="add-baselines" title="For each split lane, add its Thinker alone and its Doer alone (if missing), so you can see whether the Thinker helps that Doer">+ Baselines for split lanes</button>
+      <span class="hint" id="models-hint">loading models…</span>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label>Presets <select id="preset-list"><option value="">—</option></select></label>
+      <button id="preset-load">Load</button>
+      <label>Save as <input id="preset-name" placeholder="name"></label>
+      <button id="preset-save">Save</button>
+      <span class="grow"></span>
+      <button class="primary" id="start">Start all lanes</button>
+    </div>
+    <p class="err" id="setup-error"></p>
+    <datalist id="models"></datalist>
+  </section>
+
+  <section id="run" hidden>
+    <div class="row" style="justify-content:space-between">
+      <h2 id="run-title">Run</h2>
+      <button class="danger" id="stop">Stop all</button>
+    </div>
+    <p class="hint" id="run-prompt"></p>
+    <div class="scroll"><table id="summary"></table></div>
+    <div class="cards" id="cards" style="margin-top:12px"></div>
+  </section>
+
+  <section class="history">
+    <h2>Past runs</h2>
+    <div id="history" class="hint">none yet</div>
+  </section>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const money = (n) => "$" + (n || 0).toFixed(n >= 1 ? 2 : 4);
+const tokens = (n) => n >= 1e6 ? (n / 1e6).toFixed(2) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n || 0);
+const clock = (ms) => { const s = Math.floor((ms || 0) / 1000); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+const statusClass = (s) => "s-" + String(s || "").replace(/\s+/g, "-");
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+// ---------- setup ----------
+let lanes = [];
+let tasks = [];
+let presets = [];
+
+function laneRow(lane, i) {
+  const div = document.createElement("div");
+  div.className = "lane-edit";
+  const split = lane.kind === "split";
+  div.innerHTML = `
+    <label>Label <input data-k="label" value="${esc(lane.label)}" placeholder="optional"></label>
+    <label>Type <select data-k="kind">
+      <option value="single"${split ? "" : " selected"}>Single model</option>
+      <option value="split"${split ? " selected" : ""}>Thinker + Doer</option></select></label>
+    ${split
+      ? `<label>Thinker (plans, checks) <input list="models" data-k="thinker" value="${esc(lane.thinker)}" placeholder="e.g. openai/gpt-5.3-codex"></label>
+         <label>Doer (does the work) <input list="models" data-k="doer" value="${esc(lane.doer)}" placeholder="a cheaper model id"></label>`
+      : `<label style="grid-column: span 2">Model <input list="models" data-k="model" value="${esc(lane.model)}" placeholder="any OpenRouter model id"></label>`}
+    <button class="danger" title="Remove lane">✕</button>`;
+  div.querySelectorAll("[data-k]").forEach((el) => {
+    el.addEventListener("change", () => {
+      lane[el.dataset.k] = el.value.trim();
+      if (el.dataset.k === "kind") drawLanes();
+    });
+  });
+  div.querySelector("button").addEventListener("click", () => { lanes.splice(i, 1); drawLanes(); });
+  return div;
+}
+
+function drawLanes() {
+  const box = $("lanes");
+  box.replaceChildren(...lanes.map(laneRow));
+  if (!lanes.length) box.innerHTML = '<p class="hint">Add at least one lane.</p>';
+}
+
+function addLane(kind, fields = {}) {
+  lanes.push({ label: "", kind, model: "", thinker: "", doer: "", ...fields });
+  drawLanes();
+}
+
+function addBaselines() {
+  const has = (m) => lanes.some((l) => l.kind === "single" && l.model === m);
+  for (const l of lanes.filter((l) => l.kind === "split")) {
+    if (l.thinker && !has(l.thinker)) addLane("single", { model: l.thinker, label: "Thinker alone: " + l.thinker });
+    if (l.doer && !has(l.doer)) addLane("single", { model: l.doer, label: "Doer alone: " + l.doer });
+  }
+}
+
+async function loadSetup() {
+  tasks = await api("/api/tasks").catch(() => []);
+  for (const t of tasks) $("task").add(new Option(t.title + (t.check ? "" : " (no check)"), t.name));
+  presets = await api("/api/presets").catch(() => []);
+  drawPresets();
+  api("/api/models").then((models) => {
+    $("models").replaceChildren(...models.map((m) =>
+      new Option(`$${m.prompt_per_m.toFixed(2)} in / $${m.completion_per_m.toFixed(2)} out per M`, m.id)));
+    $("models-hint").textContent = models.length + " OpenRouter models";
+  }).catch((e) => { $("models-hint").textContent = "model list unavailable: " + e.message; });
+}
+
+function drawPresets() {
+  const sel = $("preset-list");
+  sel.replaceChildren(new Option("—", ""), ...presets.map((p) => new Option(p.name, p.name)));
+}
+
+$("task").addEventListener("change", () => {
+  const t = tasks.find((t) => t.name === $("task").value);
+  if (t) $("prompt").value = t.prompt;
+});
+$("add-single").addEventListener("click", () => addLane("single"));
+$("add-split").addEventListener("click", () => addLane("split"));
+$("add-baselines").addEventListener("click", addBaselines);
+$("preset-load").addEventListener("click", () => {
+  const p = presets.find((p) => p.name === $("preset-list").value);
+  if (!p) return;
+  lanes = p.lanes.map((l) => ({ ...l }));
+  if (p.budget_usd) $("budget").value = p.budget_usd;
+  $("preset-name").value = p.name;
+  drawLanes();
+});
+$("preset-save").addEventListener("click", async () => {
+  try {
+    await api("/api/presets", { name: $("preset-name").value.trim(), lanes, budget_usd: Number($("budget").value) || null });
+    presets = await api("/api/presets");
+    drawPresets();
+    $("setup-error").textContent = "";
+  } catch (e) { $("setup-error").textContent = e.message; }
+});
+$("start").addEventListener("click", async () => {
+  $("setup-error").textContent = "";
+  try {
+    const { id } = await api("/api/runs", {
+      prompt: $("prompt").value, task: $("task").value || null,
+      budget_usd: Number($("budget").value) || null, lanes,
+    });
+    watch(id);
+  } catch (e) { $("setup-error").textContent = e.message; }
+});
+
+// ---------- a run ----------
+let watching = null;
+let timer = null;
+
+function watch(id) {
+  watching = id;
+  clearInterval(timer);
+  $("run").hidden = false;
+  const tick = async () => {
+    try {
+      const run = await api("/api/runs/" + encodeURIComponent(id));
+      if (watching !== id) return;
+      drawRun(run);
+      if (run.finished) { clearInterval(timer); loadHistory(); }
+    } catch (e) { clearInterval(timer); }
+  };
+  tick();
+  timer = setInterval(tick, 700);
+}
+
+$("stop").addEventListener("click", () => { if (watching) api(`/api/runs/${encodeURIComponent(watching)}/stop`, {}); });
+
+function laneName(l) {
+  const s = l.spec || {};
+  if (s.label) return s.label;
+  return s.kind === "split" ? `${s.thinker} + ${s.doer}` : s.model;
+}
+
+function scoreOf(l) {
+  if (!l.check) return null;
+  if (l.check.score) return l.check.score[0] / Math.max(1, l.check.score[1]);
+  return l.check.passed ? 1 : 0;
+}
+
+function drawRun(run) {
+  $("run-title").textContent = `Run ${run.id} — ${run.finished ? "finished" : "running"} · budget ${money(run.budget_usd)} per lane`;
+  $("run-prompt").textContent = (run.task ? `Task ${run.task}: ` : "") + run.prompt;
+  $("stop").disabled = run.finished;
+
+  // Summary: one row per lane; best per column marked.
+  const rows = run.lanes.map((l) => {
+    const score = scoreOf(l);
+    const minutes = Math.max(l.elapsed_ms / 60000, 1 / 60);
+    return { l, score, perDollar: score == null || !l.cost_usd ? null : score / l.cost_usd, perMinute: score == null ? null : score / minutes };
+  });
+  const best = (key, low) => {
+    const vals = rows.map((r) => (typeof key === "function" ? key(r) : r[key])).filter((v) => v != null && v > 0);
+    return vals.length > 1 ? (low ? Math.min(...vals) : Math.max(...vals)) : null;
+  };
+  const bCost = best((r) => r.l.cost_usd, true), bTime = best((r) => r.l.elapsed_ms, true);
+  const bPerD = best("perDollar"), bPerM = best("perMinute");
+  const mark = (v, b, text) => (b != null && v === b ? `<span class="best">${text}</span>` : text);
+  $("summary").innerHTML = `<tr><th>Lane</th><th>Status</th><th class="r">Time</th><th class="r">Calls</th><th class="r">Steps</th>
+    <th class="r">Asks</th><th class="r">Hand-offs</th><th class="r">Tokens in</th><th class="r">Cached</th><th class="r">Out</th>
+    <th class="r">Cost</th><th>Check</th><th class="r">Score / $</th><th class="r">Score / min</th></tr>` +
+    rows.map(({ l, score, perDollar, perMinute }) => `<tr>
+      <td>${esc(laneName(l))}</td><td><span class="${statusClass(l.status)}">${esc(l.status)}</span></td>
+      <td class="r">${mark(l.elapsed_ms, bTime, clock(l.elapsed_ms))}</td><td class="r">${l.model_calls}</td><td class="r">${l.steps}</td>
+      <td class="r">${l.asks}</td><td class="r">${l.hand_offs}</td><td class="r">${tokens(l.input_tokens)}</td>
+      <td class="r">${tokens(l.cached_tokens)}</td><td class="r">${tokens(l.output_tokens)}</td>
+      <td class="r">${mark(l.cost_usd, bCost, money(l.cost_usd))}</td>
+      <td>${l.check ? `<span class="${l.check.passed ? "check-pass" : "check-fail"}">${l.check.passed ? "pass" : "fail"}${l.check.score ? ` ${l.check.score[0]}/${l.check.score[1]}` : ""}</span>` : "—"}</td>
+      <td class="r">${perDollar == null ? "—" : mark(perDollar, bPerD, perDollar.toFixed(2))}</td>
+      <td class="r">${perMinute == null ? "—" : mark(perMinute, bPerM, perMinute.toFixed(2))}</td></tr>`).join("");
+
+  // Cards, kept open/scrolled between refreshes.
+  const cards = $("cards");
+  while (cards.children.length < run.lanes.length) {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `<h3><span class="name"></span><span class="badge"></span></h3>
+      <div class="nums"></div><div class="scroll"><table class="models"></table></div>
+      <div class="check"></div><div class="feed"></div>
+      <details><summary>Final reply</summary><div class="reply"></div></details>`;
+    cards.append(card);
+  }
+  while (cards.children.length > run.lanes.length) cards.lastChild.remove();
+  run.lanes.forEach((l, i) => {
+    const card = cards.children[i];
+    card.querySelector(".name").textContent = laneName(l);
+    const badge = card.querySelector(".badge");
+    badge.textContent = l.status;
+    badge.className = "badge " + statusClass(l.status);
+    card.querySelector(".nums").innerHTML = [
+      [clock(l.elapsed_ms), "time"], [money(l.cost_usd), "cost"], [l.model_calls, "model calls"], [l.steps, "steps"],
+      [tokens(l.input_tokens), "tokens in"], [tokens(l.cached_tokens), "cached"], [tokens(l.output_tokens), "tokens out"],
+      [`${l.asks} / ${l.hand_offs}`, "asks / hand-offs"],
+    ].map(([v, k]) => `<div class="num"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join("");
+    card.querySelector(".models").innerHTML = l.by_model.length
+      ? `<tr><th>Model</th><th>Role</th><th class="r">Calls</th><th class="r">In</th><th class="r">Cached</th><th class="r">Out</th><th class="r">Cost</th></tr>` +
+        l.by_model.map((m) => `<tr><td>${esc(m.model)}</td><td><span class="role role-${esc(m.role)}">${esc(m.role)}</span></td>
+          <td class="r">${m.calls}</td><td class="r">${tokens(m.input_tokens)}</td><td class="r">${tokens(m.cached_tokens)}</td>
+          <td class="r">${tokens(m.output_tokens)}</td><td class="r">${money(m.cost_usd)}</td></tr>`).join("")
+      : "";
+    card.querySelector(".check").innerHTML = l.error ? `<span class="err">${esc(l.error)}</span>`
+      : l.check ? `<details><summary class="${l.check.passed ? "check-pass" : "check-fail"}">Check ${l.check.passed ? "passed" : "failed"}${l.check.score ? ` (${l.check.score[0]}/${l.check.score[1]})` : ""}</summary><div class="feed">${esc(l.check.output)}</div></details>` : "";
+    const feed = card.querySelector(".feed");
+    const atBottom = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 4;
+    feed.textContent = l.feed.join("\n");
+    if (atBottom) feed.scrollTop = feed.scrollHeight;
+    card.querySelector(".reply").textContent = l.reply || "";
+  });
+}
+
+// ---------- history ----------
+async function loadHistory() {
+  const runs = await api("/api/runs").catch(() => []);
+  const box = $("history");
+  if (!runs.length) { box.textContent = "none yet"; return; }
+  box.replaceChildren(...runs.map((r) => {
+    const b = document.createElement("button");
+    const when = new Date(r.started_at).toLocaleString();
+    const lanesText = r.lanes.map((l) => `${l.name}: ${money(l.cost_usd)}, ${clock(l.elapsed_ms)}${l.score ? `, ${l.score[0]}/${l.score[1]}` : l.passed != null ? (l.passed ? ", pass" : ", fail") : ""}`).join(" · ");
+    b.innerHTML = `<b>${esc(when)}</b> ${r.task ? esc(r.task) + " — " : ""}${esc(r.prompt)}<br><span class="hint">${esc(lanesText)}</span>`;
+    b.addEventListener("click", () => watch(r.id));
+    return b;
+  }));
+}
+
+drawLanes();
+loadSetup();
+loadHistory();
+</script>
+</body>
+</html>

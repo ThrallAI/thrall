@@ -1,0 +1,27 @@
+# Maintainer: Thrall <https://github.com/ThrallAI/thrall>
+#
+# Thrall for Arch Linux and Omarchy, from the release's .deb. For each release: set pkgver, put the
+# .deb's line from the release's SHA256SUMS.txt in sha256sums, then `makepkg --printsrcinfo >
+# .SRCINFO` and push both to the AUR.
+
+pkgname=thrall-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Your own AI agent, on your own computer: desktop app, engine and terminal"
+arch=('x86_64')
+url="https://github.com/ThrallAI/thrall"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator' 'openssl' 'hicolor-icon-theme')
+optdepends=(
+  'chromium: the browser tool (Chrome, Edge or Brave work too)'
+  'ffmpeg: audio and video tools'
+  'gnome-keyring: keeps the AI key (any Secret Service keyring works)'
+)
+provides=('thrall')
+conflicts=('thrall')
+source=("${url}/releases/download/v${pkgver}-preview/Thrall_${pkgver}_amd64.deb")
+sha256sums=('SKIP')
+
+package() {
+  bsdtar -xf data.tar.* -C "${pkgdir}"
+}

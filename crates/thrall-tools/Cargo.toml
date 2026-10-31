@@ -1,0 +1,53 @@
+[package]
+name = "thrall-tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+thrall-core = { path = "../thrall-core" }
+thrall-protocol = { path = "../thrall-protocol" }
+thrall-store = { path = "../thrall-store" }
+thrall-gates = { path = "../thrall-gates" }
+thrall-mcp = { path = "../thrall-mcp" }
+thrall-memory = { path = "../thrall-memory" }
+tokio = { workspace = true, features = ["process", "io-util", "fs", "sync"] }
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+similar.workspace = true
+ignore.workspace = true
+globset.workspace = true
+html2text.workspace = true
+regex.workspace = true
+croner.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+pdf-extract.workspace = true
+calamine.workspace = true
+zip.workspace = true
+quick-xml.workspace = true
+umya-spreadsheet.workspace = true
+docx-rs.workspace = true
+lopdf.workspace = true
+imagesize.workspace = true
+base64.workspace = true
+pulldown-cmark = { workspace = true, features = ["html"] }
+arboard.workspace = true
+png.workspace = true
+sysinfo.workspace = true
+chromiumoxide.workspace = true
+
+[dev-dependencies]
+zip.workspace = true
+umya-spreadsheet.workspace = true
+lopdf.workspace = true
+base64.workspace = true
+pulldown-cmark = { workspace = true, features = ["html"] }
+tokio.workspace = true
+
+[lints]
+workspace = true

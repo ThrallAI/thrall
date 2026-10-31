@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The loading page only. The web app the window shows is served by the engine and gets no access to the desktop app's commands.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Files fetched from the computer, handed to other apps to open or share; and photos the camera app
+     takes for a message. Only these cache folders. -->
+<paths>
+    <cache-path name="files" path="files/" />
+    <cache-path name="camera" path="camera/" />
+</paths>

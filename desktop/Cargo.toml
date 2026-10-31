@@ -1,0 +1,37 @@
+[package]
+name = "thrall-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Thrall's desktop app: the web app in a native window, with a tray icon, notifications and a global shortcut. It starts the engine and keeps it running."
+
+[[bin]]
+name = "thrall-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.7.2", features = [] }
+
+# A client of the engine: it speaks the protocol and never links the agent itself.
+[dependencies]
+thrall-core = { path = "../crates/thrall-core" }
+thrall-protocol = { path = "../crates/thrall-protocol" }
+tauri = { version = "2.12.3", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2.5.3"
+tauri-plugin-notification = "2.6.0"
+tauri-plugin-global-shortcut = "2.4.1"
+tauri-plugin-dialog = "2.8.2"
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+futures.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+
+[lints]
+workspace = true

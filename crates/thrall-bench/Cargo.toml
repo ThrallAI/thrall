@@ -1,0 +1,33 @@
+[package]
+name = "thrall-bench"
+description = "Developer tool, never shipped: runs the same prompt through Thrall's engine with different models side by side and measures time, tokens, cost and results."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "thrall-bench"
+path = "src/main.rs"
+
+[dependencies]
+thrall-core = { path = "../thrall-core" }
+thrall-protocol = { path = "../thrall-protocol" }
+thrall-llm = { path = "../thrall-llm" }
+thrall-store = { path = "../thrall-store" }
+thrall-agent = { path = "../thrall-agent" }
+thrall-gates = { path = "../thrall-gates" }
+axum.workspace = true
+tokio = { workspace = true, features = ["process", "fs"] }
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+reqwest.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,26 @@
+[package]
+name = "thrall-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# A client of the engine: it speaks the protocol and never links the agent itself.
+[dependencies]
+thrall-core = { path = "../thrall-core" }
+thrall-protocol = { path = "../thrall-protocol" }
+thrall-gates = { path = "../thrall-gates" }
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+futures.workspace = true
+tracing.workspace = true
+serde_json.workspace = true
+ratatui = { workspace = true, features = ["unstable-rendered-line-info"] }
+ratatui-textarea.workspace = true
+pulldown-cmark.workspace = true
+
+[lints]
+workspace = true

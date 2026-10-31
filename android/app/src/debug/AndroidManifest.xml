@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Debug builds reach a test engine on the computer running the emulator (10.0.2.2), a private
+         address, which Android 17 only allows with this permission (granted with adb for tests).
+         The released app talks to the public tunnel address and doesn't need it. -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+</manifest>

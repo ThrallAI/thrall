@@ -1,0 +1,24 @@
+[package]
+name = "thrall-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+thrall-core = { path = "../thrall-core" }
+rmcp.workspace = true
+tokio = { workspace = true, features = ["process", "sync", "time", "net", "io-util"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+reqwest.workspace = true
+async-trait.workspace = true
+
+[dev-dependencies]
+rmcp = { workspace = true, features = ["server", "macros", "transport-streamable-http-server"] }
+axum.workspace = true
+
+[lints]
+workspace = true

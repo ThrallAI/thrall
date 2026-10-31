@@ -1,0 +1,20 @@
+[package]
+name = "thrall-memory"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+thrall-core = { path = "../thrall-core" }
+thrall-llm = { path = "../thrall-llm" }
+thrall-store = { path = "../thrall-store" }
+futures.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

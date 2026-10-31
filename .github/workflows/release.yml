@@ -1,0 +1,105 @@
+name: Release
+
+# Builds the installers on each system and attaches them, with checksums, to a draft release for
+# the tag. Nothing is published until the release is reviewed and published by hand. The phone
+# app is attached by hand too: its signing key never leaves the owner's computer.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Installer (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+          # The oldest supported Ubuntu, so the AppImage runs on older systems too.
+          - name: Linux
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb
+          - name: macOS (Apple silicon)
+            os: macos-latest
+            target: aarch64-apple-darwin
+            bundles: dmg
+          - name: macOS (Intel)
+            os: macos-latest
+            target: x86_64-apple-darwin
+            bundles: dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Linux libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add ${{ matrix.target }}
+      - name: Web app (built into the engine)
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - name: Engine
+        run: cargo build --release --locked -p thrall --target ${{ matrix.target }}
+      - name: Put the engine beside the desktop app
+        shell: bash
+        run: |
+          mkdir -p desktop/binaries
+          ext=""
+          if [ "$RUNNER_OS" = "Windows" ]; then ext=".exe"; fi
+          cp "target/${{ matrix.target }}/release/thrall$ext" "desktop/binaries/thrall-${{ matrix.target }}$ext"
+      - name: Desktop app and installer
+        working-directory: desktop
+        run: |
+          npm ci
+          npx tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config tauri.bundle.json
+      - name: Collect the installers
+        shell: bash
+        run: |
+          mkdir -p out
+          bundle="target/${{ matrix.target }}/release/bundle"
+          find "$bundle" -maxdepth 2 -type f \( -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.dmg' \) -exec cp {} out/ \;
+          ls -l out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.target }}
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    name: Draft release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Checksums
+        working-directory: out
+        run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          prerelease: true
+          files: out/*

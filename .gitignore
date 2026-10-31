@@ -1,0 +1,37 @@
+# Rust
+/target/
+**/target/
+*.pdb
+
+# Node / web UI
+node_modules/
+dist/
+# Tauri's generated schemas
+desktop/gen/
+# The engine, copied in beside the desktop app when installers are built
+desktop/binaries/
+
+# Android
+.gradle/
+local.properties
+*.apk
+*.aab
+*.keystore
+*.jks
+android/**/build/
+.idea/
+*.iml
+
+# Secrets and local data — never committed
+.env
+.env.*
+*.pem
+*.key
+config/config.toml
+/data/
+logs/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/

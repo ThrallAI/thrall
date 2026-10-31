@@ -1,0 +1,3939 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Protocol",
+  "description": "Every frame in both directions, as one schema root (for generating client types).",
+  "type": "object",
+  "properties": {
+    "client": {
+      "description": "Frames clients send.",
+      "$ref": "#/$defs/RequestFrame"
+    },
+    "server": {
+      "description": "Frames the engine sends.",
+      "$ref": "#/$defs/ServerFrame"
+    }
+  },
+  "required": [
+    "client",
+    "server"
+  ],
+  "$defs": {
+    "AppRelease": {
+      "description": "A build of the phone app, offered as an update.",
+      "type": "object",
+      "properties": {
+        "notes": {
+          "description": "What's new, a line or a few.",
+          "type": "string",
+          "default": ""
+        },
+        "sha256": {
+          "description": "The APK's SHA-256, hex, to check the download.",
+          "type": "string"
+        },
+        "size": {
+          "description": "The APK's size in bytes.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "version_code": {
+          "description": "Android's version number: higher is newer.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "version_name": {
+          "description": "The version people see (\"0.2.0\").",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version_code",
+        "version_name",
+        "size",
+        "sha256"
+      ]
+    },
+    "ClientInfo": {
+      "description": "Who is connecting.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "description": "What sort of client.",
+          "$ref": "#/$defs/ClientKind"
+        },
+        "name": {
+          "description": "Display name (\"Thrall Terminal\").",
+          "type": "string"
+        },
+        "version": {
+          "description": "Client version.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "version"
+      ]
+    },
+    "ClientKind": {
+      "description": "Sorts of client; `answered_by` names them.",
+      "oneOf": [
+        {
+          "description": "The terminal app.",
+          "type": "string",
+          "const": "tui"
+        },
+        {
+          "description": "A browser.",
+          "type": "string",
+          "const": "web"
+        },
+        {
+          "description": "The desktop app.",
+          "type": "string",
+          "const": "desktop"
+        },
+        {
+          "description": "The Android app.",
+          "type": "string",
+          "const": "android"
+        },
+        {
+          "description": "Telegram.",
+          "type": "string",
+          "const": "telegram"
+        },
+        {
+          "description": "Scripts (`thrall run`).",
+          "type": "string",
+          "const": "headless"
+        }
+      ]
+    },
+    "CommandItem": {
+      "description": "A slash command, for autocomplete.",
+      "type": "object",
+      "properties": {
+        "args_hint": {
+          "description": "Arguments hint (\"[model id]\").",
+          "type": "string"
+        },
+        "name": {
+          "description": "Name without the slash.",
+          "type": "string"
+        },
+        "skill": {
+          "description": "It's a skill or a built-in Thrall carries out itself (`/humanise`): clients send\n`/name …` as a message, and Thrall does it.",
+          "type": "boolean"
+        },
+        "summary": {
+          "description": "What it does.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "summary",
+        "args_hint"
+      ]
+    },
+    "DeviceInfo": {
+      "description": "A browser or PC signed in as a person.",
+      "type": "object",
+      "properties": {
+        "added": {
+          "description": "When it signed in, Unix ms.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "current": {
+          "description": "The one asking.",
+          "type": "boolean"
+        },
+        "device": {
+          "description": "Its id.",
+          "type": "string"
+        },
+        "last_seen": {
+          "description": "When it last connected, Unix ms.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "name": {
+          "description": "The name it signed in under.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "device",
+        "name",
+        "added"
+      ]
+    },
+    "Diff": {
+      "description": "A file change (protocol §8).",
+      "type": "object",
+      "properties": {
+        "added": {
+          "description": "Lines added.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "kind": {
+          "description": "What happened to the file.",
+          "$ref": "#/$defs/DiffKind"
+        },
+        "path": {
+          "description": "File path as shown to the user.",
+          "type": "string"
+        },
+        "removed": {
+          "description": "Lines removed.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "unified": {
+          "description": "Standard unified diff.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "unified",
+        "added",
+        "removed"
+      ]
+    },
+    "DiffKind": {
+      "description": "What a diff does to its file.",
+      "oneOf": [
+        {
+          "description": "New file.",
+          "type": "string",
+          "const": "create"
+        },
+        {
+          "description": "Changed file.",
+          "type": "string",
+          "const": "modify"
+        },
+        {
+          "description": "Removed file.",
+          "type": "string",
+          "const": "delete"
+        }
+      ]
+    },
+    "EngineInfo": {
+      "description": "About the engine.",
+      "type": "object",
+      "properties": {
+        "edition": {
+          "description": "`home` (free, for a household). Other editions may come later.",
+          "type": "string",
+          "default": ""
+        },
+        "model": {
+          "description": "The model turns use now (`status` events report changes).",
+          "type": "string",
+          "default": ""
+        },
+        "version": {
+          "description": "Engine version; a client built for another version may offer to restart the engine.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version"
+      ]
+    },
+    "ErrorCode": {
+      "description": "Stable error codes (protocol §12).",
+      "oneOf": [
+        {
+          "description": "Bad or missing token.",
+          "type": "string",
+          "const": "unauthorized"
+        },
+        {
+          "description": "Unknown request type or protocol version.",
+          "type": "string",
+          "const": "unsupported"
+        },
+        {
+          "description": "Malformed request.",
+          "type": "string",
+          "const": "invalid"
+        },
+        {
+          "description": "Session, turn, request or file doesn't exist.",
+          "type": "string",
+          "const": "not_found"
+        },
+        {
+          "description": "Can't do that while a turn is running.",
+          "type": "string",
+          "const": "busy"
+        },
+        {
+          "description": "Someone else answered that prompt first.",
+          "type": "string",
+          "const": "already_answered"
+        },
+        {
+          "description": "No such slash command.",
+          "type": "string",
+          "const": "unknown_command"
+        },
+        {
+          "description": "Too many requests.",
+          "type": "string",
+          "const": "rate_limited"
+        },
+        {
+          "description": "The AI provider failed or timed out.",
+          "type": "string",
+          "const": "provider_unavailable"
+        },
+        {
+          "description": "No AI key set.",
+          "type": "string",
+          "const": "provider_key_missing"
+        },
+        {
+          "description": "The AI provider didn't accept the key.",
+          "type": "string",
+          "const": "provider_key_rejected"
+        },
+        {
+          "description": "The AI provider refused the request (unknown model, too long, out of credit, …).",
+          "type": "string",
+          "const": "provider_rejected"
+        },
+        {
+          "description": "Frame or file over the limit.",
+          "type": "string",
+          "const": "too_large"
+        },
+        {
+          "description": "Engine bug.",
+          "type": "string",
+          "const": "internal"
+        }
+      ]
+    },
+    "EventFrame": {
+      "description": "One frame the engine sends about a session: the envelope fields plus the event itself.",
+      "type": "object",
+      "properties": {
+        "at": {
+          "description": "When it happened, Unix milliseconds.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "seq": {
+          "description": "Position in the session's event log. Absent on live-only events (deltas), which are never\nstored: after a reconnect the client gets the matching `message.completed` instead.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "session": {
+          "description": "Session the event belongs to.",
+          "type": "string"
+        },
+        "v": {
+          "description": "Protocol major version.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "oneOf": [
+        {
+          "description": "A turn began.",
+          "type": "object",
+          "properties": {
+            "scheduled": {
+              "description": "Nobody started it: a scheduled job or a check-in (clients don't announce it as the\nperson's own work finishing).",
+              "type": "boolean"
+            },
+            "turn": {
+              "description": "Turn id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "turn.started"
+            }
+          },
+          "required": [
+            "type",
+            "turn"
+          ]
+        },
+        {
+          "description": "A turn ended.",
+          "type": "object",
+          "properties": {
+            "status": {
+              "description": "How it ended.",
+              "$ref": "#/$defs/TurnStatus"
+            },
+            "turn": {
+              "description": "Turn id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "turn.completed"
+            },
+            "usage": {
+              "description": "Tokens and cost.",
+              "$ref": "#/$defs/Usage"
+            }
+          },
+          "required": [
+            "type",
+            "turn",
+            "status",
+            "usage"
+          ]
+        },
+        {
+          "description": "A turn was taken back, with every turn after it (the person edited or retried their last\nmessage, or rewound): clients remove what it and the later turns showed.",
+          "type": "object",
+          "properties": {
+            "turn": {
+              "description": "Turn id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "turn.retracted"
+            }
+          },
+          "required": [
+            "type",
+            "turn"
+          ]
+        },
+        {
+          "description": "A message began (Thrall's reply, or an echo of the user's message for other clients).",
+          "type": "object",
+          "properties": {
+            "message": {
+              "description": "Message id.",
+              "type": "string"
+            },
+            "role": {
+              "description": "Who wrote it.",
+              "$ref": "#/$defs/Role"
+            },
+            "turn": {
+              "description": "Turn id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "message.started"
+            }
+          },
+          "required": [
+            "type",
+            "turn",
+            "message",
+            "role"
+          ]
+        },
+        {
+          "description": "More text for a message being written. Live-only.",
+          "type": "object",
+          "properties": {
+            "message": {
+              "description": "Message id.",
+              "type": "string"
+            },
+            "text": {
+              "description": "Text to append.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "message.delta"
+            }
+          },
+          "required": [
+            "type",
+            "message",
+            "text"
+          ]
+        },
+        {
+          "description": "More thinking text, for models that expose it. Live-only.",
+          "type": "object",
+          "properties": {
+            "message": {
+              "description": "Message id.",
+              "type": "string"
+            },
+            "text": {
+              "description": "Text to append.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "reasoning.delta"
+            }
+          },
+          "required": [
+            "type",
+            "message",
+            "text"
+          ]
+        },
+        {
+          "description": "A message is finished; `text` is the full final text.",
+          "type": "object",
+          "properties": {
+            "files": {
+              "description": "Files attached to it (user messages).",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/FileRef"
+              }
+            },
+            "message": {
+              "description": "Message id.",
+              "type": "string"
+            },
+            "text": {
+              "description": "Full text; clients replace what they streamed with this.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "message.completed"
+            }
+          },
+          "required": [
+            "type",
+            "message",
+            "text"
+          ]
+        },
+        {
+          "description": "A tool call began (a collapsible row in clients).",
+          "type": "object",
+          "properties": {
+            "step": {
+              "description": "Step id.",
+              "type": "string"
+            },
+            "title": {
+              "description": "Plain-language title: \"Reading src/main.rs\".",
+              "type": "string"
+            },
+            "tool": {
+              "description": "Tool name.",
+              "type": "string"
+            },
+            "turn": {
+              "description": "Turn id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "step.started"
+            }
+          },
+          "required": [
+            "type",
+            "turn",
+            "step",
+            "tool",
+            "title"
+          ]
+        },
+        {
+          "description": "Live output from a running step (shell). Live-only; capped.",
+          "type": "object",
+          "properties": {
+            "step": {
+              "description": "Step id.",
+              "type": "string"
+            },
+            "text": {
+              "description": "Text to append.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "step.output"
+            }
+          },
+          "required": [
+            "type",
+            "step",
+            "text"
+          ]
+        },
+        {
+          "description": "A tool call finished.",
+          "type": "object",
+          "properties": {
+            "diff": {
+              "description": "The change, for file edits.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Diff"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "files": {
+              "description": "Files the step made (pictures), fetched with `GET /v1/files/{file}`.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/FileRef"
+              }
+            },
+            "status": {
+              "description": "How it went.",
+              "$ref": "#/$defs/StepStatus"
+            },
+            "step": {
+              "description": "Step id.",
+              "type": "string"
+            },
+            "summary": {
+              "description": "One-line plain-language result.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "step.completed"
+            }
+          },
+          "required": [
+            "type",
+            "step",
+            "status",
+            "summary"
+          ]
+        },
+        {
+          "description": "The session's task list changed (the whole list each time).",
+          "type": "object",
+          "properties": {
+            "items": {
+              "description": "The tasks, in order.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/TaskItem"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "tasks.updated"
+            }
+          },
+          "required": [
+            "type",
+            "items"
+          ]
+        },
+        {
+          "description": "Thrall wants permission before doing something.",
+          "type": "object",
+          "properties": {
+            "choices": {
+              "description": "The answers on offer.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PermissionChoice"
+              }
+            },
+            "diff": {
+              "description": "The change, for file edits (accept is `yes`, reject is `no`).",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Diff"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "request": {
+              "description": "Request id; answers quote it.",
+              "type": "string"
+            },
+            "risk": {
+              "description": "How risky.",
+              "$ref": "#/$defs/Risk"
+            },
+            "step": {
+              "description": "The step waiting on the answer.",
+              "type": "string"
+            },
+            "summary": {
+              "description": "Plain language: \"Run `cargo test`\".",
+              "type": "string"
+            },
+            "tool": {
+              "description": "Tool name.",
+              "type": "string"
+            },
+            "turn": {
+              "description": "Turn id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "permission.request"
+            }
+          },
+          "required": [
+            "type",
+            "request",
+            "turn",
+            "step",
+            "tool",
+            "summary",
+            "risk",
+            "choices"
+          ]
+        },
+        {
+          "description": "In plan mode, Thrall presents a plan and waits for a decision.",
+          "type": "object",
+          "properties": {
+            "markdown": {
+              "description": "The plan.",
+              "type": "string"
+            },
+            "plan": {
+              "description": "Plan id; decisions quote it.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "plan.proposed"
+            }
+          },
+          "required": [
+            "type",
+            "plan",
+            "markdown"
+          ]
+        },
+        {
+          "description": "A plan was approved or turned down.",
+          "type": "object",
+          "properties": {
+            "answered_by": {
+              "description": "Which client decided.",
+              "type": "string"
+            },
+            "approved": {
+              "description": "Whether it was approved.",
+              "type": "boolean"
+            },
+            "plan": {
+              "description": "Plan id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "plan.resolved"
+            }
+          },
+          "required": [
+            "type",
+            "plan",
+            "approved",
+            "answered_by"
+          ]
+        },
+        {
+          "description": "A permission request was answered.",
+          "type": "object",
+          "properties": {
+            "answered_by": {
+              "description": "Which client answered.",
+              "type": "string"
+            },
+            "choice": {
+              "description": "The answer.",
+              "$ref": "#/$defs/PermissionChoice"
+            },
+            "request": {
+              "description": "Request id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "permission.resolved"
+            }
+          },
+          "required": [
+            "type",
+            "request",
+            "choice",
+            "answered_by"
+          ]
+        },
+        {
+          "description": "Session details changed.",
+          "type": "object",
+          "properties": {
+            "mode": {
+              "description": "New permission mode (`ask` · `auto_edits` · `plan` · `full_auto`).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "mode_limit": {
+              "description": "How long Full auto lasts (sent with `mode: full_auto`).",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ModeLimit"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": {
+              "description": "New title.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "session.updated"
+            },
+            "workspace": {
+              "description": "New folder the session works in.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "A background helper (or scheduled job) started.",
+          "type": "object",
+          "properties": {
+            "agent": {
+              "description": "Helper id.",
+              "type": "string"
+            },
+            "title": {
+              "description": "What it's doing.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "agent.started"
+            }
+          },
+          "required": [
+            "type",
+            "agent",
+            "title"
+          ]
+        },
+        {
+          "description": "A background helper (or scheduled job) finished.",
+          "type": "object",
+          "properties": {
+            "agent": {
+              "description": "Helper id.",
+              "type": "string"
+            },
+            "status": {
+              "description": "`done` · `failed`.",
+              "type": "string"
+            },
+            "summary": {
+              "description": "One line about the result.",
+              "type": "string"
+            },
+            "title": {
+              "description": "What it was doing.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "agent.completed"
+            }
+          },
+          "required": [
+            "type",
+            "agent",
+            "title",
+            "status",
+            "summary"
+          ]
+        },
+        {
+          "description": "What the session is doing, and the model in use; sent whenever either changes. Live-only:\n`session.opened` carries the current state for a client that (re)attaches.",
+          "type": "object",
+          "properties": {
+            "model": {
+              "description": "Model the session's turns use.",
+              "type": "string"
+            },
+            "state": {
+              "description": "Idle, working, or waiting for an answer.",
+              "$ref": "#/$defs/SessionState"
+            },
+            "type": {
+              "type": "string",
+              "const": "status"
+            }
+          },
+          "required": [
+            "type",
+            "state",
+            "model"
+          ]
+        },
+        {
+          "description": "Thrall saved a lasting fact about the person to long-term memory. Clients show it with a\nway to forget it (`memory.forget`).",
+          "type": "object",
+          "properties": {
+            "content": {
+              "description": "The fact.",
+              "type": "string"
+            },
+            "fact": {
+              "description": "The fact's id.",
+              "type": "string"
+            },
+            "topic": {
+              "description": "Its topic.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "memory.saved"
+            }
+          },
+          "required": [
+            "type",
+            "fact",
+            "topic",
+            "content"
+          ]
+        },
+        {
+          "description": "Something worth telling the user that isn't a question.",
+          "type": "object",
+          "properties": {
+            "level": {
+              "description": "How prominent.",
+              "$ref": "#/$defs/NoticeLevel"
+            },
+            "text": {
+              "description": "Plain-language text.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "notice"
+            }
+          },
+          "required": [
+            "type",
+            "level",
+            "text"
+          ]
+        },
+        {
+          "description": "Something failed.",
+          "type": "object",
+          "properties": {
+            "code": {
+              "description": "Stable code clients switch on.",
+              "$ref": "#/$defs/ErrorCode"
+            },
+            "message": {
+              "description": "Plain-language explanation and what to do.",
+              "type": "string"
+            },
+            "retry": {
+              "description": "Whether trying again may work.",
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "const": "error"
+            }
+          },
+          "required": [
+            "type",
+            "code",
+            "message",
+            "retry"
+          ]
+        }
+      ],
+      "required": [
+        "v",
+        "session",
+        "at"
+      ]
+    },
+    "FactInfo": {
+      "description": "A fact Thrall remembers.",
+      "type": "object",
+      "properties": {
+        "at": {
+          "description": "When it was saved, Unix ms.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "content": {
+          "description": "The fact.",
+          "type": "string"
+        },
+        "fact": {
+          "description": "Its id.",
+          "type": "string"
+        },
+        "topic": {
+          "description": "Its topic.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fact",
+        "topic",
+        "content",
+        "at"
+      ]
+    },
+    "FileRef": {
+      "description": "A file attached to a message. Clients fetch it with `GET /v1/files/{file}`.",
+      "type": "object",
+      "properties": {
+        "file": {
+          "description": "Upload id.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "`image` · `document` · `text` · `other`, so clients know how to show it.",
+          "type": "string"
+        },
+        "name": {
+          "description": "File name.",
+          "type": "string"
+        },
+        "size": {
+          "description": "Size in bytes.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "file",
+        "name",
+        "kind",
+        "size"
+      ]
+    },
+    "FolderEntry": {
+      "description": "One entry in a folder listing.",
+      "type": "object",
+      "properties": {
+        "folder": {
+          "description": "It's a folder.",
+          "type": "boolean"
+        },
+        "modified": {
+          "description": "Last changed, Unix ms.",
+          "type": "integer",
+          "format": "int64",
+          "default": 0
+        },
+        "name": {
+          "description": "Its name.",
+          "type": "string"
+        },
+        "size": {
+          "description": "Size in bytes (0 for folders).",
+          "type": "integer",
+          "format": "uint64",
+          "default": 0,
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "GroupInfo": {
+      "description": "One of the person's session groups.",
+      "type": "object",
+      "properties": {
+        "group": {
+          "description": "Group id.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Name.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group",
+        "name"
+      ]
+    },
+    "KeyStatus": {
+      "description": "Whether a key is stored (`thrall key set <name>`). Never the key itself.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Key name (`openrouter`, `fal`).",
+          "type": "string"
+        },
+        "purpose": {
+          "description": "What it's for.",
+          "type": "string"
+        },
+        "set": {
+          "description": "Whether it's stored.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "purpose",
+        "set"
+      ]
+    },
+    "Limits": {
+      "description": "Limits a client must respect.",
+      "type": "object",
+      "properties": {
+        "frame_bytes": {
+          "description": "Largest frame, in bytes.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "frame_bytes"
+      ]
+    },
+    "ModeLimit": {
+      "description": "How long Full auto lasts in a session.",
+      "type": "object",
+      "properties": {
+        "ends_at": {
+          "description": "When it goes back to Ask, Unix milliseconds (`time` only).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "until": {
+          "description": "`task_end` (back to Ask when the task finishes) · `time` (back to Ask at `ends_at`) ·\n`manual` (until switched off, or Thrall restarts).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "until"
+      ]
+    },
+    "NoticeLevel": {
+      "description": "Notice prominence.",
+      "oneOf": [
+        {
+          "description": "For information.",
+          "type": "string",
+          "const": "info"
+        },
+        {
+          "description": "Worth attention.",
+          "type": "string",
+          "const": "warning"
+        }
+      ]
+    },
+    "PermissionChoice": {
+      "description": "An answer to a permission request.",
+      "oneOf": [
+        {
+          "description": "Go ahead, once.",
+          "type": "string",
+          "const": "yes"
+        },
+        {
+          "description": "Don't.",
+          "type": "string",
+          "const": "no"
+        },
+        {
+          "description": "Go ahead, and don't ask again for this kind of action.",
+          "type": "string",
+          "const": "always"
+        }
+      ]
+    },
+    "PersonInfo": {
+      "description": "A person who uses this Thrall.",
+      "type": "object",
+      "properties": {
+        "added": {
+          "description": "When they were added, Unix ms.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "key_set": {
+          "description": "Their own AI key is set (it's never shown).",
+          "type": "boolean",
+          "default": false
+        },
+        "model": {
+          "description": "Their own model, if they have one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "monthly_limit": {
+          "description": "Their monthly spending limit in US dollars, if they have one.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "name": {
+          "description": "Their name.",
+          "type": "string"
+        },
+        "own_key": {
+          "description": "Their turns use their own AI key.",
+          "type": "boolean",
+          "default": false
+        },
+        "person": {
+          "description": "Their id.",
+          "type": "string"
+        },
+        "phones": {
+          "description": "How many phones are paired to them.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 0,
+          "minimum": 0
+        },
+        "role": {
+          "description": "`owner` (runs this engine) or `member`.",
+          "type": "string"
+        },
+        "spent": {
+          "description": "What their turns have cost (USD) since `people.list`'s `since`. Only what was recorded\nwith a price counts.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        }
+      },
+      "required": [
+        "person",
+        "name",
+        "role",
+        "added"
+      ]
+    },
+    "PhoneInfo": {
+      "description": "A paired phone.",
+      "type": "object",
+      "properties": {
+        "added": {
+          "description": "When it was paired, Unix ms.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "connected": {
+          "description": "Connected right now.",
+          "type": "boolean"
+        },
+        "last_seen": {
+          "description": "When it last connected, Unix ms (absent if never since pairing).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "name": {
+          "description": "The name it gave when pairing.",
+          "type": "string"
+        },
+        "person": {
+          "description": "Whose phone it is (a person's id).",
+          "type": "string",
+          "default": ""
+        },
+        "phone": {
+          "description": "Its id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phone",
+        "name",
+        "added"
+      ]
+    },
+    "RemoteInfo": {
+      "description": "The phone link's state.",
+      "type": "object",
+      "properties": {
+        "address": {
+          "description": "The public address phones use (`remote.address`; \"\" when not set).",
+          "type": "string"
+        },
+        "enabled": {
+          "description": "Switched on in settings (`remote.enabled`).",
+          "type": "boolean"
+        },
+        "listening": {
+          "description": "The listener is running.",
+          "type": "boolean"
+        },
+        "port": {
+          "description": "Its port on 127.0.0.1 (what the tunnel forwards to).",
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "required": [
+        "enabled",
+        "address",
+        "listening",
+        "port"
+      ]
+    },
+    "ReplyFrame": {
+      "description": "One frame the engine sends in answer to a request.",
+      "type": "object",
+      "properties": {
+        "re": {
+          "description": "The request id this answers.",
+          "type": "string"
+        },
+        "v": {
+          "description": "Protocol major version.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "oneOf": [
+        {
+          "description": "Answer to `hello`.",
+          "type": "object",
+          "properties": {
+            "capabilities": {
+              "description": "Features this engine has, so clients don't guess.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "engine": {
+              "description": "About the engine.",
+              "$ref": "#/$defs/EngineInfo"
+            },
+            "limits": {
+              "description": "Limits the client must respect.",
+              "$ref": "#/$defs/Limits"
+            },
+            "protocol": {
+              "description": "The protocol major both sides will speak.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "welcome"
+            },
+            "user": {
+              "description": "Who the engine acts for.",
+              "$ref": "#/$defs/UserInfo"
+            }
+          },
+          "required": [
+            "type",
+            "protocol",
+            "engine",
+            "user",
+            "capabilities",
+            "limits"
+          ]
+        },
+        {
+          "description": "Answer to `ping`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "pong"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Done; nothing to return.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "ack"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "The request failed.",
+          "type": "object",
+          "properties": {
+            "code": {
+              "description": "Stable code clients switch on.",
+              "$ref": "#/$defs/ErrorCode"
+            },
+            "message": {
+              "description": "Plain-language explanation and what to do.",
+              "type": "string"
+            },
+            "retry": {
+              "description": "Whether trying again may work.",
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "const": "error"
+            }
+          },
+          "required": [
+            "type",
+            "code",
+            "message",
+            "retry"
+          ]
+        },
+        {
+          "description": "A session is open on this connection.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "session.opened"
+            }
+          },
+          "$ref": "#/$defs/SessionInfo",
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Answer to `session.list`.",
+          "type": "object",
+          "properties": {
+            "items": {
+              "description": "Newest first.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/SessionInfo"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "session.listed"
+            }
+          },
+          "required": [
+            "type",
+            "items"
+          ]
+        },
+        {
+          "description": "The person's session groups, in order (answers every `group.*` request).",
+          "type": "object",
+          "properties": {
+            "items": {
+              "description": "The groups.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/GroupInfo"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "group.listed"
+            }
+          },
+          "required": [
+            "type",
+            "items"
+          ]
+        },
+        {
+          "description": "Answer to `home.get` and `home.clear`.",
+          "type": "object",
+          "properties": {
+            "earlier": {
+              "description": "Earlier pages, newest first.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/SessionInfo"
+              }
+            },
+            "page": {
+              "description": "The page to use now.",
+              "$ref": "#/$defs/SessionInfo"
+            },
+            "type": {
+              "type": "string",
+              "const": "home.shown"
+            }
+          },
+          "required": [
+            "type",
+            "page",
+            "earlier"
+          ]
+        },
+        {
+          "description": "Answer to `heartbeat.get` and `heartbeat.set`.",
+          "type": "object",
+          "properties": {
+            "checklist": {
+              "description": "The checklist (\"\" when there isn't one).",
+              "type": "string"
+            },
+            "next_run": {
+              "description": "When the next check-in is due, Unix ms (absent while check-ins are off).",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            },
+            "type": {
+              "type": "string",
+              "const": "heartbeat.shown"
+            }
+          },
+          "required": [
+            "type",
+            "checklist"
+          ]
+        },
+        {
+          "description": "Answer to `startup.get` and `startup.set`.",
+          "type": "object",
+          "properties": {
+            "available": {
+              "description": "This system can start Thrall at sign-in (the desktop app is installed beside the engine).",
+              "type": "boolean"
+            },
+            "label": {
+              "description": "What the setting is called on the engine's system (\"Start with Windows\", \"Open at\nlogin\", \"Start when I log in\"); empty from an older engine.",
+              "type": "string",
+              "default": ""
+            },
+            "on": {
+              "description": "Thrall starts at sign-in.",
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "const": "startup.shown"
+            }
+          },
+          "required": [
+            "type",
+            "available",
+            "on"
+          ]
+        },
+        {
+          "description": "Answer to `command.list`.",
+          "type": "object",
+          "properties": {
+            "items": {
+              "description": "The commands.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/CommandItem"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "command.listed"
+            }
+          },
+          "required": [
+            "type",
+            "items"
+          ]
+        },
+        {
+          "description": "Answer to `command.run`.",
+          "type": "object",
+          "properties": {
+            "markdown": {
+              "description": "What to show.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "command.result"
+            }
+          },
+          "required": [
+            "type",
+            "markdown"
+          ]
+        },
+        {
+          "description": "What a recording says (answers `audio.transcribe`).",
+          "type": "object",
+          "properties": {
+            "text": {
+              "description": "The words.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "audio.transcribed"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        },
+        {
+          "description": "Answer to `checkpoint.preview`.",
+          "type": "object",
+          "properties": {
+            "files": {
+              "description": "The files a rewind would put back, in the order they were first changed.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/RewindFile"
+              }
+            },
+            "text": {
+              "description": "What the user typed to start it (their messages in it, joined).",
+              "type": "string"
+            },
+            "turn": {
+              "description": "The turn.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "checkpoint.shown"
+            }
+          },
+          "required": [
+            "type",
+            "turn",
+            "text",
+            "files"
+          ]
+        },
+        {
+          "description": "Answer to `turn.rewind`.",
+          "type": "object",
+          "properties": {
+            "failed": {
+              "description": "Files that couldn't be put back, each with the reason.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "restored": {
+              "description": "Files put back (or removed, if the turn made them).",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "text": {
+              "description": "What the user typed to start the turn, to put back in the message box.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "turn.rewound"
+            }
+          },
+          "required": [
+            "type",
+            "text",
+            "restored",
+            "failed"
+          ]
+        },
+        {
+          "description": "Answer to `memory.list`.",
+          "type": "object",
+          "properties": {
+            "facts": {
+              "description": "Newest first.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/FactInfo"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "memory.listed"
+            }
+          },
+          "required": [
+            "type",
+            "facts"
+          ]
+        },
+        {
+          "description": "Answer to `settings.get`.",
+          "type": "object",
+          "properties": {
+            "config": {
+              "description": "`config.toml` as JSON, with values that could be secrets (MCP server environment\nvariables that aren't keychain references) replaced by `\"••••\"`."
+            },
+            "config_file": {
+              "description": "Where the file is, if the engine has a data folder.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "keys": {
+              "description": "Keys Thrall knows about and whether each is stored.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/KeyStatus"
+              }
+            },
+            "mcp_signed_in": {
+              "description": "MCP servers on the web that Thrall is signed in to (`/mcp login <name>`).",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "model": {
+              "description": "The model turns use now (`/model` can differ from the file until restart).",
+              "type": "string"
+            },
+            "pending": {
+              "description": "Saved settings not in use yet: they apply when Thrall finishes what it's doing.",
+              "type": "boolean"
+            },
+            "plan_models": {
+              "description": "Chat models the person's ChatGPT plan offers (`chatgpt/<model>`), when signed in.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "skills": {
+              "description": "Skills Thrall can use (in the session folder `settings.get` was asked about, or only\nthe person's own), including ones turned off.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/SkillInfo"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "settings.shown"
+            }
+          },
+          "required": [
+            "type",
+            "config",
+            "model",
+            "keys"
+          ]
+        },
+        {
+          "description": "Answer to `phone.list` and `phone.remove`.",
+          "type": "object",
+          "properties": {
+            "items": {
+              "description": "Paired phones, newest first.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PhoneInfo"
+              }
+            },
+            "remote": {
+              "description": "The phone link.",
+              "$ref": "#/$defs/RemoteInfo"
+            },
+            "type": {
+              "type": "string",
+              "const": "phone.listed"
+            }
+          },
+          "required": [
+            "type",
+            "items",
+            "remote"
+          ]
+        },
+        {
+          "description": "Answer to `phone.pair`: what the phone scans.",
+          "type": "object",
+          "properties": {
+            "expires": {
+              "description": "When the code stops working, Unix ms.",
+              "type": "integer",
+              "format": "int64"
+            },
+            "link": {
+              "description": "The pairing link the QR holds (`thrall://pair?…`); it contains a secret, so it's shown\nonly on this computer.",
+              "type": "string"
+            },
+            "qr": {
+              "description": "The QR code's rows, top to bottom: `1` dark, `0` light (no quiet zone).",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "phone.pairing"
+            }
+          },
+          "required": [
+            "type",
+            "link",
+            "qr",
+            "expires"
+          ]
+        },
+        {
+          "description": "Answer to the `people.*` requests.",
+          "type": "object",
+          "properties": {
+            "items": {
+              "description": "Everyone, the owner first, then oldest first.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PersonInfo"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "people.listed"
+            }
+          },
+          "required": [
+            "type",
+            "items"
+          ]
+        },
+        {
+          "description": "Answer to `signin.create`. The link is the web app's address with `#signin=<code>`.",
+          "type": "object",
+          "properties": {
+            "code": {
+              "description": "The one-time code (it signs someone in: show it only to them).",
+              "type": "string"
+            },
+            "expires": {
+              "description": "When it stops working, Unix ms.",
+              "type": "integer",
+              "format": "int64"
+            },
+            "name": {
+              "description": "Who it signs in as.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "signin.code"
+            }
+          },
+          "required": [
+            "type",
+            "code",
+            "name",
+            "expires"
+          ]
+        },
+        {
+          "description": "Answer to `device.list` and `device.remove`.",
+          "type": "object",
+          "properties": {
+            "items": {
+              "description": "Signed-in browsers and PCs, newest first.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/DeviceInfo"
+              }
+            },
+            "person": {
+              "description": "Whose devices.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "device.listed"
+            }
+          },
+          "required": [
+            "type",
+            "person",
+            "items"
+          ]
+        },
+        {
+          "description": "Answer to `file.put`: the upload so far.",
+          "type": "object",
+          "properties": {
+            "file": {
+              "description": "Its id, for `turn.send {files}` and further pieces.",
+              "type": "string"
+            },
+            "name": {
+              "description": "The name it was saved under.",
+              "type": "string"
+            },
+            "size": {
+              "description": "Bytes so far.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "file.saved"
+            }
+          },
+          "required": [
+            "type",
+            "file",
+            "name",
+            "size"
+          ]
+        },
+        {
+          "description": "Answer to `folder.places`.",
+          "type": "object",
+          "properties": {
+            "default": {
+              "description": "Thrall's own folder for sessions started without one picked (`Documents\\Thrall`).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "new_in": {
+              "description": "Where a new folder goes unless another is picked (`folders.new_in`, else `default`).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "recent": {
+              "description": "Folders sessions use, most recently active first.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "folder.places"
+            }
+          },
+          "required": [
+            "type",
+            "recent"
+          ]
+        },
+        {
+          "description": "Answer to `folder.create`.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "description": "The new folder's full path.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "folder.created"
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ]
+        },
+        {
+          "description": "Answer to `app.latest`.",
+          "type": "object",
+          "properties": {
+            "release": {
+              "description": "The phone app this engine holds; absent when it holds none.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AppRelease"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "app.latest"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Answer to `folder.list`.",
+          "type": "object",
+          "properties": {
+            "items": {
+              "description": "Folders first, then files, each newest first.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/FolderEntry"
+              }
+            },
+            "more": {
+              "description": "Some entries were left out (a very full folder).",
+              "type": "boolean"
+            },
+            "path": {
+              "description": "The folder, relative to the session's folder (\"\" for the folder itself).",
+              "type": "string"
+            },
+            "session": {
+              "description": "The session.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "folder.listed"
+            }
+          },
+          "required": [
+            "type",
+            "session",
+            "path",
+            "items"
+          ]
+        },
+        {
+          "description": "Answer to `folder.read`: one piece of a file in a session's folder.",
+          "type": "object",
+          "properties": {
+            "data": {
+              "description": "This piece, base64.",
+              "type": "string"
+            },
+            "offset": {
+              "description": "Where this piece starts.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "path": {
+              "description": "The file, relative to the session's folder.",
+              "type": "string"
+            },
+            "session": {
+              "description": "The session.",
+              "type": "string"
+            },
+            "size": {
+              "description": "The whole file's size; the last piece ends there.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "folder.part"
+            }
+          },
+          "required": [
+            "type",
+            "session",
+            "path",
+            "offset",
+            "size",
+            "data"
+          ]
+        },
+        {
+          "description": "Answer to `file.get`: one piece of a file.",
+          "type": "object",
+          "properties": {
+            "data": {
+              "description": "This piece, base64.",
+              "type": "string"
+            },
+            "file": {
+              "description": "The file's id.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Its name.",
+              "type": "string"
+            },
+            "offset": {
+              "description": "Where this piece starts.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "size": {
+              "description": "The whole file's size; the last piece ends there.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "file.part"
+            }
+          },
+          "required": [
+            "type",
+            "file",
+            "name",
+            "offset",
+            "size",
+            "data"
+          ]
+        }
+      ],
+      "required": [
+        "v",
+        "re"
+      ]
+    },
+    "RequestFrame": {
+      "description": "One frame a client sends.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Request id, unique per connection; the reply quotes it as `re`.",
+          "type": "string"
+        },
+        "v": {
+          "description": "Protocol major version.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "oneOf": [
+        {
+          "description": "First frame on every connection. Answered by `welcome`.",
+          "type": "object",
+          "properties": {
+            "client": {
+              "description": "Who is connecting.",
+              "$ref": "#/$defs/ClientInfo"
+            },
+            "protocols": {
+              "description": "Protocol majors the client speaks.",
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0
+              }
+            },
+            "token": {
+              "description": "Access token (local mode: read from the data folder).",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "hello"
+            }
+          },
+          "required": [
+            "type",
+            "protocols",
+            "client",
+            "token"
+          ]
+        },
+        {
+          "description": "Heartbeat. Answered by `pong`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "ping"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Start a session. Answered by `session.opened`.",
+          "type": "object",
+          "properties": {
+            "mode": {
+              "description": "Starting permission mode (`ask` · `auto_edits` · `plan` · `full_auto`).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "description": "Title (Thrall names it after the first turn otherwise).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "session.create"
+            },
+            "workspace": {
+              "description": "Folder the session works in.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Attach to a session: `session.opened`, then every stored event after `after_seq` (all of\nthem when absent), then live events.",
+          "type": "object",
+          "properties": {
+            "after_seq": {
+              "description": "Last `seq` the client already has.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0
+            },
+            "session": {
+              "description": "Session id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "session.open"
+            }
+          },
+          "required": [
+            "type",
+            "session"
+          ]
+        },
+        {
+          "description": "Stop receiving a session's events; it keeps running. Answered by `ack`.",
+          "type": "object",
+          "properties": {
+            "session": {
+              "description": "Session id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "session.detach"
+            }
+          },
+          "required": [
+            "type",
+            "session"
+          ]
+        },
+        {
+          "description": "Sessions, newest first. Answered by `session.listed`.",
+          "type": "object",
+          "properties": {
+            "archived": {
+              "description": "List archived sessions instead (most recently archived first).",
+              "type": "boolean"
+            },
+            "limit": {
+              "description": "How many.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "session.list"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Archive a session (hidden from the list, kept in full) or bring it back. Answered by `ack`.",
+          "type": "object",
+          "properties": {
+            "archived": {
+              "description": "True to archive, false to bring it back.",
+              "type": "boolean"
+            },
+            "session": {
+              "description": "Session id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "session.archive"
+            }
+          },
+          "required": [
+            "type",
+            "session",
+            "archived"
+          ]
+        },
+        {
+          "description": "Rename a session. Answered by `ack`; attached clients get `session.updated`.",
+          "type": "object",
+          "properties": {
+            "session": {
+              "description": "Session id.",
+              "type": "string"
+            },
+            "title": {
+              "description": "New title.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "session.rename"
+            }
+          },
+          "required": [
+            "type",
+            "session",
+            "title"
+          ]
+        },
+        {
+          "description": "Change the permission mode. Answered by `ack`; attached clients get `session.updated`.",
+          "type": "object",
+          "properties": {
+            "minutes": {
+              "description": "Minutes, for `until: time`.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0
+            },
+            "mode": {
+              "description": "`ask` · `auto_edits` · `plan` · `full_auto`.",
+              "type": "string"
+            },
+            "session": {
+              "description": "Session id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "session.set_mode"
+            },
+            "until": {
+              "description": "For `full_auto` only, how long it lasts: `task_end` (the default: back to Ask when the\ntask finishes) · `time` (after `minutes`) · `manual` (until switched off). Full auto\nnever lasts past a restart of Thrall.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "session",
+            "mode"
+          ]
+        },
+        {
+          "description": "Pin a session to the top of the list, or unpin it. Answered by `ack`.",
+          "type": "object",
+          "properties": {
+            "pinned": {
+              "description": "True to pin.",
+              "type": "boolean"
+            },
+            "session": {
+              "description": "Session id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "session.pin"
+            }
+          },
+          "required": [
+            "type",
+            "session",
+            "pinned"
+          ]
+        },
+        {
+          "description": "Put a session in one of the person's groups, or take it out (no `group`). Answered by\n`ack`.",
+          "type": "object",
+          "properties": {
+            "group": {
+              "description": "Group id; absent to take it out of its group.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "session": {
+              "description": "Session id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "session.move"
+            }
+          },
+          "required": [
+            "type",
+            "session"
+          ]
+        },
+        {
+          "description": "Move a session to another working folder (one that exists). Answered by `ack`; attached\nclients get `session.updated`. Refused for Home and while Thrall is working in it.",
+          "type": "object",
+          "properties": {
+            "folder": {
+              "description": "The folder's full path.",
+              "type": "string"
+            },
+            "session": {
+              "description": "Session id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "session.set_folder"
+            }
+          },
+          "required": [
+            "type",
+            "session",
+            "folder"
+          ]
+        },
+        {
+          "description": "The person's session groups, in order. Answered by `group.listed`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "group.list"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Add a group at the end. Answered by `group.listed`.",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "Its name.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "group.create"
+            }
+          },
+          "required": [
+            "type",
+            "name"
+          ]
+        },
+        {
+          "description": "Rename a group. Answered by `group.listed`.",
+          "type": "object",
+          "properties": {
+            "group": {
+              "description": "Group id.",
+              "type": "string"
+            },
+            "name": {
+              "description": "New name.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "group.rename"
+            }
+          },
+          "required": [
+            "type",
+            "group",
+            "name"
+          ]
+        },
+        {
+          "description": "Delete a group; its sessions stay, ungrouped. Answered by `group.listed`.",
+          "type": "object",
+          "properties": {
+            "group": {
+              "description": "Group id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "group.delete"
+            }
+          },
+          "required": [
+            "type",
+            "group"
+          ]
+        },
+        {
+          "description": "Put the groups in this order. Answered by `group.listed`.",
+          "type": "object",
+          "properties": {
+            "groups": {
+              "description": "Group ids, first to last.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "group.reorder"
+            }
+          },
+          "required": [
+            "type",
+            "groups"
+          ]
+        },
+        {
+          "description": "Delete a session and its history. Clients ask the user first. Answered by `ack`.",
+          "type": "object",
+          "properties": {
+            "session": {
+              "description": "Session id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "session.delete"
+            }
+          },
+          "required": [
+            "type",
+            "session"
+          ]
+        },
+        {
+          "description": "Home, Thrall's built-in conversation: its current page (a fresh one starts when the last\nhas had its day, per `home.fresh_start`) and earlier pages. Open the page with\n`session.open` like any session. Answered by `home.shown`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "home.get"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Delete every Home page (refused while Thrall is working in Home). Clients ask the person\nfirst. Answered by `home.shown` with a fresh page.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "home.clear"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "The check-in checklist and when the next check-in is due. Answered by `heartbeat.shown`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "heartbeat.get"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Replace the check-in checklist (empty removes it, which stops check-ins). Answered by\n`heartbeat.shown`.",
+          "type": "object",
+          "properties": {
+            "checklist": {
+              "description": "The checklist, as markdown.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "heartbeat.set"
+            }
+          },
+          "required": [
+            "type",
+            "checklist"
+          ]
+        },
+        {
+          "description": "Check in now, whatever the hours. Answered by `ack` at once (or `error {invalid}` with no\nchecklist); a message in Home follows if something needs the person, else a notice.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "heartbeat.run"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Whether Thrall starts when the person signs in to Windows (the same entry as the desktop\napp's tray menu). Answered by `startup.shown`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "startup.get"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Start Thrall at sign-in, or stop. Answered by `startup.shown` (or `error {invalid}` where\nit isn't available).",
+          "type": "object",
+          "properties": {
+            "on": {
+              "description": "Start at sign-in.",
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "const": "startup.set"
+            }
+          },
+          "required": [
+            "type",
+            "on"
+          ]
+        },
+        {
+          "description": "Send a message. Answered by `ack`; the turn's events follow. While a turn is running the\ntext joins it at its next step instead.",
+          "type": "object",
+          "properties": {
+            "files": {
+              "description": "Ids of files uploaded with `POST /v1/files` to attach.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "session": {
+              "description": "Session id.",
+              "type": "string"
+            },
+            "text": {
+              "description": "What the user typed (`@path` mentions included).",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "turn.send"
+            }
+          },
+          "required": [
+            "type",
+            "session",
+            "text"
+          ]
+        },
+        {
+          "description": "What rewinding to before a turn would do: the message that started it and the files to put\nback. Answered by `checkpoint.shown`.",
+          "type": "object",
+          "properties": {
+            "session": {
+              "description": "Session id.",
+              "type": "string"
+            },
+            "turn": {
+              "description": "The turn to go back to before.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "checkpoint.preview"
+            }
+          },
+          "required": [
+            "type",
+            "session",
+            "turn"
+          ]
+        },
+        {
+          "description": "Go back to before a turn: its files and every later turn's go back to how they were\n(`files`), and/or the turn and every later one is taken back (`conversation`, one\n`turn.retracted` for `turn`). Refused while a turn runs. Answered by `turn.rewound`.",
+          "type": "object",
+          "properties": {
+            "conversation": {
+              "description": "Take the conversation back.",
+              "type": "boolean"
+            },
+            "files": {
+              "description": "Put files back.",
+              "type": "boolean"
+            },
+            "keep": {
+              "description": "Files (as `checkpoint.shown` names them) to leave as they are.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "session": {
+              "description": "Session id.",
+              "type": "string"
+            },
+            "turn": {
+              "description": "The turn to go back to before.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "turn.rewind"
+            }
+          },
+          "required": [
+            "type",
+            "session",
+            "turn",
+            "files",
+            "conversation"
+          ]
+        },
+        {
+          "description": "Run the last message again: its turn is taken back (`turn.retracted`), the files it changed\ngo back to how they were (except ones changed since by someone else, which a notice\nnames) and the same text is sent as a new turn. Refused while a turn runs. Answered by\n`ack`.",
+          "type": "object",
+          "properties": {
+            "session": {
+              "description": "Session id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "turn.retry"
+            }
+          },
+          "required": [
+            "type",
+            "session"
+          ]
+        },
+        {
+          "description": "Replace the last message: its turn is taken back (files too, as for `turn.retry`) and\n`text` sent instead. Refused while a turn runs. Answered by `ack`.",
+          "type": "object",
+          "properties": {
+            "session": {
+              "description": "Session id.",
+              "type": "string"
+            },
+            "text": {
+              "description": "The new message.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "turn.edit"
+            }
+          },
+          "required": [
+            "type",
+            "session",
+            "text"
+          ]
+        },
+        {
+          "description": "Stop the running turn (Esc). Answered by `ack`.",
+          "type": "object",
+          "properties": {
+            "session": {
+              "description": "Session id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "turn.interrupt"
+            }
+          },
+          "required": [
+            "type",
+            "session"
+          ]
+        },
+        {
+          "description": "Answer a `permission.request`. Answered by `ack`, or `error {already_answered}`.",
+          "type": "object",
+          "properties": {
+            "choice": {
+              "description": "The answer.",
+              "$ref": "#/$defs/PermissionChoice"
+            },
+            "request": {
+              "description": "Request id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "permission.answer"
+            }
+          },
+          "required": [
+            "type",
+            "request",
+            "choice"
+          ]
+        },
+        {
+          "description": "Approve or turn down a `plan.proposed`. Answered by `ack`, or `error {already_answered}`.",
+          "type": "object",
+          "properties": {
+            "approve": {
+              "description": "Whether to go ahead.",
+              "type": "boolean"
+            },
+            "auto_edits": {
+              "description": "Approve and let file edits go ahead without asking.",
+              "type": "boolean"
+            },
+            "plan": {
+              "description": "Plan id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "plan.decide"
+            }
+          },
+          "required": [
+            "type",
+            "plan",
+            "approve"
+          ]
+        },
+        {
+          "description": "Receive events from every session, not only the ones opened (the desktop app uses this for\nits tray icon and notifications). Live text (deltas, output) is left out. Answered by `ack`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "session.watch_all"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Stop the engine (the desktop app's Quit, when the person chooses to stop it too). Answered\nby `ack`; then every connection closes.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "engine.stop"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Turn an uploaded recording (`POST /v1/files`) into text: the app's microphone button.\nAnswered by `audio.transcribed`.",
+          "type": "object",
+          "properties": {
+            "file": {
+              "description": "The upload's id.",
+              "type": "string"
+            },
+            "session": {
+              "description": "Session the cost belongs to, if any.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "audio.transcribe"
+            }
+          },
+          "required": [
+            "type",
+            "file"
+          ]
+        },
+        {
+          "description": "The slash commands, for autocomplete. Answered by `command.listed`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "command.list"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Run a slash command. Answered by `command.result`.",
+          "type": "object",
+          "properties": {
+            "args": {
+              "description": "Everything after the name.",
+              "type": "string",
+              "default": ""
+            },
+            "name": {
+              "description": "Name without the slash.",
+              "type": "string"
+            },
+            "session": {
+              "description": "Session it applies to, if any.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "command.run"
+            }
+          },
+          "required": [
+            "type",
+            "name"
+          ]
+        },
+        {
+          "description": "The facts Thrall remembers about the person, newest first. Answered by `memory.listed`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "memory.list"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Forget a fact: it's no longer recalled. Answered by `ack`, or `error {not_found}`.",
+          "type": "object",
+          "properties": {
+            "fact": {
+              "description": "The fact's id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "memory.forget"
+            }
+          },
+          "required": [
+            "type",
+            "fact"
+          ]
+        },
+        {
+          "description": "Remove one of the person's own skills (its folder is deleted). Project skills can only be\nturned off. Answered by `settings.shown`.",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "The skill's name.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "skill.remove"
+            }
+          },
+          "required": [
+            "type",
+            "name"
+          ]
+        },
+        {
+          "description": "The engine's settings, for the settings screen (read only for now). Key values never\nleave the engine: only whether each one is set. Answered by `settings.shown`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "settings.get"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Change one setting in `config.toml` (comments kept). Used at once when Thrall is idle,\notherwise when its work finishes (`pending` in the answer). Answered by `settings.shown`,\nor `error {invalid}` with the reason (unknown setting, wrong type).",
+          "type": "object",
+          "properties": {
+            "key": {
+              "description": "Dotted key, e.g. `agent.verify` or `provider.model`.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "settings.set"
+            },
+            "value": {
+              "description": "The new value.",
+              "$ref": "#/$defs/SettingValue"
+            }
+          },
+          "required": [
+            "type",
+            "key",
+            "value"
+          ]
+        },
+        {
+          "description": "Paired phones and the phone link's state. Not on the phone link itself. Answered by\n`phone.listed`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "phone.list"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Start pairing a phone: a one-time code shown as a QR. Needs `remote.address`. Not on the\nphone link itself. Answered by `phone.pairing`.",
+          "type": "object",
+          "properties": {
+            "person": {
+              "description": "Who the phone is for (a person's id); absent: the owner.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "phone.pair"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Give a paired phone to another person: it reconnects as them. Not on the phone link\nitself. Answered by `phone.listed`.",
+          "type": "object",
+          "properties": {
+            "person": {
+              "description": "The person's id.",
+              "type": "string"
+            },
+            "phone": {
+              "description": "The phone's id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "phone.assign"
+            }
+          },
+          "required": [
+            "type",
+            "phone",
+            "person"
+          ]
+        },
+        {
+          "description": "Forget a phone: it can't connect again, and its open connection closes. Not on the phone\nlink itself. Answered by `phone.listed`.",
+          "type": "object",
+          "properties": {
+            "phone": {
+              "description": "The phone's id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "phone.remove"
+            }
+          },
+          "required": [
+            "type",
+            "phone"
+          ]
+        },
+        {
+          "description": "The people who use this Thrall (anyone but the owner: only themselves). Answered by\n`people.listed`.",
+          "type": "object",
+          "properties": {
+            "since": {
+              "description": "Count each person's spending from this moment (Unix ms), e.g. the start of this month\nwhere the asker is; absent: all of it.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            },
+            "type": {
+              "type": "string",
+              "const": "people.list"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Add a person (a member). Owner only. Answered by `people.listed`.",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "Their name.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "people.add"
+            }
+          },
+          "required": [
+            "type",
+            "name"
+          ]
+        },
+        {
+          "description": "Rename a person. Owner only. Answered by `people.listed`.",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "Their new name.",
+              "type": "string"
+            },
+            "person": {
+              "description": "Their id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "people.rename"
+            }
+          },
+          "required": [
+            "type",
+            "person",
+            "name"
+          ]
+        },
+        {
+          "description": "Set what a person's turns run on and may spend. Owner only. Answered by `people.listed`.",
+          "type": "object",
+          "properties": {
+            "model": {
+              "description": "Their own model; absent: the engine's. Not for the owner (who changes the engine's).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "monthly_limit": {
+              "description": "The most their turns may cost in a calendar month, in US dollars; absent: no limit.",
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "own_key": {
+              "description": "Their turns use their own AI key (not the owner's). Not for the owner.",
+              "type": "boolean",
+              "default": false
+            },
+            "person": {
+              "description": "Their id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "people.terms"
+            }
+          },
+          "required": [
+            "type",
+            "person"
+          ]
+        },
+        {
+          "description": "Keep (or, without `key`, forget) a person's own AI key. Yours, or (the owner) anyone's;\nnever shown back. The owner's own key is set with `thrall key set`. Answered by `ack`.",
+          "type": "object",
+          "properties": {
+            "key": {
+              "description": "The key; absent or empty: forget it.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "person": {
+              "description": "Whose; absent: yours.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "people.key"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Remove a person: they can't connect any more and their phones are forgotten; their\nsessions and files are kept. The owner can't be removed. Owner only. Answered by\n`people.listed`.",
+          "type": "object",
+          "properties": {
+            "person": {
+              "description": "Their id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "people.remove"
+            }
+          },
+          "required": [
+            "type",
+            "person"
+          ]
+        },
+        {
+          "description": "A one-time sign-in link for a person: the browser that opens it signs in as them. Owner\nonly. Answered by `signin.code`.",
+          "type": "object",
+          "properties": {
+            "person": {
+              "description": "Their id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "signin.create"
+            }
+          },
+          "required": [
+            "type",
+            "person"
+          ]
+        },
+        {
+          "description": "Browsers and PCs signed in as a person: your own, or (the owner) anyone's. Answered by\n`device.listed`.",
+          "type": "object",
+          "properties": {
+            "person": {
+              "description": "Whose; absent: yours.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "device.list"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Sign a browser or PC out: its token stops working and its open connections close. Your\nown, or (the owner) anyone's. Answered by `device.listed`.",
+          "type": "object",
+          "properties": {
+            "device": {
+              "description": "The device's id.",
+              "type": "string"
+            },
+            "person": {
+              "description": "Whose; absent: yours.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "device.remove"
+            }
+          },
+          "required": [
+            "type",
+            "device"
+          ]
+        },
+        {
+          "description": "Send a file in pieces over the socket (how phones attach files). The first piece starts a\nnew upload; later pieces name it and are added to the end. Each piece's `data` is base64,\nat most `FILE_CHUNK_BYTES` before encoding. Answered by `file.saved`.",
+          "type": "object",
+          "properties": {
+            "data": {
+              "description": "This piece, base64.",
+              "type": "string"
+            },
+            "name": {
+              "description": "The file's name (used with the first piece).",
+              "type": "string",
+              "default": ""
+            },
+            "type": {
+              "type": "string",
+              "const": "file.put"
+            },
+            "upload": {
+              "description": "The upload to add to (from an earlier `file.saved`); absent for the first piece.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
+          "description": "Folders a new session could work in: ones sessions already use, and Thrall's own default.\nAnswered by `folder.places`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "folder.places"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "List a folder inside a session's folder (read only). Answered by `folder.listed`.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "description": "Path inside it; empty for the folder itself.",
+              "type": "string",
+              "default": ""
+            },
+            "session": {
+              "description": "The session whose folder it is.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "folder.list"
+            }
+          },
+          "required": [
+            "type",
+            "session"
+          ]
+        },
+        {
+          "description": "Read a file inside a session's folder, a piece at a time (read only). Answered by\n`folder.part`.",
+          "type": "object",
+          "properties": {
+            "offset": {
+              "description": "Where to start, in bytes.",
+              "type": "integer",
+              "format": "uint64",
+              "default": 0,
+              "minimum": 0
+            },
+            "path": {
+              "description": "Path inside it.",
+              "type": "string"
+            },
+            "session": {
+              "description": "The session whose folder it is.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "folder.read"
+            }
+          },
+          "required": [
+            "type",
+            "session",
+            "path"
+          ]
+        },
+        {
+          "description": "Read a file attached to a message, a piece at a time. Answered by `file.part`.",
+          "type": "object",
+          "properties": {
+            "file": {
+              "description": "The file's id.",
+              "type": "string"
+            },
+            "offset": {
+              "description": "Where to start, in bytes.",
+              "type": "integer",
+              "format": "uint64",
+              "default": 0,
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "file.get"
+            }
+          },
+          "required": [
+            "type",
+            "file"
+          ]
+        },
+        {
+          "description": "Make a new, empty folder for sessions to work in. `parent` must be one `folder.places`\noffers; `name` is a plain folder name (no `\\`, `/` or `..`). Never replaces a folder that's\nalready there. Answered by `folder.created`.",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "Its name.",
+              "type": "string"
+            },
+            "parent": {
+              "description": "Where to make it (from `folder.places`).",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "folder.create"
+            }
+          },
+          "required": [
+            "type",
+            "parent",
+            "name"
+          ]
+        },
+        {
+          "description": "The newest phone app this engine holds, to offer as an update. Answered by `app.latest`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "app.latest"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Read that phone app, a piece at a time. Answered by `file.part` (`file` is `app`).",
+          "type": "object",
+          "properties": {
+            "offset": {
+              "description": "Where to start, in bytes.",
+              "type": "integer",
+              "format": "uint64",
+              "default": 0,
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "app.get"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      ],
+      "required": [
+        "v",
+        "id"
+      ]
+    },
+    "RewindAction": {
+      "description": "What a rewind does to a file.",
+      "oneOf": [
+        {
+          "description": "Its earlier content goes back.",
+          "type": "string",
+          "const": "restore"
+        },
+        {
+          "description": "Thrall made it, so it's removed.",
+          "type": "string",
+          "const": "delete"
+        },
+        {
+          "description": "It was too big to keep a copy of, so it stays as it is.",
+          "type": "string",
+          "const": "unavailable"
+        }
+      ]
+    },
+    "RewindFile": {
+      "description": "A file a rewind would put back.",
+      "type": "object",
+      "properties": {
+        "action": {
+          "description": "What happens to it.",
+          "$ref": "#/$defs/RewindAction"
+        },
+        "changed": {
+          "description": "Someone changed it after Thrall last did (or it's gone): putting it back loses that.",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "The file, relative to the session folder when inside it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "action"
+      ]
+    },
+    "Risk": {
+      "description": "How risky an action is; clients colour permission cards by it.",
+      "oneOf": [
+        {
+          "description": "Harmless.",
+          "type": "string",
+          "const": "low"
+        },
+        {
+          "description": "Worth a look.",
+          "type": "string",
+          "const": "medium"
+        },
+        {
+          "description": "Could do damage.",
+          "type": "string",
+          "const": "high"
+        }
+      ]
+    },
+    "Role": {
+      "description": "Who wrote a message.",
+      "oneOf": [
+        {
+          "description": "The person.",
+          "type": "string",
+          "const": "user"
+        },
+        {
+          "description": "Thrall.",
+          "type": "string",
+          "const": "assistant"
+        }
+      ]
+    },
+    "ServerFrame": {
+      "description": "Any frame the engine sends: a reply to a request (it has `re`) or a session event.",
+      "anyOf": [
+        {
+          "description": "Answers a request.",
+          "$ref": "#/$defs/ReplyFrame"
+        },
+        {
+          "description": "Something that happened in a session.",
+          "$ref": "#/$defs/EventFrame"
+        }
+      ]
+    },
+    "SessionInfo": {
+      "description": "A session, as `session.opened` and `session.listed` describe it.",
+      "type": "object",
+      "properties": {
+        "cost_usd": {
+          "description": "Money spent in this session so far, in US dollars.",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "group": {
+          "description": "The person's group it's in (a group id), if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "home": {
+          "description": "A page of Home (built in: it can't be renamed, archived, pinned, moved or deleted).",
+          "type": "boolean"
+        },
+        "last_seq": {
+          "description": "Last event `seq` stored for it.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "mode": {
+          "description": "Permission mode (`ask` · `auto_edits` · `plan` · `full_auto`).",
+          "type": "string"
+        },
+        "mode_limit": {
+          "description": "How long Full auto lasts, when `mode` is `full_auto`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModeLimit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pinned": {
+          "description": "Pinned to the top of the list.",
+          "type": "boolean"
+        },
+        "session": {
+          "description": "Session id.",
+          "type": "string"
+        },
+        "state": {
+          "description": "What it's doing now.",
+          "$ref": "#/$defs/SessionState"
+        },
+        "title": {
+          "description": "Title.",
+          "type": "string"
+        },
+        "updated": {
+          "description": "Last activity, Unix milliseconds.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "workspace": {
+          "description": "Folder it works in.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "session",
+        "title",
+        "mode",
+        "state",
+        "last_seq",
+        "updated"
+      ]
+    },
+    "SessionState": {
+      "description": "What a session is doing.",
+      "oneOf": [
+        {
+          "description": "Nothing running.",
+          "type": "string",
+          "const": "idle"
+        },
+        {
+          "description": "A turn is running.",
+          "type": "string",
+          "const": "working"
+        },
+        {
+          "description": "A turn is waiting on a permission, plan or question card.",
+          "type": "string",
+          "const": "waiting_for_you"
+        }
+      ]
+    },
+    "SettingValue": {
+      "description": "A setting's value.",
+      "anyOf": [
+        {
+          "description": "Yes or no.",
+          "type": "boolean"
+        },
+        {
+          "description": "A whole number.",
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "description": "Text.",
+          "type": "string"
+        }
+      ]
+    },
+    "SkillInfo": {
+      "description": "A skill, for the settings screen.",
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "When to use it.",
+          "type": "string"
+        },
+        "enabled": {
+          "description": "It's turned on.",
+          "type": "boolean"
+        },
+        "helper": {
+          "description": "It runs in a helper.",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "Its name (`/name` runs it).",
+          "type": "string"
+        },
+        "personal": {
+          "description": "One of the person's own (`false`: the project's).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "personal",
+        "helper",
+        "enabled"
+      ]
+    },
+    "StepStatus": {
+      "description": "How a step ended.",
+      "oneOf": [
+        {
+          "description": "It worked.",
+          "type": "string",
+          "const": "ok"
+        },
+        {
+          "description": "It failed; `summary` says why.",
+          "type": "string",
+          "const": "error"
+        },
+        {
+          "description": "It ran to the end but reported a problem (a command's exit code wasn't 0): the output may\nstill be what was asked, and Thrall's reply says whether it was.",
+          "type": "string",
+          "const": "warn"
+        },
+        {
+          "description": "The user said no.",
+          "type": "string",
+          "const": "denied"
+        },
+        {
+          "description": "Stopped before finishing.",
+          "type": "string",
+          "const": "cancelled"
+        }
+      ]
+    },
+    "TaskItem": {
+      "description": "One entry in the task list.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Task id.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Where it's at.",
+          "$ref": "#/$defs/TaskStatus"
+        },
+        "text": {
+          "description": "What it is.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "status"
+      ]
+    },
+    "TaskStatus": {
+      "description": "Task progress.",
+      "oneOf": [
+        {
+          "description": "Not started.",
+          "type": "string",
+          "const": "pending"
+        },
+        {
+          "description": "Being worked on.",
+          "type": "string",
+          "const": "in_progress"
+        },
+        {
+          "description": "Finished.",
+          "type": "string",
+          "const": "done"
+        }
+      ]
+    },
+    "TurnStatus": {
+      "description": "How a turn ended.",
+      "oneOf": [
+        {
+          "description": "Finished normally.",
+          "type": "string",
+          "const": "done"
+        },
+        {
+          "description": "The user stopped it.",
+          "type": "string",
+          "const": "interrupted"
+        },
+        {
+          "description": "Something went wrong; an `error` event explains.",
+          "type": "string",
+          "const": "failed"
+        }
+      ]
+    },
+    "Usage": {
+      "description": "Tokens and cost for a turn.",
+      "type": "object",
+      "properties": {
+        "cost_usd": {
+          "description": "Cost in US dollars, when the provider reports it.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "input_tokens": {
+          "description": "Tokens sent to the model.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "output_tokens": {
+          "description": "Tokens the model wrote.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "input_tokens",
+        "output_tokens"
+      ]
+    },
+    "UserInfo": {
+      "description": "Who the engine acts for on this connection.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "User id.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Display name.",
+          "type": "string"
+        },
+        "role": {
+          "description": "`owner` (runs this engine) or `member`.",
+          "type": "string",
+          "default": ""
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    }
+  }
+}

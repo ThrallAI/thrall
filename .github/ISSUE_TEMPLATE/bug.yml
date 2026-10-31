@@ -1,0 +1,50 @@
+name: Bug report
+description: Something didn't work, or worked in a confusing way.
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: system
+    attributes:
+      label: System
+      options:
+        - Windows
+        - Linux (Ubuntu, Debian, Mint…)
+        - Linux (Arch, Omarchy)
+        - Linux (other)
+        - macOS (Apple silicon)
+        - macOS (Intel)
+        - Android (the phone app)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Thrall version
+      description: Settings → Help shows it (on the phone, Settings → About).
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      multiple: true
+      options:
+        - Desktop app
+        - Web app in a browser
+        - Terminal app
+        - Phone app
+        - Installing
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log lines
+      description: From the `logs` folder of Thrall's data folder. Remove any keys or private text first.
+      render: text

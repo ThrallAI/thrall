@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The design system's dark background (bg in web/src/styles/tokens.css). -->
+    <color name="launcher_background">#111018</color>
+    <!-- The home-screen widget: the same dark background, light text. -->
+    <color name="widget_bg">#111018</color>
+    <color name="widget_text">#F2F0F7</color>
+</resources>

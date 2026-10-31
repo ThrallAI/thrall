@@ -1,0 +1,89 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "desktop"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+publish = false
+
+# Every third-party crate is declared once, here, and pinned. Crates opt in with `name.workspace = true`.
+# Thrall's own crates are referenced by path from each member.
+[workspace.dependencies]
+tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+toml = "1.1.8"
+toml_edit = "0.25.17"
+thiserror = "2.0.21"
+anyhow = "1.0.104"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2.5"
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "form", "stream", "http2", "charset", "system-proxy", "rustls"] }
+eventsource-stream = "0.2.3"
+futures = "0.3.34"
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
+uuid = { version = "1.28.0", features = ["v7"] }
+directories = "6.0.0"
+keyring = "4.2.0"
+anstream = "1.0.0"
+clap = { version = "4.6.7", features = ["derive"] }
+rpassword = "7.5.4"
+# Phase 2: terminal client and core tools.
+ratatui = "0.30.2"
+ratatui-textarea = { version = "0.9.3", features = ["crossterm"] }
+pulldown-cmark = { version = "0.13.4", default-features = false }
+similar = "3.2.0"
+ignore = "0.4.33"
+globset = "0.4.20"
+html2text = "0.17.3"
+regex = "1.13.1"
+# Phase 4: scheduler and MCP.
+croner = "4.0.1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+rmcp = { version = "3.5.1", default-features = false, features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest", "reqwest", "auth"] }
+async-trait = "0.1.92"
+# Phase 6: protocol schema, server, web app.
+schemars = "1.2.3"
+axum = { version = "0.8.9", features = ["ws"] }
+tokio-tungstenite = "0.30.0"
+getrandom = "0.4.3"
+sha2 = "0.11.1"
+rust-embed = { version = "8.13.0", features = ["interpolate-folder-path", "mime-guess"] }
+# Phase 7: documents and pictures.
+pdf-extract = "0.12.1"
+calamine = "0.36.1"
+# 9.x for Thrall's own archive tool (8.x has extraction advisories). The Office libraries still
+# bring their own zip 8 for reading files in memory; see deny.toml.
+zip = { version = "9.0.4", default-features = false, features = ["deflate", "deflate64"] }
+quick-xml = "0.42.0"
+base64 = "0.23.1"
+# Phase 7c: editing documents.
+umya-spreadsheet = "3.1.1"
+docx-rs = "0.4.22"
+lopdf = "0.42.0"
+imagesize = "0.14.0"
+# Phase 9: phones reach the engine over an end-to-end encrypted link (Noise) after QR pairing.
+snow = { version = "0.10.0", default-features = false, features = ["std", "use-chacha20poly1305", "use-blake2", "use-curve25519", "use-getrandom"] }
+qrcode = { version = "0.14.1", default-features = false }
+# Phase 7d: clipboard and system info.
+arboard = "3.6.1"
+png = "0.18.1"
+sysinfo = "0.39.6"
+# Phase 7e: browser control (drives installed Chrome/Edge).
+chromiumoxide = "0.9.1"
+# Starting with Windows (the Run key). Already in the lock file: the tray's autostart uses it.
+windows-registry = "0.6.1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"

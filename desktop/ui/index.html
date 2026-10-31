@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Thrall</title>
+    <style>
+      :root {
+        --bg: #111018;
+        --ink: #ecebf2;
+        --ink-muted: #9d9aae;
+        --line: #2e2c3a;
+        --accent: #a78bfa;
+        --danger: #ff6b6b;
+        color-scheme: dark;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #fafafc;
+          --ink: #18171f;
+          --ink-muted: #5f5c70;
+          --line: #d9d7e3;
+          --accent: #6d4fd6;
+          --danger: #c42b2b;
+          color-scheme: light;
+        }
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--ink-muted);
+        font: 15px/24px "Segoe UI", system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        text-align: center;
+        padding: 16px;
+      }
+      h1 {
+        margin: 0;
+        font: 600 22px/28px "Segoe UI", system-ui, sans-serif;
+        color: var(--ink);
+      }
+      p {
+        margin: 0;
+        max-width: 52ch;
+      }
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        width: min(420px, 100%);
+        text-align: left;
+      }
+      form[hidden] {
+        display: none;
+      }
+      label {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      input {
+        font: inherit;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--ink);
+      }
+      button {
+        font: 600 15px/22px "Segoe UI", system-ui, sans-serif;
+        padding: 8px 14px;
+        border-radius: 8px;
+        border: 0;
+        background: var(--accent);
+        color: var(--bg);
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+      }
+      code {
+        color: var(--ink);
+        user-select: all;
+      }
+      #why {
+        color: var(--danger);
+        min-height: 24px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Thrall</h1>
+    <p id="msg">Starting Thrall…</p>
+    <form id="setup" hidden>
+      <p>
+        Thrall thinks with an AI model through OpenRouter, using your own key, so you pay
+        OpenRouter only for what you use. Make a key at <code>openrouter.ai/keys</code>, then paste
+        it here.
+      </p>
+      <label for="key">OpenRouter key</label>
+      <input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-…" />
+      <p>It's kept in this computer's keychain, never in a file, and only sent to OpenRouter.</p>
+      <button id="save" type="submit">Start Thrall</button>
+      <p id="why" role="alert"></p>
+    </form>
+    <script>
+      // First run: the desktop app asks for this when there's no AI key yet (the engine can't
+      // start without one). Only this page can save it; the web app gets no access.
+      window.thrallSetup = function () {
+        var form = document.getElementById("setup");
+        if (!form.hidden) return;
+        document.getElementById("msg").textContent = "Welcome. One thing first:";
+        form.hidden = false;
+        document.getElementById("key").focus();
+      };
+      document.getElementById("setup").addEventListener("submit", function (e) {
+        e.preventDefault();
+        var save = document.getElementById("save");
+        var why = document.getElementById("why");
+        var invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
+        if (!invoke) {
+          why.textContent = "This page can only save the key inside Thrall's desktop app.";
+          return;
+        }
+        save.disabled = true;
+        why.textContent = "";
+        invoke("save_key", { key: document.getElementById("key").value })
+          .then(function () {
+            document.getElementById("setup").hidden = true;
+            document.getElementById("msg").textContent = "Starting Thrall…";
+          })
+          .catch(function (err) {
+            why.textContent = String(err);
+            save.disabled = false;
+          });
+      });
+    </script>
+  </body>
+</html>
