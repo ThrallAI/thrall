@@ -75,4 +75,5 @@ pub const DESKTOP_HIDDEN_ARG: &str = "--hidden";
 pub const POWERSHELL_EXE: &str = "powershell.exe";
 
 /// CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP: a console program with a hidden console.
+#[cfg(windows)]
 pub const HIDDEN_CONSOLE_FLAGS: u32 = 0x0800_0000 | 0x0000_0200;
