@@ -434,6 +434,13 @@ search and research, but you can't change files or run commands. If your task as
 a file, don't try: put its complete contents in your answer, under a line 'File: <name>', and \
 Thrall will save it.";
 
+/// Put before a helper type's own instructions.
+pub const HELPER_ROLE_HEADING: &str = "\n\n# Your role\n\n";
+
+/// Added to the instructions of a helper type that only looks (researcher, reviewer, planner).
+pub const LOOKING_HELPER_NOTE: &str = "\n\nYou only look: you can read, search and research, but \
+not change files. Put what you found, or the plan, in your answer; Thrall makes any changes.";
+
 /// What a background helper is told when it tries to change something.
 pub const BACKGROUND_CANT_CHANGE: &str = "Background helpers can't change files or run commands. \
 Put the file's complete contents in your answer under 'File: <name>'; Thrall will save it.";

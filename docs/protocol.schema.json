@@ -537,6 +537,13 @@
           "description": "A tool call began (a collapsible row in clients).",
           "type": "object",
           "properties": {
+            "helper": {
+              "description": "The helper's own step when a helper took this step: clients list it under that one.\nSeveral helpers can run at once, so their steps interleave.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "step": {
               "description": "Step id.",
               "type": "string"

@@ -40,6 +40,8 @@ pub struct BackgroundTask {
     pub title: String,
     /// Its instructions.
     pub task: String,
+    /// Its helper type, if one was asked for.
+    pub kind: Option<thrall_tools::agents::AgentType>,
 }
 
 /// A turn in progress: how to stop it, and messages typed while it works.

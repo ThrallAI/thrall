@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Instant;
 
 use futures::StreamExt;
+use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -412,6 +413,7 @@ impl<'a> Emitter<'a> {
             step: step.clone(),
             tool: VISION_TOOL.to_owned(),
             title,
+            helper: None,
         })
         .await?;
         let mut errors = Vec::new();
@@ -893,7 +895,50 @@ async fn run_turn(
                 None => break,
             }
         }
-        for call in &outcome.tool_calls {
+        let calls = &outcome.tool_calls;
+        let mut next = 0;
+        while next < calls.len() {
+            let call = &calls[next];
+            // Helpers asked for one after another in this reply work side by side (up to the
+            // setting); each gets its own copy of the mode and its own checks, and their results
+            // are saved in the order they were asked for.
+            let run = calls[next..]
+                .iter()
+                .take_while(|c| crate::workers::is_foreground_helper(c))
+                .count();
+            if run > 1 && split.is_none() && !cancel.is_cancelled() {
+                let group = &calls[next..next + run];
+                let mut slots: Vec<(Mode, Track)> =
+                    group.iter().map(|_| (mode, Track::default())).collect();
+                // Boxed one by one (not from a closure), so the turn stays Send.
+                let mut jobs: Vec<BoxFuture<'_, Result<String, AgentError>>> = Vec::new();
+                for ((m, t), c) in slots.iter_mut().zip(group) {
+                    jobs.push(Box::pin(run_step(
+                        &emitter, state, &workspace, c, m, t, &cancel,
+                    )));
+                }
+                let results: Vec<Result<String, AgentError>> = futures::stream::iter(jobs)
+                    .buffered(state.config.agent.helpers_at_once())
+                    .collect()
+                    .await;
+                for (c, content) in group.iter().zip(results) {
+                    emitter
+                        .save_message(
+                            role::TOOL,
+                            StoredContent {
+                                text: content?,
+                                tool_calls: Vec::new(),
+                                tool_call_id: Some(c.id.clone()),
+                                files: Vec::new(),
+                            },
+                            None,
+                        )
+                        .await?;
+                }
+                next += run;
+                continue;
+            }
+            next += 1;
             if cancel.is_cancelled() {
                 // Every call still needs a result, or the next request is refused.
                 emitter
@@ -1325,6 +1370,7 @@ async fn context(
         system.push_str(&rules);
     }
     system.push_str(&crate::extras::standing_instructions(state, workspace));
+    system.push_str(&crate::extras::helper_types(state, workspace));
     messages.push(ChatMessage::new(ChatRole::System, system));
     // Old big tool results go shortened when trimming is on (the stored ones keep everything).
     let trim: Vec<usize> = if state.config.memory.trim_old_tool_results {

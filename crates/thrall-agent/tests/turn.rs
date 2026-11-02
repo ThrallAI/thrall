@@ -1279,12 +1279,18 @@ async fn a_helper_works_in_its_own_context_and_hands_back_its_answer() {
         .unwrap();
     let (summary, frames) = run_with(&state, &s.id, "what's here?", yes(), |_, _| {}).await;
     assert_eq!(summary.reply, "The helper says: one file.");
-    // The helper's own step showed in the turn.
-    assert!(
-        frames
-            .iter()
-            .any(|f| matches!(&f.event, Event::StepStarted { tool, .. } if tool == "list_dir"))
-    );
+    // The helper's own step showed in the turn, under the agent step.
+    let agent_step = frames
+        .iter()
+        .find_map(|f| match &f.event {
+            Event::StepStarted { tool, step, .. } if tool == "agent" => Some(step.clone()),
+            _ => None,
+        })
+        .unwrap();
+    assert!(frames.iter().any(|f| matches!(
+        &f.event,
+        Event::StepStarted { tool, helper: Some(h), .. } if tool == "list_dir" && *h == agent_step
+    )));
     let seen = provider.seen.lock().unwrap().clone();
     let helper_request = seen
         .iter()
@@ -1310,6 +1316,160 @@ async fn a_helper_works_in_its_own_context_and_hands_back_its_answer() {
             .iter()
             .any(|m| m.content.contains("hello.txt\n"))
     );
+}
+
+/// One reply asking for several tools at once.
+fn tool_calls(calls: &[(&str, &str, &str)]) -> Script {
+    let mut script: Script = calls
+        .iter()
+        .enumerate()
+        .map(|(index, (id, name, arguments))| {
+            Ok(StreamEvent::ToolCall(ToolCallDelta {
+                index: index as u32,
+                id: Some((*id).into()),
+                name: Some((*name).into()),
+                arguments: (*arguments).into(),
+            }))
+        })
+        .collect();
+    script.push(Ok(StreamEvent::Finished(Some("tool_calls".into()))));
+    script.push(usage());
+    script
+}
+
+#[tokio::test]
+async fn helpers_asked_for_together_work_side_by_side_each_as_its_type() {
+    let (mut state, provider) = setup(vec![
+        tool_calls(&[
+            (
+                "c1",
+                "agent",
+                r#"{"title": "find out", "type": "researcher", "task": "What's the API?"}"#,
+            ),
+            (
+                "c2",
+                "agent",
+                r#"{"title": "write it", "type": "coder", "task": "Write the client."}"#,
+            ),
+        ]),
+        reply(&["Both done."]),
+        reply(&["Helpers test"]),
+    ])
+    .await;
+    checks_off(&mut state);
+    *provider.helper.lock().unwrap() =
+        vec![reply(&["First answer."]), reply(&["Second answer."])].into();
+    let s = session::create(&state, Some(workspace("helpers-together")))
+        .await
+        .unwrap();
+    let (summary, _) = run_with(&state, &s.id, "do both", yes(), |_, _| {}).await;
+    assert_eq!(summary.reply, "Both done.");
+    let seen = provider.seen.lock().unwrap().clone();
+    let helpers: Vec<_> = seen
+        .iter()
+        .filter(|r| r.messages[0].content.starts_with("You are a helper"))
+        .collect();
+    assert_eq!(helpers.len(), 2);
+    let researcher = helpers
+        .iter()
+        .find(|r| r.messages[1].content == "What's the API?")
+        .unwrap();
+    assert!(
+        researcher.messages[0]
+            .content
+            .contains("You are a researcher")
+    );
+    assert!(
+        researcher.messages[0].content.contains("You only look"),
+        "a researcher only looks"
+    );
+    let coder = helpers
+        .iter()
+        .find(|r| r.messages[1].content == "Write the client.")
+        .unwrap();
+    assert!(coder.messages[0].content.contains("You are a coder"));
+    assert!(!coder.messages[0].content.contains("You only look"));
+    // Both results reached Thrall, in the order it asked.
+    let parent_second = seen
+        .iter()
+        .filter(|r| !r.messages[0].content.starts_with("You are a helper"))
+        .nth(1)
+        .unwrap();
+    let results: Vec<_> = parent_second
+        .messages
+        .iter()
+        .filter_map(|m| m.tool_call_id.clone())
+        .collect();
+    assert_eq!(results, ["c1", "c2"]);
+    // Thrall was told which helper types there are.
+    assert!(seen[0].messages[0].content.contains("# Helper types"));
+}
+
+#[tokio::test]
+async fn a_helper_stops_at_its_spending_limit() {
+    let (mut state, provider) = setup(vec![
+        tool_call(
+            "c1",
+            "agent",
+            r#"{"title": "dig", "task": "Look everywhere."}"#,
+        ),
+        reply(&["Stopped early."]),
+        reply(&["Limit test"]),
+    ])
+    .await;
+    checks_off(&mut state);
+    // Each fake call costs $0.002; a one-cent limit stops it after five.
+    state.config.agent.helper_cost_limit_cents = 1;
+    *provider.helper.lock().unwrap() = (0..20)
+        .map(|i| tool_call(&format!("h{i}"), "list_dir", "{}"))
+        .collect();
+    let s = session::create(&state, Some(workspace("helper-limit")))
+        .await
+        .unwrap();
+    run_with(&state, &s.id, "dig", yes(), |_, _| {}).await;
+    let seen = provider.seen.lock().unwrap().clone();
+    let helper_calls = seen
+        .iter()
+        .filter(|r| r.messages[0].content.starts_with("You are a helper"))
+        .count();
+    assert_eq!(helper_calls, 5);
+    let parent_second = seen
+        .iter()
+        .filter(|r| !r.messages[0].content.starts_with("You are a helper"))
+        .nth(1)
+        .unwrap();
+    assert!(
+        parent_second
+            .messages
+            .last()
+            .unwrap()
+            .content
+            .contains("spending limit")
+    );
+}
+
+#[tokio::test]
+async fn an_unknown_helper_type_is_refused_with_the_ones_there_are() {
+    let (mut state, _provider) = setup(vec![
+        tool_call(
+            "c1",
+            "agent",
+            r#"{"title": "x", "type": "wizard", "task": "Do magic."}"#,
+        ),
+        reply(&["OK."]),
+        reply(&["Wizard test"]),
+    ])
+    .await;
+    checks_off(&mut state);
+    let s = session::create(&state, Some(workspace("helper-wizard")))
+        .await
+        .unwrap();
+    let (_, frames) = run_with(&state, &s.id, "magic", yes(), |_, _| {}).await;
+    assert!(frames.iter().any(|f| matches!(
+        &f.event,
+        Event::StepCompleted { summary, .. } if summary.contains("no helper type called wizard")
+            && summary.contains("researcher")
+    )));
 }
 
 #[tokio::test]

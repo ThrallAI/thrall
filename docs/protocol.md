@@ -182,7 +182,7 @@ A turn is one user message and everything Thrall does about it.
 
 | Event | Notes |
 |---|---|
-| `step.started {turn, step, tool, title}` | `title` is plain language: "Reading src/main.rs", "Running cargo test" |
+| `step.started {turn, step, tool, title, helper?}` | `title` is plain language: "Reading src/main.rs", "Running cargo test". `helper` is set on a helper's steps: the step of the `agent` call (or skill, or split-mode hand-off) that started it, so clients list them under that row. Helpers asked for together in one reply work at the same time (`[agent] helpers_at_once`, default 3), so their steps interleave; each helper type (`researcher`, `coder`, `reviewer`, `planner`, or the person's own in `agents/<name>.md`, or the project's in `.thrall/agents/`) has its own instructions, and the ones that only look work in plan mode. A helper that spends more than `[agent] helper_cost_limit_cents` (default 100; 0 = no limit) is stopped and hands back what it has |
 | `step.output {step, text}` | Optional live output (shell). Live-only, capped; the model gets the full result |
 | `step.completed {step, status, summary, diff?, files?}` | `status`: `ok` · `error` · `denied` · `cancelled`. `diff` for file edits (below). `files`: pictures the step made (`make_image`), as in `message.completed` |
 

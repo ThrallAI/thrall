@@ -92,6 +92,7 @@ pub(crate) async fn run_step(
             step: step_id.clone(),
             tool: call.name.clone(),
             title: title.clone(),
+            helper: track.helper_step.clone(),
         })
         .await?;
     if emitter.records() {
@@ -145,7 +146,8 @@ pub(crate) async fn run_step(
             ToolOutput::error(THINKER_LOOK_ONLY)
         }
         Some(t) if t.name() == DELEGATE && emitter.records() => {
-            crate::workers::delegate(emitter, state, workspace, &args, *mode, cancel).await?
+            crate::workers::delegate(emitter, state, workspace, &args, *mode, cancel, &step_id)
+                .await?
         }
         Some(t) if t.name() == SPEAK => {
             match crate::audio::speak_tool(
@@ -236,7 +238,10 @@ pub(crate) async fn run_step(
                 && !track.in_helper
                 && find_skill(&ctx, arg_str(&args, "name")).is_some_and(|s| s.helper) =>
         {
-            run_skill_in_helper(emitter, state, workspace, &ctx, &args, *mode, cancel).await?
+            run_skill_in_helper(
+                emitter, state, workspace, &ctx, &args, *mode, cancel, &step_id,
+            )
+            .await?
         }
         Some(t) => match t.precheck(&ctx, &args) {
             Some(why) => ToolOutput::error(why),
@@ -476,7 +481,8 @@ pub(crate) async fn run_step(
 }
 
 /// Run a `run: helper` skill: a helper gets its instructions and the task; its answer is the
-/// result.
+/// result. `step` is the skill call's own step.
+#[allow(clippy::too_many_arguments)]
 fn run_skill_in_helper<'a>(
     emitter: &'a Emitter<'a>,
     state: &'a AppState,
@@ -485,6 +491,7 @@ fn run_skill_in_helper<'a>(
     args: &'a Value,
     mode: Mode,
     cancel: &'a Cancel,
+    step: &'a str,
 ) -> futures::future::BoxFuture<'a, Result<ToolOutput, AgentError>> {
     // Boxed: a helper's steps come back through `run_step`.
     Box::pin(async move {
@@ -502,9 +509,14 @@ fn run_skill_in_helper<'a>(
             "{SKILL_HELPER_TASK}\n\n{}\n\n# The task\n\n{task}",
             skill_text(&skill)
         );
-        let answer =
-            crate::workers::run_helper(emitter, state, workspace, &full, mode, cancel, None)
-                .await?;
+        let helping = crate::workers::Helping {
+            kind: None,
+            step: Some(step),
+        };
+        let answer = crate::workers::run_helper(
+            emitter, state, workspace, &full, mode, cancel, None, helping,
+        )
+        .await?;
         Ok(ToolOutput::ok(
             answer,
             format!("{SKILL_HELPER_DONE}: {}", skill.name),
