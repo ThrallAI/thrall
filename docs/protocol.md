@@ -412,6 +412,19 @@ itself, e.g. "Edge on Windows") answers `{"token", "person": {"id", "name"}}`, o
 its person (their sessions, files and folder). Only the token's SHA-256 is stored. Removing a
 person signs all their browsers out.
 
+## 13d. Personality
+
+How Thrall talks to each person. Everyone starts on the standard one Thrall ships with; each person
+(children included) chooses their own, and it never changes anyone else's. It's tone only: it's
+added after Thrall's rules and says it can't change them, what needs permission, or what's safe.
+
+| Request | Reply |
+|---|---|
+| `personality.get {}` | `personality.shown {preset, custom, presets: [{id, name, description}]}`: your choice, and the presets (standard first) |
+| `personality.set {preset, custom?}` | `personality.shown`. `preset` is a preset's id or `custom` (then `custom` is your own words, up to 1500 characters). An unknown preset means the standard one |
+
+Kept in the person's own data folder (`personality.json`).
+
 ## 14. Not in v1 yet (names reserved)
 
 - `runner.*` — the desktop app's companion link to a server-hosted engine (phase 11). A separate

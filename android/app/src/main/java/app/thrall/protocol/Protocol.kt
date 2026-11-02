@@ -337,6 +337,14 @@ sealed class Request {
     @Serializable @SerialName("settings.set")
     data class SettingsSet(val key: String, val value: kotlinx.serialization.json.JsonPrimitive) : Request()
 
+    /** Your personality: how Thrall talks to you. */
+    @Serializable @SerialName("personality.get")
+    data object PersonalityGet : Request()
+
+    /** Choose your personality: a preset's id, or `custom` with your own words. Only ever your own. */
+    @Serializable @SerialName("personality.set")
+    data class PersonalitySet(val preset: String, @EncodeDefault val custom: String = "") : Request()
+
     /** The people on this Thrall; anyone but the owner gets only themselves. [since]: count spending from (Unix ms). */
     @Serializable @SerialName("people.list")
     data class PeopleList(val since: Long? = null) : Request()
@@ -356,6 +364,10 @@ data class RewindFile(val path: String, val action: String, val changed: Boolean
 /** A fact Thrall remembers. */
 @Serializable
 data class FactInfo(val fact: String, val topic: String = "", val content: String, val at: Long = 0)
+
+/** A personality preset: its id, name and a line about it. */
+@Serializable
+data class PersonalityPreset(val id: String, val name: String, val description: String = "")
 
 @Serializable
 data class SkillInfo(
@@ -479,6 +491,9 @@ sealed class Reply {
     data class MemoryListed(val facts: List<FactInfo> = emptyList()) : Reply()
 
     /** The settings, as the config file has them (secrets hidden), the model in use, and skills. */
+    @Serializable @SerialName("personality.shown")
+    data class PersonalityShown(val preset: String, val custom: String = "", val presets: List<PersonalityPreset> = emptyList()) : Reply()
+
     @Serializable @SerialName("settings.shown")
     data class SettingsShown(
         val config: JsonObject = JsonObject(emptyMap()),
@@ -615,6 +630,7 @@ object ProtocolTypes {
         "session.move", "group.list", "group.create", "group.rename", "group.delete", "group.reorder",
         "home.clear", "heartbeat.get", "heartbeat.set", "heartbeat.run", "checkpoint.preview", "turn.rewind",
         "turn.retry", "turn.edit", "memory.list", "memory.forget", "skill.remove", "settings.get", "settings.set",
+        "personality.get", "personality.set",
         "people.list", "people.key",
     )
     val requestsLater = setOf(
@@ -635,7 +651,7 @@ object ProtocolTypes {
         "welcome", "pong", "ack", "error", "session.opened", "session.listed", "home.shown", "folder.listed",
         "folder.part", "file.part", "folder.places", "command.listed", "command.result", "file.saved",
         "folder.created", "app.latest", "group.listed", "heartbeat.shown", "checkpoint.shown", "turn.rewound",
-        "memory.listed", "settings.shown", "people.listed",
+        "memory.listed", "settings.shown", "people.listed", "personality.shown",
     )
     val repliesLater = setOf("audio.transcribed", "phone.listed", "phone.pairing", "signin.code", "device.listed", "startup.shown")
     val eventsUsed = setOf(

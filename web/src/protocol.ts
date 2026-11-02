@@ -220,6 +220,20 @@ export type RequestFrame = {
       type: "startup.set";
     }
   | {
+      type: "personality.get";
+    }
+  | {
+      /**
+       * Your own words, used with custom.
+       */
+      custom?: string;
+      /**
+       * A preset's id from personality.shown, or custom.
+       */
+      preset: string;
+      type: "personality.set";
+    }
+  | {
       /**
        * Ids of files uploaded with `POST /v1/files` to attach.
        */
@@ -684,6 +698,21 @@ export type ReplyFrame = {
        */
       next_run?: number | null;
       type: "heartbeat.shown";
+    }
+  | {
+      /**
+       * Your own words (kept even while a preset is chosen).
+       */
+      custom: string;
+      /**
+       * The chosen preset's id, or custom.
+       */
+      preset: string;
+      /**
+       * The presets on offer, standard first.
+       */
+      presets: PersonalityPreset[];
+      type: "personality.shown";
     }
   | {
       /**
@@ -1569,6 +1598,23 @@ export interface SessionInfo2 {
    * Folder it works in.
    */
   workspace?: string | null;
+}
+/**
+ * A personality preset, for the settings screen.
+ */
+export interface PersonalityPreset {
+  /**
+   * One line about it.
+   */
+  description: string;
+  /**
+   * Its id (personality.set {preset}).
+   */
+  id: string;
+  /**
+   * Its name.
+   */
+  name: string;
 }
 /**
  * A slash command, for autocomplete.

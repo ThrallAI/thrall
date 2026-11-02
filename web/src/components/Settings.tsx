@@ -23,6 +23,7 @@ import type { FactInfo } from "../protocol";
 import type { Session } from "../types";
 import { THEME_LABELS, type Theme } from "../theme";
 import { People } from "./People";
+import { Personality } from "./Personality";
 import { Phones } from "./Phones";
 
 type Shown = ReplyOf<"settings.shown">;
@@ -1024,6 +1025,9 @@ export function Settings({
           </Group>
         </>
       );
+    }
+    if (section === "personality") {
+      return <Personality engine={engine} onStatus={setStatus} Group={Group} />;
     }
     if (section === "people") {
       return <People engine={engine} onStatus={setStatus} Row={Row} Group={Group} />;

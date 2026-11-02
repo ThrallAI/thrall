@@ -1342,6 +1342,29 @@
         "added"
       ]
     },
+    "PersonalityPreset": {
+      "description": "A personality preset, for the settings screen.",
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "One line about it.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Its id (personality.set {preset}).",
+          "type": "string"
+        },
+        "name": {
+          "description": "Its name.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description"
+      ]
+    },
     "PhoneInfo": {
       "description": "A paired phone.",
       "type": "object",
@@ -1661,7 +1684,38 @@
           ]
         },
         {
-          "description": "Answer to `startup.get` and `startup.set`.",
+          "description": "Answer to personality.get and personality.set.",
+          "type": "object",
+          "properties": {
+            "custom": {
+              "description": "Your own words (kept even while a preset is chosen).",
+              "type": "string"
+            },
+            "preset": {
+              "description": "The chosen preset's id, or custom.",
+              "type": "string"
+            },
+            "presets": {
+              "description": "The presets on offer, standard first.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PersonalityPreset"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "personality.shown"
+            }
+          },
+          "required": [
+            "type",
+            "preset",
+            "custom",
+            "presets"
+          ]
+        },
+        {
+          "description": "Answer to startup.get and startup.set.",
           "type": "object",
           "properties": {
             "available": {
@@ -2795,7 +2849,43 @@
           ]
         },
         {
-          "description": "Send a message. Answered by `ack`; the turn's events follow. While a turn is running the\ntext joins it at its next step instead.",
+          "description": "Your personality: how Thrall talks to you. Answered by personality.shown.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "personality.get"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Choose your personality (only ever your own). Answered by personality.shown.",
+          "type": "object",
+          "properties": {
+            "custom": {
+              "description": "Your own words, used with custom.",
+              "type": "string",
+              "default": ""
+            },
+            "preset": {
+              "description": "A preset's id from personality.shown, or custom.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "personality.set"
+            }
+          },
+          "required": [
+            "type",
+            "preset"
+          ]
+        },
+        {
+          "description": "Send a message. Answered by \u0007ck; the turn's events follow. While a turn is running the\ntext joins it at its next step instead.",
           "type": "object",
           "properties": {
             "files": {

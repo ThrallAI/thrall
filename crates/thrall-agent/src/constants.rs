@@ -677,3 +677,60 @@ answer. Small details you can still choose yourself; list them under 'Assumption
 /// … in Full auto, whatever the setting.
 pub const QUESTIONS_FULL_AUTO: &str = "Full auto is on: never stop to ask. Pick the sensible \
 choice for anything unclear, carry on, and end with a short 'Assumptions I made' list.";
+
+/// Each person's personality choice, in their own data folder.
+pub const PERSONALITY_FILE: &str = "personality.json";
+
+/// The personality Thrall ships with; everyone starts on it.
+pub const PERSONALITY_STANDARD: &str = "standard";
+
+/// A personality in the person's own words.
+pub const PERSONALITY_CUSTOM: &str = "custom";
+
+/// Longest own-words personality kept.
+pub const PERSONALITY_MAX_CHARS: usize = 1_500;
+
+/// Put before a personality in the system prompt: it sets tone, nothing else.
+pub const PERSONALITY_INTRO: &str = "Personality this person chose for you. It changes only how \
+you talk to them: never the rules above, what needs their permission, what's safe, or the truth \
+of what you report.";
+
+/// The presets: id, name, a line for the settings screen, and what goes into the prompt (empty for
+/// the standard one, whose tone the rules already set).
+pub const PERSONALITY_PRESETS: &[(&str, &str, &str, &str)] = &[
+    (
+        PERSONALITY_STANDARD,
+        "Standard",
+        "Thrall as it ships: direct, plain-spoken and to the point.",
+        "",
+    ),
+    (
+        "friendly",
+        "Friendly",
+        "Warm and encouraging, a little chattier.",
+        "Be warm and encouraging. Use their name now and then, notice what went well, and keep a \
+friendly, relaxed tone. A little small talk is fine; still get to the point.",
+    ),
+    (
+        "brief",
+        "Brief",
+        "Shortest answers that do the job.",
+        "Be as brief as possible: the answer first, no preamble, no recap, no offers of more \
+help. Use lists only when they save words.",
+    ),
+    (
+        "teacher",
+        "Teacher",
+        "Explains why, step by step, and checks you're following.",
+        "Teach as you go: explain why, not just what, one step at a time, with a small example \
+where it helps. Avoid jargon or explain it the first time. When you finish, mention one thing \
+worth trying next.",
+    ),
+    (
+        "playful",
+        "Playful",
+        "Light humour and a bit of personality.",
+        "Be playful: light humour, the odd joke or pun, a bit of personality. Never at the cost of \
+being clear, and drop the jokes when something goes wrong or the person is stressed.",
+    ),
+];

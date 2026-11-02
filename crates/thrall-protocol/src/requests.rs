@@ -216,7 +216,19 @@ pub enum Request {
         /// Start at sign-in.
         on: bool,
     },
-    /// Send a message. Answered by `ack`; the turn's events follow. While a turn is running the
+    /// Your personality: how Thrall talks to you. Answered by personality.shown.
+    #[serde(rename = "personality.get")]
+    PersonalityGet {},
+    /// Choose your personality (only ever your own). Answered by personality.shown.
+    #[serde(rename = "personality.set")]
+    PersonalitySet {
+        /// A preset's id from personality.shown, or custom.
+        preset: String,
+        /// Your own words, used with custom.
+        #[serde(default)]
+        custom: String,
+    },
+    /// Send a message. Answered by ck; the turn's events follow. While a turn is running the
     /// text joins it at its next step instead.
     #[serde(rename = "turn.send")]
     TurnSend {
@@ -578,6 +590,8 @@ impl Request {
             Self::HeartbeatRun {} => "heartbeat.run",
             Self::StartupGet {} => "startup.get",
             Self::StartupSet { .. } => "startup.set",
+            Self::PersonalityGet {} => "personality.get",
+            Self::PersonalitySet { .. } => "personality.set",
             Self::TurnSend { .. } => "turn.send",
             Self::CheckpointPreview { .. } => "checkpoint.preview",
             Self::TurnRewind { .. } => "turn.rewind",
@@ -766,7 +780,17 @@ pub enum Reply {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         next_run: Option<i64>,
     },
-    /// Answer to `startup.get` and `startup.set`.
+    /// Answer to personality.get and personality.set.
+    #[serde(rename = "personality.shown")]
+    PersonalityShown {
+        /// The chosen preset's id, or custom.
+        preset: String,
+        /// Your own words (kept even while a preset is chosen).
+        custom: String,
+        /// The presets on offer, standard first.
+        presets: Vec<PersonalityPreset>,
+    },
+    /// Answer to startup.get and startup.set.
     #[serde(rename = "startup.shown")]
     StartupShown {
         /// This system can start Thrall at sign-in (the desktop app is installed beside the engine).
@@ -1095,6 +1119,17 @@ pub struct FactInfo {
     pub content: String,
     /// When it was saved, Unix ms.
     pub at: i64,
+}
+
+/// A personality preset, for the settings screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PersonalityPreset {
+    /// Its id (personality.set {preset}).
+    pub id: String,
+    /// Its name.
+    pub name: String,
+    /// One line about it.
+    pub description: String,
 }
 
 /// A skill, for the settings screen.
