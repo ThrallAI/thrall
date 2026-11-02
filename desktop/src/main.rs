@@ -35,7 +35,7 @@ use tokio::sync::mpsc;
 use crate::constants::{
     DEFAULT_LOG_LEVEL, DESKTOP_QUERY, DONE_HOLD, HIDDEN_ARG, LOG_FILE_PREFIX, LOG_LEVEL_ENV,
     MAIN_WINDOW, MENU_AUTOSTART, MENU_OPEN, MENU_QUIT, NOTE_TAP, NOTES_REMEMBERED, OPEN_SESSION_JS,
-    QUIT_CANCEL, QUIT_KEEP, QUIT_MESSAGE, QUIT_STOP, RECONNECT_DELAY, SETUP_RECHECK,
+    QUIT_CANCEL, QUIT_KEEP, QUIT_PHONES_WAIT, QUIT_STOP, RECONNECT_DELAY, SETUP_RECHECK,
     SHORTCUT_RECHECK, SHORTCUT_TAKEN, SHORTCUT_TAKEN_TITLE, SHOW_SETUP_JS, TITLE_LOOKUP,
     TRAY_FRAME, TRAY_ID, TRAY_PX,
 };
@@ -60,6 +60,8 @@ struct Shared {
     autostart_item: Mutex<Option<CheckMenuItem<tauri::Wry>>>,
     /// First run: the setup page saved the AI key, so the engine can start.
     key_saved: tokio::sync::Notify,
+    /// Quit waiting to hear how many phones are connected.
+    quit_phones: Mutex<Option<tokio::sync::oneshot::Sender<usize>>>,
 }
 
 /// Whether the AI key Thrall needs is there (in the environment or the system keychain).
@@ -316,7 +318,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 }
                 refresh_autostart(app);
             }
-            MENU_QUIT => ask_to_quit(app),
+            MENU_QUIT => start_quit(app),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -351,12 +353,42 @@ fn refresh_autostart(app: &AppHandle) {
     }
 }
 
+/// Quit first asks the engine which phones are connected (stopping it would cut them off), then
+/// asks the person. Without an answer in time it asks without naming them.
+fn start_quit(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let shared = app.state::<Shared>();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        // Ready for the answer before the question goes out.
+        if let Ok(mut wait) = shared.quit_phones.lock() {
+            *wait = Some(tx);
+        }
+        let asked = shared
+            .engine
+            .lock()
+            .ok()
+            .and_then(|e| e.clone())
+            .is_some_and(|out| out.send(engine::phones_frame()).is_ok());
+        let phones = if asked {
+            tokio::time::timeout(QUIT_PHONES_WAIT, rx)
+                .await
+                .ok()
+                .and_then(Result::ok)
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        ask_to_quit(&app, phones);
+    });
+}
+
 /// Quit asks whether to stop the engine too (it runs sessions, scheduled jobs and the other
-/// clients' connections).
-fn ask_to_quit(app: &AppHandle) {
+/// clients' connections, phones included).
+fn ask_to_quit(app: &AppHandle, phones: usize) {
     let handle = app.clone();
     app.dialog()
-        .message(QUIT_MESSAGE)
+        .message(engine::quit_message(phones))
         .title("Quit Thrall")
         .kind(MessageDialogKind::Info)
         .buttons(MessageDialogButtons::YesNoCancelCustom(
@@ -458,6 +490,18 @@ async fn run_engine(app: AppHandle) {
                     }
                 }
                 while let Some(msg) = conn.incoming.recv().await {
+                    if let Incoming::PhonesConnected(n) = msg {
+                        let wait = app
+                            .state::<Shared>()
+                            .quit_phones
+                            .lock()
+                            .ok()
+                            .and_then(|mut w| w.take());
+                        if let Some(tx) = wait {
+                            let _ = tx.send(n);
+                        }
+                        continue;
+                    }
                     let (note, unknown) = match app.state::<Shared>().watch.lock() {
                         Ok(mut watch) => match &msg {
                             Incoming::Sessions(items) => {
@@ -468,6 +512,7 @@ async fn run_engine(app: AppHandle) {
                                 let unknown = !watch.knows(&frame.session);
                                 (watch.apply(frame), unknown)
                             }
+                            Incoming::PhonesConnected(_) => (None, false),
                         },
                         Err(_) => (None, false),
                     };
