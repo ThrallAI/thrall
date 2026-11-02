@@ -19,10 +19,13 @@ fn slow_server() -> String {
 }
 
 fn pattern(text: &str) -> regex::Regex {
-    regex::RegexBuilder::new(text)
+    match regex::RegexBuilder::new(text)
         .case_insensitive(true)
         .build()
-        .unwrap()
+    {
+        Ok(re) => re,
+        Err(e) => panic!("bad test pattern: {e}"),
+    }
 }
 
 #[tokio::test]
