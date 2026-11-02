@@ -73,6 +73,57 @@ pub const SKILL_RUN_HELPER: &str = "helper";
 pub const SKILL_NAME_MAX_CHARS: usize = 48;
 /// Longest description a proposed skill may have.
 pub const SKILL_DESCRIPTION_MAX_CHARS: usize = 300;
+/// `learned_from` for a skill the person taught (or wrote themselves).
+pub const SKILL_SOURCE_USER: &str = "user";
+/// `learned_from` for a skill Thrall worked out in its own work.
+pub const SKILL_SOURCE_MY_WORK: &str = "my_work";
+/// `learned_from` for a skill made from the person's files.
+pub const SKILL_SOURCE_FILES: &str = "files";
+
+/// Helper types folder name (in the data folder and in a project's `.thrall`).
+pub const AGENTS_DIR: &str = "agents";
+/// A helper type's file extension.
+pub const AGENT_FILE_EXT: &str = "md";
+
+/// Thrall's own helper types: (name, what it's for, read only, instructions).
+pub const AGENT_TYPES: &[(&str, &str, bool, &str)] = &[
+    (
+        "researcher",
+        "Finds things out: searches the web, the codebase or documents and reports back with sources",
+        true,
+        "You are a researcher. Find out what the task asks and report it plainly. Search broadly \
+         first, then read the best sources in full. Say where each fact came from (a link, or a \
+         file and line). Separate what you found from what you think. If sources disagree, say so. \
+         Don't change anything.",
+    ),
+    (
+        "coder",
+        "Writes and changes code or files for one well-defined piece of work",
+        false,
+        "You are a coder. Make the change the task describes, and only that. Read the code around \
+         it first and match its style. Keep changes small. After changing something, check it: \
+         build, run the tests or read the result back. Finish with what you changed (files) and \
+         how you checked it.",
+    ),
+    (
+        "reviewer",
+        "Reviews work for mistakes: bugs, security problems, missing cases, things that don't match the request",
+        true,
+        "You are a reviewer. Look for real problems in the work the task names: bugs, security \
+         holes, missing cases, and places it doesn't do what was asked. For each, say where it is, \
+         what goes wrong and how you know. Put the most serious first. Don't report style \
+         preferences as problems, and don't change anything. If you find nothing wrong, say so.",
+    ),
+    (
+        "planner",
+        "Works out how to do something bigger: the steps, their order, and the risks",
+        true,
+        "You are a planner. Work out how to do what the task asks: look at what's there now, then \
+         give the steps in order, what each changes, what could go wrong, and how to check each \
+         one. Pick one approach and say why; mention another only when it's a real choice. Don't \
+         change anything.",
+    ),
+];
 
 /// The shortest repeat a scheduled job may have.
 pub const MIN_INTERVAL_SECS: i64 = 5 * 60;
@@ -168,6 +219,10 @@ pub const BROWSER_WINDOW_HEIGHT: u32 = 900;
 
 /// Longest wait for a page to load or answer, in seconds.
 pub const BROWSER_TIMEOUT_SECS: u64 = 30;
+
+/// Longest Chrome may take to start, in seconds. The library's own 20 isn't enough on a slow or
+/// busy PC (or several starting at once), the first start after an update especially.
+pub const BROWSER_LAUNCH_SECS: u64 = 60;
 
 /// Longest one browser action (click, fill, read, back, screenshot) may take in all, in seconds:
 /// a page that stops answering fails the step instead of holding the turn.

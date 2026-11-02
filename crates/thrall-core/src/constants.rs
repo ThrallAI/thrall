@@ -22,6 +22,16 @@ pub const LOGS_DIR: &str = "logs";
 /// answers, unless `[agent] question_wait_minutes` says otherwise.
 pub const DEFAULT_QUESTION_WAIT_MINUTES: u32 = 5;
 
+/// How many helpers work at the same time, unless `[agent] helpers_at_once` says otherwise.
+pub const DEFAULT_HELPERS_AT_ONCE: u32 = 3;
+
+/// Most helpers that may work at the same time, whatever the setting says.
+pub const MAX_HELPERS_AT_ONCE: u32 = 8;
+
+/// What one helper may spend before it's stopped, in US cents, unless `[agent]
+/// helper_cost_limit_cents` says otherwise (0: no limit).
+pub const DEFAULT_HELPER_COST_LIMIT_CENTS: u32 = 100;
+
 /// The engine's access token (local mode): clients read it to connect. Created at first start.
 pub const TOKEN_FILE: &str = "access-token";
 
@@ -225,6 +235,8 @@ pub const EDITABLE_SETTINGS: &[&str] = &[
     "agent.claim_check",
     "agent.questions",
     "agent.question_wait_minutes",
+    "agent.helpers_at_once",
+    "agent.helper_cost_limit_cents",
     "memory.remember_conversations",
     "memory.context_limit_tokens",
     "memory.embedding_model",

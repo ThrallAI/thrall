@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use crate::constants::{
     PROJECT_DIR, SKILL_FILE, SKILL_MAX_CHARS, SKILL_NAME_MAX_CHARS, SKILL_RISK_COMMANDS,
     SKILL_RISK_DELETES, SKILL_RISK_RUNS_DOWNLOADS, SKILL_RISK_SECRETS, SKILL_RISK_SENDS,
-    SKILL_RUN_HELPER, SKILLS_DIR,
+    SKILL_RUN_HELPER, SKILL_SOURCE_FILES, SKILL_SOURCE_MY_WORK, SKILL_SOURCE_USER, SKILLS_DIR,
 };
 
 /// One skill.
@@ -75,29 +75,43 @@ struct Front {
     rating: Option<Rating>,
 }
 
-/// Split `---` front matter (simple `key: value` lines) from the body.
-fn parse(text: &str) -> (Front, String) {
+/// Split `---` front matter (simple `key: value` lines) from the body: the pairs in order, and the
+/// body. No front matter: no pairs, the whole text.
+pub(crate) fn front_matter(text: &str) -> (Vec<(String, String)>, String) {
     let text = text.trim_start_matches('\u{feff}');
     let Some(rest) = text.strip_prefix("---") else {
-        return (Front::default(), text.to_owned());
+        return (Vec::new(), text.to_owned());
     };
     let Some((front, body)) = rest.split_once("\n---") else {
-        return (Front::default(), text.to_owned());
+        return (Vec::new(), text.to_owned());
     };
+    let pairs = front
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .map(|(key, value)| {
+            (
+                key.trim().to_owned(),
+                value.trim().trim_matches('"').to_owned(),
+            )
+        })
+        .collect();
+    let body = body.trim_start_matches(['-', '\r', '\n']).trim().to_owned();
+    (pairs, body)
+}
+
+/// A `SKILL.md`'s front matter and body.
+fn parse(text: &str) -> (Front, String) {
+    let (pairs, body) = front_matter(text);
     let mut out = Front::default();
-    for line in front.lines() {
-        if let Some((key, value)) = line.split_once(':') {
-            let value = value.trim().trim_matches('"').to_owned();
-            match key.trim() {
-                "name" => out.name = Some(value),
-                "description" => out.description = Some(value),
-                "run" => out.helper = value.eq_ignore_ascii_case(SKILL_RUN_HELPER),
-                "rating" => out.rating = Rating::parse(&value),
-                _ => {}
-            }
+    for (key, value) in pairs {
+        match key.as_str() {
+            "name" => out.name = Some(value),
+            "description" => out.description = Some(value),
+            "run" => out.helper = value.eq_ignore_ascii_case(SKILL_RUN_HELPER),
+            "rating" => out.rating = Rating::parse(&value),
+            _ => {}
         }
     }
-    let body = body.trim_start_matches(['-', '\r', '\n']).trim().to_owned();
     (out, body)
 }
 
@@ -211,8 +225,8 @@ pub fn skill_file(
 /// Where a learned skill's knowledge came from (`skill_propose {learned_from}`).
 pub fn source_rating(source: &str) -> Rating {
     match source.trim().to_ascii_lowercase().as_str() {
-        "user" | "my_work" => Rating::Low,
-        "files" => Rating::Medium,
+        SKILL_SOURCE_USER | SKILL_SOURCE_MY_WORK => Rating::Low,
+        SKILL_SOURCE_FILES => Rating::Medium,
         // The web, a download, an MCP server, or anything unknown.
         _ => Rating::High,
     }

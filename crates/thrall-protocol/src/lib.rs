@@ -14,9 +14,10 @@ pub use events::{
 };
 pub use requests::{
     AppRelease, ClientInfo, ClientKind, CommandItem, DeviceInfo, EngineInfo, FactInfo, FolderEntry,
-    GroupInfo, KeyStatus, LessonInfo, Limits, LocalFound, ModeLimit, PersonInfo, PersonalityPreset,
-    PhoneInfo, RemoteInfo, Reply, ReplyFrame, Request, RequestFrame, RewindAction, RewindFile,
-    SessionInfo, SessionState, SettingValue, SkillInfo, UserInfo,
+    GroupInfo, HelperTypeInfo, KeyStatus, LessonInfo, Limits, LocalFound, ModeLimit, PersonInfo,
+    PersonalityPreset, PhoneInfo, RemoteInfo, Reply, ReplyFrame, Request, RequestFrame,
+    RewindAction, RewindFile, SessionInfo, SessionState, SettingValue, SkillDetail, SkillInfo,
+    UserInfo,
 };
 
 /// Whether this build can talk to a peer speaking protocol major `version`.

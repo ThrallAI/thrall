@@ -154,6 +154,10 @@ pub(crate) async fn hand_off(
         mode,
         cancel,
         Some(&mut doer),
+        crate::workers::Helping {
+            kind: None,
+            step: Some(&step),
+        },
     )
     .await?;
     for path in &doer.edited {
@@ -264,6 +268,7 @@ async fn start_step(
             step: step.clone(),
             tool: tool.to_owned(),
             title: title.to_owned(),
+            helper: None,
         })
         .await?;
     if emitter.records() {

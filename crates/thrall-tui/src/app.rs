@@ -22,9 +22,10 @@ use thrall_protocol::{
 };
 
 use crate::constants::{
-    CARD_SETTLE, CARD_TYPING_GAP, CLIENT_COMMANDS, HINTS, INPUT_MAX_LINES, INPUT_PLACEHOLDER,
-    PAGE_SCROLL_LINES, PASTE_ENTER_WINDOW, PERMISSION_DIFF_MAX_LINES, PERMISSION_SUMMARY_MAX_LINES,
-    QUESTION_TIMEOUT, QUESTION_TYPE_HINT, SUGGESTIONS_MAX, TASKS_MAX_SHOWN,
+    CARD_SETTLE, CARD_TYPING_GAP, CLIENT_COMMANDS, HELPER_STEP_MARK, HINTS, INPUT_MAX_LINES,
+    INPUT_PLACEHOLDER, PAGE_SCROLL_LINES, PASTE_ENTER_WINDOW, PERMISSION_DIFF_MAX_LINES,
+    PERMISSION_SUMMARY_MAX_LINES, QUESTION_TIMEOUT, QUESTION_TYPE_HINT, SUGGESTIONS_MAX,
+    TASKS_MAX_SHOWN,
 };
 use crate::transcript::{Kind, Transcript};
 use crate::{plain, theme};
@@ -306,9 +307,19 @@ impl App {
                     },
                 );
             }
-            Event::StepStarted { step, title, .. } => self.transcript.push(Kind::Step {
-                id: step,
+            Event::StepStarted {
+                step,
                 title,
+                helper,
+                ..
+            } => self.transcript.push(Kind::Step {
+                id: step,
+                // A helper's steps are marked as its own (helpers can work side by side).
+                title: if helper.is_some() {
+                    format!("{HELPER_STEP_MARK}{title}")
+                } else {
+                    title
+                },
                 status: None,
                 summary: String::new(),
                 output: String::new(),

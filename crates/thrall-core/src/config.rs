@@ -447,6 +447,23 @@ pub struct AgentConfig {
     pub questions: Questions,
     /// How long a question card waits before Thrall goes ahead with its recommended answers.
     pub question_wait_minutes: u32,
+    /// How many helpers work at the same time (1 to `MAX_HELPERS_AT_ONCE`).
+    pub helpers_at_once: u32,
+    /// What one helper may spend before it's stopped, in US cents (0: no limit).
+    pub helper_cost_limit_cents: u32,
+}
+
+impl AgentConfig {
+    /// How many helpers may work at once, kept within 1 and `MAX_HELPERS_AT_ONCE`.
+    pub fn helpers_at_once(&self) -> usize {
+        self.helpers_at_once
+            .clamp(1, crate::constants::MAX_HELPERS_AT_ONCE) as usize
+    }
+
+    /// What one helper may spend in US dollars, if there's a limit.
+    pub fn helper_cost_limit_usd(&self) -> Option<f64> {
+        (self.helper_cost_limit_cents > 0).then(|| f64::from(self.helper_cost_limit_cents) / 100.0)
+    }
 }
 
 impl Default for AgentConfig {
@@ -456,6 +473,8 @@ impl Default for AgentConfig {
             claim_check: true,
             questions: Questions::default(),
             question_wait_minutes: crate::constants::DEFAULT_QUESTION_WAIT_MINUTES,
+            helpers_at_once: crate::constants::DEFAULT_HELPERS_AT_ONCE,
+            helper_cost_limit_cents: crate::constants::DEFAULT_HELPER_COST_LIMIT_CENTS,
         }
     }
 }
