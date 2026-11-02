@@ -18,6 +18,10 @@ pub const DB_FILE: &str = "thrall.db";
 /// Log folder name inside the data folder.
 pub const LOGS_DIR: &str = "logs";
 
+/// How long a question card waits for an answer before Thrall goes ahead with its recommended
+/// answers, unless `[agent] question_wait_minutes` says otherwise.
+pub const DEFAULT_QUESTION_WAIT_MINUTES: u32 = 5;
+
 /// The engine's access token (local mode): clients read it to connect. Created at first start.
 pub const TOKEN_FILE: &str = "access-token";
 
@@ -195,6 +199,8 @@ pub const EDITABLE_SETTINGS: &[&str] = &[
     "provider.fal_base_url",
     "agent.verify",
     "agent.claim_check",
+    "agent.questions",
+    "agent.question_wait_minutes",
     "memory.remember_conversations",
     "memory.context_limit_tokens",
     "memory.embedding_model",

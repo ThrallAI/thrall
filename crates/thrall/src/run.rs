@@ -343,6 +343,21 @@ impl Printer {
                     })
                     .await;
             }
+            // Thrall's recommended answers: a script has nobody to ask (a person at a terminal
+            // can still answer from the desktop app or phone, which beats this).
+            Event::QuestionAsk {
+                question, items, ..
+            } => {
+                if !self.quiet {
+                    for q in &items {
+                        eprintln!("  Thrall asked: {} (going with: {})", q.text, q.recommended);
+                    }
+                }
+                let answers = items.into_iter().map(|q| q.recommended).collect();
+                let _ = client
+                    .request(Request::QuestionAnswer { question, answers })
+                    .await;
+            }
             Event::Error { message, .. } => self.error = Some(message),
             _ => {}
         }

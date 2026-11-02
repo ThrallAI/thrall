@@ -378,6 +378,10 @@ async fn handle(
                     approve,
                     auto_edits,
                 },
+                Answer::Question(answers) => Request::QuestionAnswer {
+                    question: request,
+                    answers,
+                },
             };
             if let Err(e) = client.request(req).await {
                 // Answered elsewhere, or the turn is gone: the card has nothing left to do.

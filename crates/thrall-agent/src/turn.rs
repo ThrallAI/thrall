@@ -1303,6 +1303,8 @@ async fn context(
              read-only. Make one such call at a time, and don't use it to change anything.",
         );
     }
+    system.push_str("\n\n");
+    system.push_str(crate::questions::note(state.config.agent.questions, mode));
     if session::get(state, session_id)
         .await
         .is_ok_and(|s| s.home_day.is_some())

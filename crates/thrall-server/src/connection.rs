@@ -788,6 +788,13 @@ impl Connection {
                         vec![already_answered(id)]
                     }
                 }
+                Request::QuestionAnswer { question, answers } => {
+                    if hub.answer(&self.person.id, &question, Answer::Question(answers), by) {
+                        vec![reply(id, Reply::Ack {})]
+                    } else {
+                        vec![already_answered(id)]
+                    }
+                }
                 Request::SessionWatchAll {} => {
                     self.watch_all = true;
                     vec![reply(id, Reply::Ack {})]

@@ -770,6 +770,73 @@
           ]
         },
         {
+          "description": "Thrall needs information it can't safely guess (not permission). One card holds every\nquestion of the turn, each with Thrall's recommended answer picked. Nobody answering by\n`expires_at` means the recommended answers are used.",
+          "type": "object",
+          "properties": {
+            "expires_at": {
+              "description": "When Thrall goes ahead with its recommended answers, Unix ms.",
+              "type": "integer",
+              "format": "int64"
+            },
+            "items": {
+              "description": "The questions, in order.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/QuestionItem"
+              }
+            },
+            "question": {
+              "description": "Question id; answers quote it.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "question.ask"
+            },
+            "why": {
+              "description": "Why Thrall is asking instead of deciding, in a sentence.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "question",
+            "items",
+            "expires_at"
+          ]
+        },
+        {
+          "description": "A question card was answered, or ran out of time.",
+          "type": "object",
+          "properties": {
+            "answered_by": {
+              "description": "Which client answered; `timeout` when nobody did and the recommended answers were used.",
+              "type": "string"
+            },
+            "answers": {
+              "description": "One answer per question, in order.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "question": {
+              "description": "Question id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "question.resolved"
+            }
+          },
+          "required": [
+            "type",
+            "question",
+            "answers",
+            "answered_by"
+          ]
+        },
+        {
           "description": "A permission request was answered.",
           "type": "object",
           "properties": {
@@ -1314,6 +1381,31 @@
         "phone",
         "name",
         "added"
+      ]
+    },
+    "QuestionItem": {
+      "description": "One question on a `question.ask` card.",
+      "type": "object",
+      "properties": {
+        "options": {
+          "description": "Answers to pick from (the person can always type their own instead).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recommended": {
+          "description": "Thrall's recommended answer: picked to start with, and used if nobody answers.",
+          "type": "string"
+        },
+        "text": {
+          "description": "The question, in plain words.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "recommended"
       ]
     },
     "RemoteInfo": {
@@ -2902,6 +2994,32 @@
             "type",
             "plan",
             "approve"
+          ]
+        },
+        {
+          "description": "Answer a `question.ask`: one answer per question, in order. Answered by `ack`, or\n`error {already_answered}`.",
+          "type": "object",
+          "properties": {
+            "answers": {
+              "description": "One answer per question.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "question": {
+              "description": "Question id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "question.answer"
+            }
+          },
+          "required": [
+            "type",
+            "question",
+            "answers"
           ]
         },
         {
