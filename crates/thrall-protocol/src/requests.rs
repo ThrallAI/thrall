@@ -426,6 +426,11 @@ pub enum Request {
         /// `anthropic`, `google`, `elevenlabs`).
         supplier: String,
     },
+    /// Look on this computer for programs and model servers that can do Thrall's jobs (Ollama,
+    /// LM Studio, whisper.cpp, Piper, a Stable Diffusion web UI). Nothing is installed or
+    /// downloaded. The owner only. Answered by `local.found`.
+    #[serde(rename = "local.find")]
+    LocalFind {},
     /// Paired phones and the phone link's state. Not on the phone link itself. Answered by
     /// `phone.listed`.
     #[serde(rename = "phone.list")]
@@ -662,6 +667,7 @@ impl Request {
             Self::SettingsGet {} => "settings.get",
             Self::SettingsSet { .. } => "settings.set",
             Self::ProviderTest { .. } => "provider.test",
+            Self::LocalFind {} => "local.find",
             Self::PhoneList {} => "phone.list",
             Self::PhonePair { .. } => "phone.pair",
             Self::PhoneAssign { .. } => "phone.assign",
@@ -952,6 +958,16 @@ pub enum Reply {
         /// Helper types Thrall can hand work to: its own and the person's (`agents/<name>.md`).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         helper_types: Vec<HelperTypeInfo>,
+    },
+    /// Answer to `local.find`.
+    #[serde(rename = "local.found")]
+    LocalFound {
+        /// What was found, and what wasn't, job by job.
+        items: Vec<LocalFound>,
+        /// The folder local models go in (whisper.cpp models in `whisper/`, Piper voices in
+        /// `piper/`), when Thrall has a data folder.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        models_dir: Option<String>,
     },
     /// Answer to `provider.test`.
     #[serde(rename = "provider.tested")]
@@ -1346,6 +1362,22 @@ pub struct KeyStatus {
     pub purpose: String,
     /// Whether it's stored.
     pub set: bool,
+}
+
+/// A program or model server found on this computer, for one of Thrall's jobs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LocalFound {
+    /// The job: `chat`, `transcribe`, `speak` or `pictures`.
+    pub job: String,
+    /// What it is (`Ollama`, `whisper.cpp`).
+    pub name: String,
+    /// It can do the job now (installed, running, with a model).
+    pub ready: bool,
+    /// What it has, or what's missing and how to add it.
+    pub note: String,
+    /// Model ids to pick for the job, as Thrall takes them (`program/whisper/ggml-base.en`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<String>,
 }
 
 /// About the engine.

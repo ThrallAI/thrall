@@ -220,6 +220,7 @@ export const SUPPLIERS: readonly Supplier[] = [
   { id: "google", name: "Google", prefix: "direct/google/", key: "google", about: "Gemini models directly, with your own Google AI key" },
   { id: "elevenlabs", name: "ElevenLabs", prefix: "direct/elevenlabs/", key: "elevenlabs", about: "Natural voices; the voice is an ElevenLabs voice id" },
   { id: "local", name: "This computer (local)", prefix: "local/", about: "Ollama or LM Studio: free, and nothing leaves your network" },
+  { id: "program", name: "Programs on this computer", prefix: "program/", about: "whisper.cpp, Piper or a Stable Diffusion web UI you've installed: free" },
   { id: "fal", name: "fal.ai", prefix: "", key: "fal", about: "Makes videos" },
 ];
 
@@ -227,11 +228,27 @@ export const SUPPLIERS: readonly Supplier[] = [
 export const JOBS: ReadonlyArray<{ key: string; label: string; suppliers: readonly string[] }> = [
   { key: "provider.model", label: "Chat", suppliers: ["openrouter", "chatgpt", "openai", "anthropic", "google", "local"] },
   { key: "provider.vision_model", label: "Reads pictures", suppliers: ["openrouter", "openai", "anthropic", "google", "local"] },
-  { key: "provider.image_model", label: "Makes pictures", suppliers: ["openrouter"] },
-  { key: "provider.speech_model", label: "Speaks", suppliers: ["openrouter", "openai", "elevenlabs"] },
-  { key: "provider.transcribe_model", label: "Transcribes", suppliers: ["openrouter", "openai", "google"] },
+  { key: "provider.image_model", label: "Makes pictures", suppliers: ["openrouter", "program"] },
+  { key: "provider.speech_model", label: "Speaks", suppliers: ["openrouter", "openai", "elevenlabs", "program"] },
+  { key: "provider.transcribe_model", label: "Transcribes", suppliers: ["openrouter", "openai", "google", "program"] },
   { key: "memory.embedding_model", label: "Memory search", suppliers: ["openrouter", "openai", "google"] },
 ];
+
+/** Which setting each job `local.found` reports on is saved to when its model is picked. */
+export const LOCAL_JOB_SETTINGS: Readonly<Record<string, string>> = {
+  chat: "provider.model",
+  transcribe: "provider.transcribe_model",
+  speak: "provider.speech_model",
+  pictures: "provider.image_model",
+};
+
+/** What each of those jobs is called on screen. */
+export const LOCAL_JOB_LABELS: Readonly<Record<string, string>> = {
+  chat: "Chat",
+  transcribe: "Transcribes",
+  speak: "Speaks",
+  pictures: "Makes pictures",
+};
 
 /** How often the settings screen checks whether a ChatGPT sign-in has landed. */
 export const SIGN_IN_POLL_MS = 2000;

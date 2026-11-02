@@ -1,7 +1,7 @@
 //! The core tools.
 
 mod archive;
-mod audio;
+pub(crate) mod audio;
 mod browse;
 mod calc;
 mod clipboard;

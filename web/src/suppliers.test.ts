@@ -8,6 +8,7 @@ describe("supplierOf", () => {
     expect(supplierOf("direct/elevenlabs/eleven_multilingual_v2").id).toBe("elevenlabs");
     expect(supplierOf("local/llama3.1").id).toBe("local");
     expect(supplierOf("chatgpt/gpt-5.3-codex").id).toBe("chatgpt");
+    expect(supplierOf("program/whisper/ggml-base.en").id).toBe("program");
   });
 
   it("gives OpenRouter everything else, its own vendor names included", () => {

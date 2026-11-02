@@ -1167,6 +1167,10 @@ impl Connection {
                     id,
                     thrall_agent::settings::shown(&self.me(), hub.settings_pending()).await,
                 )],
+                Request::LocalFind {} => vec![reply(
+                    id,
+                    thrall_agent::settings::local_found(&hub.state()).await,
+                )],
                 Request::ProviderTest { supplier } => vec![reply(
                     id,
                     thrall_agent::settings::test_supplier(&hub.state(), supplier.trim()).await,
@@ -1418,6 +1422,7 @@ fn owner_only(request: &Request) -> bool {
     match request {
         Request::SettingsSet { .. }
         | Request::ProviderTest { .. }
+        | Request::LocalFind {}
         | Request::HeartbeatGet {}
         | Request::HeartbeatSet { .. }
         | Request::HeartbeatRun {}

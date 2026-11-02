@@ -1285,6 +1285,41 @@
         "frame_bytes"
       ]
     },
+    "LocalFound": {
+      "description": "A program or model server found on this computer, for one of Thrall's jobs.",
+      "type": "object",
+      "properties": {
+        "job": {
+          "description": "The job: `chat`, `transcribe`, `speak` or `pictures`.",
+          "type": "string"
+        },
+        "models": {
+          "description": "Model ids to pick for the job, as Thrall takes them (`program/whisper/ggml-base.en`).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "description": "What it is (`Ollama`, `whisper.cpp`).",
+          "type": "string"
+        },
+        "note": {
+          "description": "What it has, or what's missing and how to add it.",
+          "type": "string"
+        },
+        "ready": {
+          "description": "It can do the job now (installed, running, with a model).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "job",
+        "name",
+        "ready",
+        "note"
+      ]
+    },
     "ModeLimit": {
       "description": "How long Full auto lasts in a session.",
       "type": "object",
@@ -2098,6 +2133,34 @@
             "config",
             "model",
             "keys"
+          ]
+        },
+        {
+          "description": "Answer to `local.find`.",
+          "type": "object",
+          "properties": {
+            "items": {
+              "description": "What was found, and what wasn't, job by job.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/LocalFound"
+              }
+            },
+            "models_dir": {
+              "description": "The folder local models go in (whisper.cpp models in `whisper/`, Piper voices in\n`piper/`), when Thrall has a data folder.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "local.found"
+            }
+          },
+          "required": [
+            "type",
+            "items"
           ]
         },
         {
@@ -3590,6 +3653,19 @@
           "required": [
             "type",
             "supplier"
+          ]
+        },
+        {
+          "description": "Look on this computer for programs and model servers that can do Thrall's jobs (Ollama,\nLM Studio, whisper.cpp, Piper, a Stable Diffusion web UI). Nothing is installed or\ndownloaded. The owner only. Answered by `local.found`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "local.find"
+            }
+          },
+          "required": [
+            "type"
           ]
         },
         {

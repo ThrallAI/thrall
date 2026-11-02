@@ -9,6 +9,7 @@ pub mod documents;
 pub mod office;
 pub mod paths;
 pub mod process;
+pub mod programs;
 pub mod saved;
 pub mod skills;
 pub mod style;

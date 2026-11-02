@@ -458,6 +458,9 @@ export type RequestFrame = {
       type: "provider.test";
     }
   | {
+      type: "local.find";
+    }
+  | {
       type: "phone.list";
     }
   | {
@@ -911,6 +914,18 @@ export type ReplyFrame = {
        */
       skills?: SkillInfo[];
       type: "settings.shown";
+    }
+  | {
+      /**
+       * What was found, and what wasn't, job by job.
+       */
+      items: LocalFound[];
+      /**
+       * The folder local models go in (whisper.cpp models in `whisper/`, Piper voices in
+       * `piper/`), when Thrall has a data folder.
+       */
+      models_dir?: string | null;
+      type: "local.found";
     }
   | {
       /**
@@ -1903,6 +1918,31 @@ export interface SkillInfo {
    * written by hand).
    */
   rating?: string | null;
+}
+/**
+ * A program or model server found on this computer, for one of Thrall's jobs.
+ */
+export interface LocalFound {
+  /**
+   * The job: `chat`, `transcribe`, `speak` or `pictures`.
+   */
+  job: string;
+  /**
+   * Model ids to pick for the job, as Thrall takes them (`program/whisper/ggml-base.en`).
+   */
+  models?: string[];
+  /**
+   * What it is (`Ollama`, `whisper.cpp`).
+   */
+  name: string;
+  /**
+   * What it has, or what's missing and how to add it.
+   */
+  note: string;
+  /**
+   * It can do the job now (installed, running, with a model).
+   */
+  ready: boolean;
 }
 /**
  * A paired phone.

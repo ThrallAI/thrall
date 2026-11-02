@@ -14,7 +14,7 @@ pub use events::{
 };
 pub use requests::{
     AppRelease, ClientInfo, ClientKind, CommandItem, DeviceInfo, EngineInfo, FactInfo, FolderEntry,
-    GroupInfo, HelperTypeInfo, KeyStatus, LessonInfo, Limits, ModeLimit, PersonInfo,
+    GroupInfo, HelperTypeInfo, KeyStatus, LessonInfo, Limits, LocalFound, ModeLimit, PersonInfo,
     PersonalityPreset, PhoneInfo, RemoteInfo, Reply, ReplyFrame, Request, RequestFrame,
     RewindAction, RewindFile, SessionInfo, SessionState, SettingValue, SkillDetail, SkillInfo,
     UserInfo,

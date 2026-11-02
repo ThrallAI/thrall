@@ -107,7 +107,7 @@ struct DownloadArgs {
 
 /// A program on the PATH, or where winget puts it: its links, its package folder, or a `bin`
 /// folder one level inside that (winget's PATH entry only reaches programs started later).
-fn find_program(stem: &str, winget_package: &str) -> Option<PathBuf> {
+pub(crate) fn find_program(stem: &str, winget_package: &str) -> Option<PathBuf> {
     let name = if cfg!(windows) {
         format!("{stem}.exe")
     } else {

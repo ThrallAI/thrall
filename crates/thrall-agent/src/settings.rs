@@ -198,6 +198,25 @@ pub async fn test_supplier(state: &AppState, supplier: &str) -> Reply {
     }
 }
 
+/// The `local.found` answer: programs and model servers on this computer, job by job.
+pub async fn local_found(state: &AppState) -> Reply {
+    let models_dir = state
+        .data_dir
+        .as_deref()
+        .map(thrall_tools::programs::models_dir);
+    let provider = &state.config.provider;
+    let items = match &models_dir {
+        Some(dir) => {
+            thrall_tools::programs::find(dir, &provider.local_base_url, &provider.sd_webui_url)
+                .await
+        }
+        None => Vec::new(),
+    };
+    Reply::LocalFound {
+        items,
+        models_dir: models_dir.map(|d| d.display().to_string()),
+    }
+}
 /// The person's own skills (project skills belong to their folder and show there).
 fn skills(state: &AppState) -> Vec<SkillInfo> {
     let Some(data) = state.my_dir() else {

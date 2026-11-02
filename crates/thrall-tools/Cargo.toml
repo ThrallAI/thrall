@@ -13,6 +13,7 @@ thrall-store = { path = "../thrall-store" }
 thrall-gates = { path = "../thrall-gates" }
 thrall-mcp = { path = "../thrall-mcp" }
 thrall-memory = { path = "../thrall-memory" }
+thrall-llm = { path = "../thrall-llm" }
 tokio = { workspace = true, features = ["process", "io-util", "fs", "sync"] }
 futures.workspace = true
 serde.workspace = true

@@ -78,6 +78,11 @@ pub async fn build(paths: &Paths, config: Config) -> anyhow::Result<Option<AppSt
         };
         llm = llm.with_direct(s.id, provider);
     }
+    // Programs on this computer: `program/whisper`, `program/piper`, `program/sd-webui`.
+    llm = llm.with_programs(Arc::new(thrall_tools::programs::Programs::new(
+        thrall_tools::programs::models_dir(&paths.home),
+        &config.provider.sd_webui_url,
+    )));
     let mut state = AppState::new(
         config,
         Arc::new(store),
