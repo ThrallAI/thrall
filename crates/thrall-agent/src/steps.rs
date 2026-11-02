@@ -13,8 +13,8 @@ use thrall_protocol::{Event, PermissionChoice, Risk, StepStatus};
 use thrall_store::{AuditEntry, NewStep};
 use thrall_tools::tool::arg_str;
 use thrall_tools::tools::{
-    ASK_USER, DELEGATE, EXIT_PLAN_MODE, MAKE_IMAGE, MAKE_VIDEO, MEMORY_SAVE, SPEAK, TRANSCRIBE,
-    USE_SKILL, VIDEO_TRANSCRIPT, VIEW_IMAGE, find_skill, skill_text,
+    ASK_USER, DELEGATE, EXIT_PLAN_MODE, EXPERIENCE_NOTE, MAKE_IMAGE, MAKE_VIDEO, MEMORY_SAVE,
+    SPEAK, TRANSCRIBE, USE_SKILL, VIDEO_TRANSCRIPT, VIEW_IMAGE, find_skill, skill_text,
 };
 use thrall_tools::{Cancel, ToolContext, ToolOutput};
 use tokio::sync::mpsc;
@@ -216,6 +216,15 @@ pub(crate) async fn run_step(
         }
         Some(t) if t.name() == ASK_USER => {
             crate::questions::ask(emitter, state, &args, *mode, track, cancel).await?
+        }
+        Some(t) if t.name() == EXPERIENCE_NOTE => {
+            match crate::experience::note(state, arg_str(&args, "lesson")) {
+                Ok(lesson) => ToolOutput::ok(
+                    format!("Noted: {}", lesson.text),
+                    format!("Noted a lesson: {}", lesson.text),
+                ),
+                Err(why) => ToolOutput::error(why),
+            }
         }
         Some(t) if t.name() == EXIT_PLAN_MODE && *mode == Mode::Plan => {
             propose_plan(emitter, state, &args, mode, cancel).await?

@@ -1204,6 +1204,30 @@
         "set"
       ]
     },
+    "LessonInfo": {
+      "description": "A lesson in the experience log, for the settings screen.",
+      "type": "object",
+      "properties": {
+        "at": {
+          "description": "When it was noted, Unix ms.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "lesson": {
+          "description": "Its id.",
+          "type": "string"
+        },
+        "text": {
+          "description": "The lesson.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "lesson",
+        "text",
+        "at"
+      ]
+    },
     "Limits": {
       "description": "Limits a client must respect.",
       "type": "object",
@@ -1862,6 +1886,27 @@
             "text",
             "restored",
             "failed"
+          ]
+        },
+        {
+          "description": "Answer to `experience.list` and `experience.forget`.",
+          "type": "object",
+          "properties": {
+            "items": {
+              "description": "Newest first.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/LessonInfo"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "experience.listed"
+            }
+          },
+          "required": [
+            "type",
+            "items"
           ]
         },
         {
@@ -3204,6 +3249,37 @@
           "required": [
             "type",
             "name"
+          ]
+        },
+        {
+          "description": "The lessons in your experience log, newest first. Answered by `experience.listed`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "experience.list"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Delete a lesson from your experience log. Answered by `experience.listed`.",
+          "type": "object",
+          "properties": {
+            "lesson": {
+              "description": "The lesson's id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "experience.forget"
+            }
+          },
+          "required": [
+            "type",
+            "lesson"
           ]
         },
         {

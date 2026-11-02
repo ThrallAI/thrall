@@ -270,6 +270,8 @@ decides what it means.
 | Request | Result |
 |---|---|
 | `command.list {}` | `command.listed {items: [{name, summary, args_hint, skill?}]}`, for autocomplete. Items with `skill: true` are the person's own skills (turned on) and built-ins Thrall carries out itself (`/humanise <text or file>`, also typed `/humanize`; with `writing.detector_aware` on it also works on sentence-length variation and word choice): clients send `/name …` as a message (`turn.send`) and Thrall does it; a project's skills work typed the same way |
+| `experience.list {}` | `experience.listed {items: [{lesson, text, at}]}`: your experience log, newest first. Thrall notes a lesson (the `experience_note` tool, no permission needed) when you correct it or a step failed and it found what works; the newest 15 go into every turn's instructions |
+| `experience.forget {lesson}` | `experience.listed`; that lesson is gone (no such lesson: `not_found`) |
 | `memory.list {}` | `memory.listed {facts: [{fact, topic, content, at}]}`: the facts Thrall remembers, newest first |
 | `memory.forget {fact}` | `ack`: Thrall no longer recalls it (kept, marked forgotten); `error {not_found}` when there's no such fact |
 | `skill.remove {name}` | `settings.shown {…}`: deletes one of the person's own skills (its folder in the data folder) and takes it off the turned-off list; project skills can only be turned off. `error {invalid}` otherwise |

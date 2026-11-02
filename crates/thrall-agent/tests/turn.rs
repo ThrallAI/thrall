@@ -735,6 +735,36 @@ async fn full_auto_goes_with_thralls_own_answers() {
     )));
 }
 #[tokio::test]
+async fn a_noted_lesson_is_kept_and_followed_from_then_on() {
+    let (mut state, provider) = setup(vec![
+        tool_call(
+            "c1",
+            "experience_note",
+            r#"{"lesson": "  Use py,\n not python  "}"#,
+        ),
+        reply(&["Noted."]),
+        reply(&["Lessons"]),
+        reply(&["Using py."]),
+    ])
+    .await;
+    checks_off(&mut state);
+    let dir = workspace("lessons");
+    state.data_dir = Some(std::path::PathBuf::from(&dir).join("data"));
+    let s = session::create(&state, Some(dir.clone())).await.unwrap();
+    let (_, frames) = run_with(&state, &s.id, "that's wrong, use py", yes(), |_, _| {}).await;
+    assert!(
+        !kinds(&frames).contains(&"permission.request"),
+        "noted without asking"
+    );
+    let kept = thrall_agent::experience::list(&state);
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].text, "Use py, not python");
+
+    run_with(&state, &s.id, "run the script", yes(), |_, _| {}).await;
+    let last = provider.seen.lock().unwrap().last().cloned().unwrap();
+    assert!(last.messages[0].content.contains("- Use py, not python"));
+}
+#[tokio::test]
 async fn plan_mode_blocks_changes_until_the_plan_is_approved() {
     let (mut state, provider) = setup(vec![
         tool_call("c1", "write_file", r#"{"path": "x.txt", "content": "x"}"#),

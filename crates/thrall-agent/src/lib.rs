@@ -8,6 +8,7 @@ pub mod commands;
 pub mod compaction;
 pub mod constants;
 pub mod error;
+pub mod experience;
 pub mod extras;
 pub mod heartbeat;
 pub mod home;
