@@ -2,9 +2,9 @@
 // `apply` returns a new view and leaves unchanged items as they were, so React redraws only
 // what changed (long sessions stay fast while text streams in).
 
-import type { Diff, EventFrame, FileRef, ModeLimit, TaskItem, Usage } from "./protocol";
+import type { Diff, EventFrame, FileRef, ModeLimit, QuestionItem, TaskItem, Usage } from "./protocol";
 import type { Session as SessionInfo } from "./types";
-import { CHECK_IN_AGENT, MODE_UNTIL_TASK_END } from "./constants";
+import { CHECK_IN_AGENT, MODE_UNTIL_TASK_END, QUESTION_TIMEOUT } from "./constants";
 
 export type StepStatus = "ok" | "error" | "warn" | "denied" | "cancelled";
 
@@ -40,7 +40,8 @@ export type Card =
       diff: Diff | null;
       always: boolean;
     }
-  | { kind: "plan"; request: string; markdown: string };
+  | { kind: "plan"; request: string; markdown: string }
+  | { kind: "question"; request: string; items: QuestionItem[]; why: string; expiresAt: number };
 
 /** What the living mark shows. */
 export type Activity = "idle" | "thinking" | "tool" | "writing" | "waiting" | "done" | "failed";
@@ -321,6 +322,36 @@ export function apply(view: View, frame: EventFrame, by: string, labels: Record<
         at,
       );
       break;
+    case "question.ask":
+      v = setActivity(
+        {
+          ...v,
+          card: {
+            kind: "question",
+            request: frame.question,
+            items: frame.items,
+            why: frame.why ?? "",
+            expiresAt: frame.expires_at,
+          },
+        },
+        "waiting",
+        at,
+      );
+      break;
+    case "question.resolved": {
+      const mine = v.card?.request === frame.question;
+      v = mine ? { ...v, card: null } : v;
+      const answers = frame.answers.join(" · ");
+      const text =
+        frame.answered_by === QUESTION_TIMEOUT
+          ? `No answer in time, so Thrall went with its picks: ${answers}`
+          : frame.answered_by === by
+            ? `You answered: ${answers}`
+            : `Answered ${labels[frame.answered_by] ?? `on ${frame.answered_by}`}: ${answers}`;
+      v = { ...v, items: [...v.items, { kind: "notice", id: `q-${frame.question}`, level: "info", text }] };
+      v = setActivity(v, "thinking", at);
+      break;
+    }
     case "permission.resolved":
     case "plan.resolved": {
       const request = frame.type === "permission.resolved" ? frame.request : frame.plan;

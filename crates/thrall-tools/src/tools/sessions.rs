@@ -31,9 +31,11 @@ pub fn doing(events: &[StoredEvent]) -> Doing {
     let mut now = Doing::Idle;
     for e in events {
         now = match e.kind.as_str() {
-            "turn.started" | "permission.resolved" | "plan.resolved" => Doing::Working,
+            "turn.started" | "permission.resolved" | "plan.resolved" | "question.resolved" => {
+                Doing::Working
+            }
             "turn.completed" => Doing::Idle,
-            "permission.request" | "plan.proposed" => Doing::Waiting(e.at),
+            "permission.request" | "plan.proposed" | "question.ask" => Doing::Waiting(e.at),
             _ => continue,
         };
     }

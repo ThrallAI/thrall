@@ -545,8 +545,13 @@ async fn run_with(
         while let Some(frame) = rx.recv().await {
             match &frame.event {
                 Event::PermissionRequest { request, .. }
-                | Event::PlanProposed { plan: request, .. } => {
-                    state.prompts.answer(request, &state.user_id, reply, "test");
+                | Event::PlanProposed { plan: request, .. }
+                | Event::QuestionAsk {
+                    question: request, ..
+                } => {
+                    state
+                        .prompts
+                        .answer(request, &state.user_id, reply.clone(), "test");
                 }
                 _ => {}
             }
@@ -649,6 +654,86 @@ async fn edits_need_a_read_first() {
     )));
 }
 
+#[tokio::test]
+async fn a_question_card_waits_for_answers_and_is_asked_once() {
+    let (mut state, _) = setup(vec![
+        tool_call(
+            "c1",
+            "ask_user",
+            r#"{"why": "It decides the whole design", "questions": [
+                {"text": "Which database?", "options": ["Postgres"], "recommended": "SQLite"},
+                {"text": "Name?", "recommended": "notes"}]}"#,
+        ),
+        tool_call(
+            "c2",
+            "ask_user",
+            r#"{"questions": [{"text": "Colour?", "recommended": "blue"}]}"#,
+        ),
+        reply(&["Done."]),
+        reply(&["Asking"]),
+    ])
+    .await;
+    checks_off(&mut state);
+    let s = session::create(&state, Some(workspace("ask")))
+        .await
+        .unwrap();
+    let answer = Reply::Question(vec!["Postgres".into()]);
+    let (_, frames) = run_with(&state, &s.id, "build it", answer, |_, _| {}).await;
+
+    let asked: Vec<_> = frames
+        .iter()
+        .filter_map(|f| match &f.event {
+            Event::QuestionAsk { items, why, .. } => Some((items.clone(), why.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(asked.len(), 1, "one card per task");
+    assert_eq!(asked[0].0[0].options, ["SQLite", "Postgres"]);
+    assert_eq!(asked[0].1, "It decides the whole design");
+    assert!(frames.iter().any(|f| matches!(
+        &f.event,
+        Event::QuestionResolved { answers, answered_by, .. }
+            if answers == &["Postgres", "notes"] && answered_by == "test"
+    )));
+    let statuses: Vec<StepStatus> = frames
+        .iter()
+        .filter_map(|f| match f.event {
+            Event::StepCompleted { status, .. } => Some(status),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(statuses, vec![StepStatus::Ok, StepStatus::Error]);
+}
+
+#[tokio::test]
+async fn full_auto_goes_with_thralls_own_answers() {
+    let (mut state, _) = setup(vec![
+        tool_call(
+            "c1",
+            "ask_user",
+            r#"{"questions": [{"text": "Which?", "recommended": "this one"}]}"#,
+        ),
+        reply(&["Done."]),
+        reply(&["Deciding"]),
+    ])
+    .await;
+    checks_off(&mut state);
+    let s = session::create(&state, Some(workspace("ask-auto")))
+        .await
+        .unwrap();
+    session::set_mode(&state, &s.id, thrall_agent::Mode::FullAuto)
+        .await
+        .unwrap();
+    let (_, frames) = run_with(&state, &s.id, "go", yes(), |_, _| {}).await;
+    assert!(
+        !kinds(&frames).contains(&"question.ask"),
+        "Full auto never asks"
+    );
+    assert!(frames.iter().any(|f| matches!(
+        &f.event,
+        Event::StepCompleted { status: StepStatus::Ok, summary, .. } if summary == "Went with its own answers"
+    )));
+}
 #[tokio::test]
 async fn plan_mode_blocks_changes_until_the_plan_is_approved() {
     let (mut state, provider) = setup(vec![

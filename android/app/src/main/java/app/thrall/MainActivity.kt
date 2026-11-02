@@ -378,6 +378,7 @@ private fun Main(app: ThrallApp, connected: Boolean) {
                 onDismissProblem = model::dismissProblem,
                 onAnswer = model::answer,
                 onDecide = model::decide,
+                onQuestion = model::answerQuestions,
                 files = files ?: return,
                 onFiles = { push(Screen.Folder(screen.session, shown.title, "")) },
                 commands = commands,

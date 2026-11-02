@@ -8,6 +8,8 @@ import {
   FRESH_STARTS,
   HUMANISE_LEVELS,
   LOG_LEVELS,
+  QUESTION_MODE_LABELS,
+  QUESTION_MODES,
   RATING_LABELS,
   SETTINGS_SECTIONS,
   SIGN_IN_POLL_MS,
@@ -143,19 +145,22 @@ function Choice({
   v,
   label,
   options,
+  labels,
   onSave,
 }: {
   k: string;
   v: unknown;
   label: string;
   options: readonly string[];
+  /** What each option is called on screen (else its config value). */
+  labels?: Readonly<Record<string, string>>;
   onSave: Save;
 }) {
   return (
     <select className="th-input" aria-label={label} value={String(v ?? "")} onChange={(e) => onSave(k, e.target.value)}>
       {options.map((o) => (
         <option key={o} value={o}>
-          {o}
+          {labels?.[o] ?? o}
         </option>
       ))}
     </select>
@@ -820,6 +825,24 @@ export function Settings({
             </Row>
             <Row label="Claim check" hint="The final reply is checked against what Thrall actually did">
               <Toggle k="agent.claim_check" v={agent.claim_check} label="Claim check" onSave={save} />
+            </Row>
+          </Group>
+          <Group title="Questions">
+            <Row
+              label="When Thrall asks"
+              hint="Otherwise it decides, carries on, and lists what it assumed at the end. Full auto never asks."
+            >
+              <Choice
+                k="agent.questions"
+                v={agent.questions ?? "when_it_matters"}
+                label="When Thrall asks"
+                options={QUESTION_MODES}
+                labels={QUESTION_MODE_LABELS}
+                onSave={save}
+              />
+            </Row>
+            <Row label="Wait for an answer" hint="Minutes before Thrall goes ahead with its recommended answers">
+              <Field k="agent.question_wait_minutes" v={agent.question_wait_minutes} label="Wait for an answer" onSave={save} number />
             </Row>
           </Group>
           <Group title="Permissions">

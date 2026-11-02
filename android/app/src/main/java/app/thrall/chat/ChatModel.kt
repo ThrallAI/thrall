@@ -4,6 +4,7 @@ import app.thrall.protocol.Diff
 import app.thrall.protocol.Event
 import app.thrall.protocol.FileRef
 import app.thrall.protocol.ModeLimit
+import app.thrall.protocol.QuestionItem
 
 /** One row of a conversation. */
 sealed interface ChatItem {
@@ -45,6 +46,10 @@ sealed interface ChatItem {
         val settled: String? = null,
         /** For a permission: the answers on offer (`yes`, `no`, `always`). */
         val choices: List<String> = emptyList(),
+        /** For a question card: Thrall's questions, each with its recommended answer. */
+        val questions: List<QuestionItem> = emptyList(),
+        /** For a question card: when Thrall goes ahead with its picks, Unix ms. */
+        val expiresAt: Long = 0,
     ) : ChatItem
 
     data class Note(override val key: String, override val turn: String?, val text: String, val warning: Boolean) : ChatItem
@@ -163,6 +168,16 @@ class ChatModel {
             is Event.PlanResolved -> waiting(event.plan) {
                 it.copy(settled = "${if (event.approved) "Approved" else "Not approved"} (${event.answeredBy})")
             }
+            is Event.QuestionAsk -> items[event.question] = ChatItem.Waiting(
+                event.question, currentTurn, event.why, plan = false, questions = event.items, expiresAt = event.expiresAt,
+            )
+            is Event.QuestionResolved -> waiting(event.question) {
+                val answers = event.answers.joinToString(" · ")
+                it.copy(
+                    settled = if (event.answeredBy == QUESTION_TIMEOUT) "No answer in time, so Thrall went with its picks: $answers"
+                    else "Answered (${event.answeredBy}): $answers",
+                )
+            }
             is Event.Status -> {
                 val ended = event.state == IDLE && state != IDLE
                 if (ended && seq == null && keepsGoing()) offerAsk = true
@@ -240,5 +255,7 @@ class ChatModel {
         const val UNTIL_TASK_END = "task_end"
         const val UNTIL_TIME = "time"
         const val UNTIL_MANUAL = "manual"
+        /** `answered_by` on a question card nobody answered in time. */
+        const val QUESTION_TIMEOUT = "timeout"
     }
 }

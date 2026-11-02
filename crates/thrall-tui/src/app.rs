@@ -24,7 +24,7 @@ use thrall_protocol::{
 use crate::constants::{
     CARD_SETTLE, CARD_TYPING_GAP, CLIENT_COMMANDS, HINTS, INPUT_MAX_LINES, INPUT_PLACEHOLDER,
     PAGE_SCROLL_LINES, PASTE_ENTER_WINDOW, PERMISSION_DIFF_MAX_LINES, PERMISSION_SUMMARY_MAX_LINES,
-    SUGGESTIONS_MAX, TASKS_MAX_SHOWN,
+    QUESTION_TIMEOUT, QUESTION_TYPE_HINT, SUGGESTIONS_MAX, TASKS_MAX_SHOWN,
 };
 use crate::transcript::{Kind, Transcript};
 use crate::{plain, theme};
@@ -62,7 +62,7 @@ pub enum Action {
 }
 
 /// An answer to a card.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reply {
     /// A permission answer.
     Permission(PermissionChoice),
@@ -73,6 +73,8 @@ pub enum Reply {
         /// And accept edits without asking from now on.
         auto_edits: bool,
     },
+    /// Answers to a question card, one per question.
+    Question(Vec<String>),
 }
 
 /// A permission request or plan on screen, waiting for an answer.
@@ -89,6 +91,8 @@ pub struct Permission {
     pub always: bool,
     /// A plan to approve rather than a single action.
     pub plan: bool,
+    /// A question card: Thrall's recommended answers, one per question.
+    pub picks: Option<Vec<String>>,
 }
 
 /// The session picker.
@@ -115,6 +119,8 @@ pub struct App {
     pub tasks: Vec<TaskItem>,
     /// Waiting for a yes or no.
     pub permission: Option<Permission>,
+    /// A question card being answered by typing: the next message is the answers.
+    pub answering: Option<String>,
     /// Choosing a session.
     pub picker: Option<Picker>,
     /// When the running turn began.
@@ -164,6 +170,7 @@ impl App {
             transcript: Transcript::new(ascii),
             tasks: Vec::new(),
             permission: None,
+            answering: None,
             picker: None,
             busy_since: None,
             mode: Mode::Ask,
@@ -193,6 +200,7 @@ impl App {
         self.transcript.clear();
         self.tasks.clear();
         self.permission = None;
+        self.answering = None;
         self.scroll_up = 0;
         self.last_total = 0;
         self.turns.clear();
@@ -363,6 +371,7 @@ impl App {
                     diff,
                     always: choices.contains(&PermissionChoice::Always),
                     plan: false,
+                    picks: None,
                 });
             }
             Event::PlanProposed { plan, markdown } => {
@@ -377,7 +386,60 @@ impl App {
                     diff: None,
                     always: false,
                     plan: true,
+                    picks: None,
                 });
+            }
+            Event::QuestionAsk {
+                question,
+                items,
+                why,
+                ..
+            } => {
+                let mut text = String::from("**Thrall asks**");
+                if !why.is_empty() {
+                    text.push_str(&format!("\n\n{why}"));
+                }
+                for (i, q) in items.iter().enumerate() {
+                    text.push_str(&format!("\n\n{}. {}", i + 1, q.text));
+                    if !q.options.is_empty() {
+                        text.push_str(&format!("\n   Choices: {}", q.options.join(" · ")));
+                    }
+                    text.push_str(&format!("\n   Thrall's pick: {}", q.recommended));
+                }
+                self.transcript.push(Kind::Command(text));
+                self.scroll_up = 0;
+                self.card_shown_at = Instant::now();
+                self.permission = Some(Permission {
+                    request: question,
+                    summary: "Go with Thrall's picks, or type your own answers?".to_owned(),
+                    risk: Risk::Low,
+                    diff: None,
+                    always: false,
+                    plan: false,
+                    picks: Some(items.into_iter().map(|q| q.recommended).collect()),
+                });
+            }
+            Event::QuestionResolved {
+                question,
+                answers,
+                answered_by,
+            } => {
+                if self
+                    .permission
+                    .as_ref()
+                    .is_some_and(|p| p.request == question)
+                {
+                    self.permission = None;
+                }
+                if self.answering.as_deref() == Some(question.as_str()) {
+                    self.answering = None;
+                }
+                let how = if answered_by == QUESTION_TIMEOUT {
+                    "No answer in time, so Thrall went with its picks"
+                } else {
+                    "Answered"
+                };
+                self.info(format!("{how}: {}", answers.join(" · ")));
             }
             Event::PermissionResolved { request, .. }
             | Event::PlanResolved { plan: request, .. } => {
@@ -458,6 +520,21 @@ impl App {
                 return None;
             }
             let request = p.request.clone();
+            if let Some(picks) = &p.picks {
+                return match key.code {
+                    KeyCode::Char('y' | 'Y') | KeyCode::Enter => {
+                        Some(Action::Answer(request, Reply::Question(picks.clone())))
+                    }
+                    // Type the answers into the message box; the next Enter sends them.
+                    KeyCode::Char('t' | 'T') => {
+                        self.permission = None;
+                        self.answering = Some(request);
+                        self.info(QUESTION_TYPE_HINT);
+                        None
+                    }
+                    _ => None,
+                };
+            }
             let reply = if p.plan {
                 match key.code {
                     KeyCode::Char('y' | 'Y') => Some(Reply::Plan {
@@ -658,6 +735,11 @@ impl App {
         self.suggestion = 0;
         self.scroll_up = 0;
 
+        // Answers to a question card, one per question, separated by |.
+        if let Some(question) = self.answering.take() {
+            let answers = text.split('|').map(|a| a.trim().to_owned()).collect();
+            return Some(Action::Answer(question, Reply::Question(answers)));
+        }
         if let Some(command) = text.strip_prefix('/') {
             let (name, args) = command.split_once(' ').unwrap_or((command, ""));
             let name = name.to_lowercase();
@@ -1008,7 +1090,11 @@ fn draw_permission(frame: &mut Frame<'_>, area: Rect, p: &Permission) {
     let bold = |c| Style::default().fg(c).add_modifier(Modifier::BOLD);
     // The answer keys sit on the border, so a long command can never push them out of sight.
     let mut buttons = vec![Span::raw(" ")];
-    if p.plan {
+    if p.picks.is_some() {
+        buttons.push(Span::styled("[y] Go with Thrall's picks", bold(theme::OK)));
+        buttons.push(Span::raw("   "));
+        buttons.push(Span::styled("[t] Type my own answers", bold(theme::ACCENT)));
+    } else if p.plan {
         buttons.push(Span::styled("[y] Approve", bold(theme::OK)));
         buttons.push(Span::raw("   "));
         buttons.push(Span::styled(
@@ -1186,6 +1272,7 @@ mod tests {
             diff: None,
             always: false,
             plan: false,
+            picks: None,
         });
         pause_for_card();
         assert_eq!(

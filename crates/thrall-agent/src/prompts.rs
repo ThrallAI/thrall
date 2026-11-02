@@ -1,4 +1,4 @@
-//! Questions waiting for the user (permissions and plans). A turn registers a request and waits;
+//! Questions waiting for the user (permissions, plans and question cards). A turn registers a request and waits;
 //! whichever of the person's clients answers first wins (protocol §9). Late answers are refused,
 //! and so are answers from anyone but the person whose session asked.
 
@@ -9,7 +9,7 @@ use thrall_protocol::PermissionChoice;
 use tokio::sync::oneshot;
 
 /// What the user decided.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reply {
     /// A permission answer.
     Permission(PermissionChoice),
@@ -20,6 +20,8 @@ pub enum Reply {
         /// And accept edits without asking from now on.
         auto_edits: bool,
     },
+    /// Answers to a question card, one per question.
+    Question(Vec<String>),
 }
 
 /// An answer and who gave it.

@@ -62,6 +62,12 @@ pub const PERMISSION_SUMMARY_MAX_LINES: u16 = 6;
 /// Shown in the empty input box.
 pub const INPUT_PLACEHOLDER: &str = "Message Thrall · / for commands";
 
+/// Shown when the person chooses to type their answers to a question card.
+pub const QUESTION_TYPE_HINT: &str = "Type your answers in the message box, one per question in order, separated by |, then press Enter.";
+
+/// `answered_by` on a question card nobody answered in time.
+pub const QUESTION_TIMEOUT: &str = "timeout";
+
 /// Key hints under the input box.
 pub const HINTS: &str =
     "Enter send · Shift+Enter or Ctrl+J new line · Ctrl+O steps · PgUp/PgDn scroll · Ctrl+C quit";

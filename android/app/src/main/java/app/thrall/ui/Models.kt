@@ -507,6 +507,19 @@ class ChatModelView(
         }
     }
 
+    /** Answer a question card, one answer per question. If another device answered first, its answers stand. */
+    fun answerQuestions(question: String, answers: List<String>) {
+        scope.launch {
+            try {
+                connection.request(Request.QuestionAnswer(question, answers))
+            } catch (e: RequestFailed) {
+                if (e.code != ALREADY_ANSWERED) publish(problem = e.message)
+            } catch (e: Exception) {
+                publish(problem = e.message)
+            }
+        }
+    }
+
     /** Approve or turn down a plan. If another device decided first, its decision stands. */
     fun decide(plan: String, approve: Boolean, autoEdits: Boolean = false) {
         scope.launch {

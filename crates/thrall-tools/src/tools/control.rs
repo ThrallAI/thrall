@@ -46,6 +46,61 @@ impl Tool for ExitPlanMode {
     }
 }
 
+/// Name of the question tool; the agent shows the card and waits for answers.
+pub const ASK_USER: &str = "ask_user";
+
+/// Ask the person what can't safely be guessed, all at once, with a recommended answer each.
+/// The agent carries it out; `run` is only reached where nobody can be asked.
+pub struct AskUser;
+
+impl Tool for AskUser {
+    fn name(&self) -> &'static str {
+        ASK_USER
+    }
+    fn description(&self) -> &'static str {
+        "Ask the user something you can't safely decide yourself: a choice that can't be undone, \
+         costs money, or could take the work two very different ways. Put every question on one \
+         card, at the start of the work, each with your recommended answer (it's picked for them, \
+         and used if they don't answer in time). Don't ask about details you can sensibly choose: \
+         choose, carry on, and list what you assumed at the end under 'Assumptions I made'. You \
+         can ask once per task."
+    }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "why": { "type": "string", "description": "One sentence: why you can't decide this yourself" },
+                "questions": {
+                    "type": "array",
+                    "description": "One to four questions",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "text": { "type": "string", "description": "The question, in plain words" },
+                            "options": { "type": "array", "items": { "type": "string" }, "description": "Two to five answers to pick from (optional)" },
+                            "recommended": { "type": "string", "description": "Your recommended answer" }
+                        },
+                        "required": ["text", "recommended"]
+                    }
+                }
+            },
+            "required": ["questions"]
+        })
+    }
+    fn title(&self, _args: &Value) -> String {
+        "Asking you".to_owned()
+    }
+    fn run<'a>(&'a self, _ctx: &'a ToolContext, _args: Value) -> BoxFuture<'a, ToolOutput> {
+        Box::pin(async {
+            ToolOutput::ok(
+                "Nobody can be asked here: go with your recommended answers and list them under \
+                 'Assumptions I made'.",
+                "Nobody to ask",
+            )
+        })
+    }
+}
+
 /// Name of the hand-off tool; the agent runs it (a helper with its own context).
 pub const DELEGATE: &str = "agent";
 

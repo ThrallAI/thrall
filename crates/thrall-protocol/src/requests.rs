@@ -309,6 +309,15 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         auto_edits: bool,
     },
+    /// Answer a `question.ask`: one answer per question, in order. Answered by `ack`, or
+    /// `error {already_answered}`.
+    #[serde(rename = "question.answer")]
+    QuestionAnswer {
+        /// Question id.
+        question: String,
+        /// One answer per question.
+        answers: Vec<String>,
+    },
     /// Receive events from every session, not only the ones opened (the desktop app uses this for
     /// its tray icon and notifications). Live text (deltas, output) is left out. Answered by `ack`.
     #[serde(rename = "session.watch_all")]
@@ -591,6 +600,7 @@ impl Request {
             Self::TurnInterrupt { .. } => "turn.interrupt",
             Self::PermissionAnswer { .. } => "permission.answer",
             Self::PlanDecide { .. } => "plan.decide",
+            Self::QuestionAnswer { .. } => "question.answer",
             Self::SessionWatchAll {} => "session.watch_all",
             Self::EngineStop {} => "engine.stop",
             Self::AudioTranscribe { .. } => "audio.transcribe",
