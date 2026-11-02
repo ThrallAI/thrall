@@ -291,8 +291,9 @@ async fn model(state: &AppState, args: &str) -> String {
     if args.is_empty() {
         let mut out = format!(
             "Model: `{}`\n\nSwitch with `/model <id>` (an OpenRouter id like \
-             `xiaomi/mimo-v2.5-pro`, or `chatgpt/<model>` on your ChatGPT plan after \
-             `/login chatgpt`), or `/model @<profile>`. To change it for good, use Settings → \
+             `xiaomi/mimo-v2.5-pro`, `chatgpt/<model>` on your ChatGPT plan after \
+             `/login chatgpt`, or `local/<model>` on Ollama or LM Studio, free), or \
+             `/model @<profile>`. To change it for good, use Settings → \
              Models.",
             state.model()
         );

@@ -123,6 +123,13 @@ pub const DEFAULT_VISION_BACKUP_MODEL: &str = "openai/gpt-4.1-mini";
 /// Default OpenRouter API base URL.
 pub const DEFAULT_OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 
+/// Where `local/<model>` models are served unless `[provider] local_base_url` says otherwise:
+/// Ollama's OpenAI-compatible address (LM Studio's is http://localhost:1234/v1).
+pub const DEFAULT_LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
+
+/// Model ids starting with this run on the local model server (free, no key needed).
+pub const LOCAL_MODEL_PREFIX: &str = "local/";
+
 /// Default model for embeddings (searching memory by meaning).
 pub const DEFAULT_EMBEDDING_MODEL: &str = "openai/text-embedding-3-small";
 
@@ -206,6 +213,7 @@ pub const EDITABLE_SETTINGS: &[&str] = &[
     "provider.transcribe_model",
     "provider.base_url",
     "provider.fal_base_url",
+    "provider.local_base_url",
     "agent.verify",
     "agent.claim_check",
     "agent.questions",
