@@ -1294,6 +1294,10 @@ async fn context(
         today(),
         mode.label()
     );
+    if let Some(style) = crate::personality::prompt(&crate::personality::load(state)) {
+        system.push_str("\n\n");
+        system.push_str(&style);
+    }
     if mode == Mode::Plan {
         system.push_str(
             "\n\nPlan mode is on: look around with the read-only tools, then present a plan with \

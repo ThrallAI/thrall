@@ -17,6 +17,7 @@ pub mod images;
 pub mod keys;
 pub mod links;
 pub mod people;
+pub mod personality;
 pub mod prompts;
 pub mod runners;
 pub mod session;
