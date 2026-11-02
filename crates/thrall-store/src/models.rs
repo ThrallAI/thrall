@@ -146,7 +146,7 @@ pub struct StoredMessage {
     pub session_id: String,
     /// Turn, if any.
     pub turn_id: Option<String>,
-    /// `system` · `user` · `assistant` (tool roles arrive in phase 2).
+    /// `system` · `user` · `assistant`.
     pub role: String,
     /// Content as JSON (shape owned by the agent).
     pub content: String,

@@ -1,4 +1,4 @@
-//! thrall-bench: a developer tool, never shipped. Runs the same prompt through Thrall's engine in
+//! thrall-bench: a tool for people working on Thrall, not included in the installers. Runs the same prompt through Thrall's engine in
 //! side-by-side lanes (one model alone, or split mode's Thinker + Doer) and measures each: time,
 //! model calls, tokens in/out/cached, cost per model, and whether the task's check passes.
 //!

@@ -20,8 +20,8 @@ pub const TITLE_SOURCE_MAX_CHARS: usize = 1000;
 /// Most tokens the title call may write (room for reasoning models to think first).
 pub const TITLE_MAX_TOKENS: u32 = 400;
 
-/// Default instructions until identity files arrive (phase 5). The working folder, OS and date are
-/// appended per turn.
+/// Thrall's standing instructions (personality files are planned to build on these). The working
+/// folder, OS and date are appended per turn.
 pub const SYSTEM_PROMPT: &str = "You are Thrall, a capable AI assistant running on the user's own \
 computer. Be direct, accurate and concise. If you don't know something, say so.
 
