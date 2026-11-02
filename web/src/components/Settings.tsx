@@ -1,7 +1,7 @@
 // The settings screen. Appearance is kept in this browser; the engine's settings are read from and
 // saved to config.toml (settings.get / settings.set); features still being built are marked Planned.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Engine, ReplyOf } from "../engine";
 import {
@@ -26,6 +26,7 @@ import { THEME_LABELS, type Theme } from "../theme";
 import { People } from "./People";
 import { Personality } from "./Personality";
 import { Phones } from "./Phones";
+import { SkillEditor } from "./SkillEditor";
 
 type Shown = ReplyOf<"settings.shown">;
 type Obj = Record<string, unknown>;
@@ -555,6 +556,20 @@ export function Settings({
       .catch((e: unknown) => setStatus({ text: e instanceof Error ? e.message : String(e), warn: true }));
   };
 
+  // One skill is open for editing at a time, under the list.
+  const [editing, setEditing] = useState<string | null>(null);
+  const closeEditor = useCallback(
+    (saved: boolean) => {
+      setEditing(null);
+      if (!saved) return;
+      engine
+        ?.request<"settings.shown">({ type: "settings.get" })
+        .then(setShown)
+        .catch((e: unknown) => setStatus({ text: e instanceof Error ? e.message : String(e), warn: true }));
+    },
+    [engine],
+  );
+
   // Removing a skill asks once more in its row.
   const [removing, setRemoving] = useState<string | null>(null);
   const removeSkill = (name: string) => {
@@ -935,7 +950,7 @@ export function Settings({
           </Group>
           <Group
             title="Your skills"
-            note="Recipes Thrall uses only when a task matches, or when you type /name. Thrall learns new ones by itself after working something out, each with a safety rating; ones rated High are put to you first. Turn any off or remove it here."
+            note="Recipes Thrall uses only when a task matches, or when you type /name. Thrall learns new ones by itself after working something out, each with a safety rating; ones rated High are put to you first. Open one to read or change it, or to make a risky one safe; turn any off or remove it here."
           >
             {(shown?.skills ?? []).length === 0 ? (
               <p className="th-set-empty">None yet. A project's own skills (its .thrall/skills folder) work in that folder.</p>
@@ -951,6 +966,15 @@ export function Settings({
                   {s.helper ? "In a helper" : "Inline"}
                 </span>
                 <Toggle k={`skills.${s.name}.enabled`} v={s.enabled} label={`Use /${s.name}`} onSave={save} />
+                <button
+                  type="button"
+                  className="th-btn th-btn-quiet"
+                  aria-label={`Open /${s.name}`}
+                  aria-expanded={editing === s.name}
+                  onClick={() => setEditing(editing === s.name ? null : s.name)}
+                >
+                  Open
+                </button>
                 {removing === s.name ? (
                   <>
                     <button type="button" className="th-btn th-btn-danger" onClick={() => removeSkill(s.name)}>
@@ -967,6 +991,7 @@ export function Settings({
                 )}
               </Row>
             ))}
+            {editing ? <SkillEditor key={editing} engine={engine} name={editing} onStatus={setStatus} onClose={closeEditor} /> : null}
           </Group>
         </>
       );
