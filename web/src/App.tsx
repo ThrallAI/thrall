@@ -521,6 +521,8 @@ export function App() {
       try {
         if (choice.kind === "permission")
           await e.request({ type: "permission.answer", request: card.request, choice: choice.choice });
+        else if (choice.kind === "question")
+          await e.request({ type: "question.answer", question: card.request, answers: choice.answers });
         else
           await e.request({
             type: "plan.decide",

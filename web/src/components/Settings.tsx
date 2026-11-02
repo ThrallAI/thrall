@@ -8,6 +8,9 @@ import {
   FRESH_STARTS,
   HUMANISE_LEVELS,
   LOG_LEVELS,
+  QUESTION_MODE_LABELS,
+  QUESTION_MODES,
+  RATING_LABELS,
   SETTINGS_SECTIONS,
   SIGN_IN_POLL_MS,
   SIGN_IN_WATCH_MS,
@@ -142,19 +145,22 @@ function Choice({
   v,
   label,
   options,
+  labels,
   onSave,
 }: {
   k: string;
   v: unknown;
   label: string;
   options: readonly string[];
+  /** What each option is called on screen (else its config value). */
+  labels?: Readonly<Record<string, string>>;
   onSave: Save;
 }) {
   return (
     <select className="th-input" aria-label={label} value={String(v ?? "")} onChange={(e) => onSave(k, e.target.value)}>
       {options.map((o) => (
         <option key={o} value={o}>
-          {o}
+          {labels?.[o] ?? o}
         </option>
       ))}
     </select>
@@ -823,6 +829,9 @@ export function Settings({
             <Row label="Speaks"><Field k="provider.speech_model" v={provider.speech_model} label="Speaks" onSave={save} mono /></Row>
             <Row label="Voice"><Field k="provider.speech_voice" v={provider.speech_voice} label="Voice" onSave={save} /></Row>
             <Row label="Transcribes"><Field k="provider.transcribe_model" v={provider.transcribe_model} label="Transcribes" onSave={save} mono /></Row>
+            <Row label="Local model server" hint="Ollama or LM Studio on this computer or network. Pick a model as local/<name> (e.g. local/llama3.1): free, no key needed">
+              <Field k="provider.local_base_url" v={provider.local_base_url} label="Local model server" onSave={save} mono />
+            </Row>
             <Planned label="ElevenLabs voices" hint="More natural voices (needs an ElevenLabs key)" />
             <Planned label="Music" hint="Songs and backing tracks" />
           </Group>
@@ -838,6 +847,24 @@ export function Settings({
             </Row>
             <Row label="Claim check" hint="The final reply is checked against what Thrall actually did">
               <Toggle k="agent.claim_check" v={agent.claim_check} label="Claim check" onSave={save} />
+            </Row>
+          </Group>
+          <Group title="Questions">
+            <Row
+              label="When Thrall asks"
+              hint="Otherwise it decides, carries on, and lists what it assumed at the end. Full auto never asks."
+            >
+              <Choice
+                k="agent.questions"
+                v={agent.questions ?? "when_it_matters"}
+                label="When Thrall asks"
+                options={QUESTION_MODES}
+                labels={QUESTION_MODE_LABELS}
+                onSave={save}
+              />
+            </Row>
+            <Row label="Wait for an answer" hint="Minutes before Thrall goes ahead with its recommended answers">
+              <Field k="agent.question_wait_minutes" v={agent.question_wait_minutes} label="Wait for an answer" onSave={save} number />
             </Row>
           </Group>
           <Group title="Permissions">
@@ -908,13 +935,18 @@ export function Settings({
           </Group>
           <Group
             title="Your skills"
-            note="Recipes Thrall uses only when a task matches, or when you type /name. Only their one-line descriptions sit in each session. Thrall offers new ones after working something out; you approve each."
+            note="Recipes Thrall uses only when a task matches, or when you type /name. Thrall learns new ones by itself after working something out, each with a safety rating; ones rated High are put to you first. Turn any off or remove it here."
           >
             {(shown?.skills ?? []).length === 0 ? (
               <p className="th-set-empty">None yet. A project's own skills (its .thrall/skills folder) work in that folder.</p>
             ) : null}
             {(shown?.skills ?? []).map((s) => (
               <Row key={s.name} label={`/${s.name}`} hint={s.description || undefined}>
+                {s.rating ? (
+                  <span className={`th-badge is-rating-${s.rating}`} title="Safety rating, from where Thrall learned it and what it does">
+                    {RATING_LABELS[s.rating] ?? s.rating}
+                  </span>
+                ) : null}
                 <span className="th-badge" title={s.helper ? "A helper does the work: you see its steps, but only its result goes into Thrall's conversation" : "Thrall follows it in the conversation itself"}>
                   {s.helper ? "In a helper" : "Inline"}
                 </span>

@@ -63,8 +63,9 @@ never keys, passwords or other secrets. The user is shown each saved fact and ca
 experience_note: one line on what to do differently next time, specific to this person or \
 computer (\"use py, not python\"). Not for one-off details of the task.
 - When you had to work something out that's likely to come up again (a procedure that took \
-several steps or tries), offer it as a skill with skill_propose once the task is done. Not for \
-trivial or one-off tasks; the user decides.";
+several steps or tries), save it as a skill with skill_propose once the task is done, saying \
+where you learned it. It's kept without asking (risky ones are put to the user first), and the \
+user can see and change what you learn in Settings → Learning. Not for trivial or one-off tasks.";
 
 /// Added to the system prompt when the humaniser is on (`writing.humanise` light or full).
 pub const WRITING_RULES: &str = "Writing style (the person turned the humaniser on): write like a \
@@ -643,6 +644,43 @@ Decide yourself, and say in your report what you weren't sure of.";
 pub const HAND_OFF_TITLE: &str = "Handed to the Doer";
 /// Step title when the Doer asks the Thinker.
 pub const ASK_THINKER_TITLE: &str = "The Doer asked the Thinker";
+
+/// Most questions on one `ask_user` card.
+pub const QUESTION_MAX_ITEMS: usize = 4;
+
+/// Most answers offered for one question.
+pub const QUESTION_MAX_OPTIONS: usize = 5;
+
+/// Longest question or answer kept.
+pub const QUESTION_MAX_CHARS: usize = 300;
+
+/// `answered_by` when nobody answered a question card in time.
+pub const ANSWERED_BY_TIMEOUT: &str = "timeout";
+
+/// The result of a second `ask_user` in one task.
+pub const QUESTION_ALREADY_ASKED: &str = "You've already asked this task. Decide the rest \
+yourself, carry on, and list what you assumed under 'Assumptions I made'.";
+
+/// What the system prompt says about asking, with `[agent] questions = "never"`.
+pub const QUESTIONS_NEVER: &str = "Don't stop to ask the user anything: when something is unclear, \
+pick the sensible choice and carry on. End with a short 'Assumptions I made' list when you \
+assumed anything that matters. Things that always need permission still ask on their own.";
+
+/// … with `"when_it_matters"` (the default).
+pub const QUESTIONS_WHEN_IT_MATTERS: &str = "The user wants the work done, not a conversation \
+about it. When something is unclear, pick the sensible choice, carry on, and end with a short \
+'Assumptions I made' list. Use ask_user only for what can't be undone, costs money, or could take \
+the work two very different ways, and then ask everything at once, at the start, each with your \
+recommended answer.";
+
+/// … with `"when_unsure"`.
+pub const QUESTIONS_WHEN_UNSURE: &str = "When you aren't sure what the user wants, ask with \
+ask_user before starting: every question on one card, at the start, each with your recommended \
+answer. Small details you can still choose yourself; list them under 'Assumptions I made'.";
+
+/// … in Full auto, whatever the setting.
+pub const QUESTIONS_FULL_AUTO: &str = "Full auto is on: never stop to ask. Pick the sensible \
+choice for anything unclear, carry on, and end with a short 'Assumptions I made' list.";
 
 /// Each person's personality choice, in their own data folder.
 pub const PERSONALITY_FILE: &str = "personality.json";

@@ -20,12 +20,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -220,6 +223,7 @@ fun ChatScreen(
     onDismissProblem: () -> Unit,
     onAnswer: (request: String, choice: String) -> Unit,
     onDecide: (plan: String, approve: Boolean, autoEdits: Boolean) -> Unit,
+    onQuestion: (question: String, answers: List<String>) -> Unit,
     files: FileActions,
     onFiles: () -> Unit,
     commands: List<CommandItem>,
@@ -302,7 +306,7 @@ fun ChatScreen(
                         },
                     )
                 }
-                ChatRow(row, connected, onAnswer, onDecide, files, shown.workspace, speaking == row.key, menu) { m -> speaker.toggle(m.key, m.text) }
+                ChatRow(row, connected, onAnswer, onDecide, onQuestion, files, shown.workspace, speaking == row.key, menu) { m -> speaker.toggle(m.key, m.text) }
             }
             // Typed while offline: shown as waiting, sent when Thrall's back (✕ takes one back).
             items(extras.queued, key = { it.id }) { q ->
@@ -434,6 +438,7 @@ private fun ChatRow(
     connected: Boolean,
     onAnswer: (String, String) -> Unit,
     onDecide: (String, Boolean, Boolean) -> Unit,
+    onQuestion: (String, List<String>) -> Unit,
     files: FileActions,
     folder: String?,
     beingRead: Boolean,
@@ -497,7 +502,7 @@ private fun ChatRow(
             Attached(item.files, files)
             item.changed?.takeIf { item.status == "ok" }?.let { ChangedFile(it, files) }
         }
-        is ChatItem.Waiting -> Waiting(item, connected, onAnswer, onDecide)
+        is ChatItem.Waiting -> if (item.questions.isNotEmpty()) Questions(item, connected, onQuestion) else Waiting(item, connected, onAnswer, onDecide)
         is ChatItem.Note -> Text(item.text, color = if (item.warning) t.warn else t.inkMuted, fontSize = 13.sp)
         is ChatItem.Command -> Column(
             Modifier
@@ -905,6 +910,77 @@ private fun Waiting(
                     if ("no" in item.choices) {
                         TextButton(onClick = { sent = true; onAnswer(item.key, "no") }, enabled = connected) { Text("No") }
                     }
+                }
+            }
+        }
+    }
+}
+
+/** A question card: each question with its choices (Thrall's pick selected) and a box for an answer of your own. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun Questions(
+    item: ChatItem.Waiting,
+    connected: Boolean,
+    onQuestion: (String, List<String>) -> Unit,
+) {
+    val t = LocalTokens.current
+    var sent by remember(item.key) { mutableStateOf(false) }
+    LaunchedEffect(sent) {
+        if (sent) {
+            kotlinx.coroutines.delay(RESEND_AFTER_MS)
+            sent = false
+        }
+    }
+    val answers = remember(item.key) { mutableStateListOf(*item.questions.map { it.recommended }.toTypedArray()) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, t.accent.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            if (item.questions.size > 1) "Thrall has a few questions" else "Thrall has a question",
+            color = t.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+        )
+        if (item.what.isNotBlank()) Text(item.what, color = t.inkMuted, fontSize = 13.sp)
+        val settled = item.settled
+        item.questions.forEachIndexed { i, q ->
+            Text(q.text, color = t.ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            if (settled == null) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    for (option in q.options) {
+                        FilterChip(
+                            selected = answers[i] == option,
+                            onClick = { answers[i] = option },
+                            label = { Text(if (option == q.recommended) "$option · Thrall's pick" else option) },
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = if (answers[i] in q.options) "" else answers[i],
+                    onValueChange = { answers[i] = it.ifBlank { q.recommended } },
+                    placeholder = { Text(if (q.options.isEmpty()) q.recommended else "Or type another answer") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+        when {
+            settled != null -> Text(settled, color = t.inkMuted, fontSize = 12.sp)
+            sent -> Text("Sending…", color = t.inkMuted, fontSize = 12.sp)
+            else -> {
+                if (item.expiresAt > 0) {
+                    val until = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(item.expiresAt))
+                    Text("If nobody answers by $until, Thrall goes ahead with its picks.", color = t.inkMuted, fontSize = 12.sp)
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Button(onClick = { sent = true; onQuestion(item.key, answers.toList()) }, enabled = connected) { Text("Send answers") }
+                    OutlinedButton(
+                        onClick = { sent = true; onQuestion(item.key, item.questions.map { it.recommended }) },
+                        enabled = connected,
+                    ) { Text("Go with Thrall's picks") }
                 }
             }
         }

@@ -7,10 +7,11 @@ use serde::{Deserialize, Serialize};
 use crate::constants::{
     DEFAULT_CONTEXT_LIMIT_TOKENS, DEFAULT_DESKTOP_SHORTCUT, DEFAULT_EMBEDDING_MODEL,
     DEFAULT_FAL_BASE_URL, DEFAULT_HEARTBEAT_HOURS, DEFAULT_HEARTBEAT_MINUTES,
-    DEFAULT_HOME_KEEP_DAYS, DEFAULT_IMAGE_MODEL, DEFAULT_LOG_LEVEL, DEFAULT_MAX_TOKENS,
-    DEFAULT_MODEL, DEFAULT_OPENROUTER_BASE_URL, DEFAULT_REMOTE_PORT, DEFAULT_SPEECH_MODEL,
-    DEFAULT_SPEECH_VOICE, DEFAULT_TRANSCRIBE_MODEL, DEFAULT_VISION_BACKUP_MODEL,
-    DEFAULT_VISION_MODEL, EDITABLE_SETTINGS, HEARTBEAT_MIN_MINUTES, SHORTCUT_MODIFIERS,
+    DEFAULT_HOME_KEEP_DAYS, DEFAULT_IMAGE_MODEL, DEFAULT_LOCAL_BASE_URL, DEFAULT_LOG_LEVEL,
+    DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_OPENROUTER_BASE_URL, DEFAULT_REMOTE_PORT,
+    DEFAULT_SPEECH_MODEL, DEFAULT_SPEECH_VOICE, DEFAULT_TRANSCRIBE_MODEL,
+    DEFAULT_VISION_BACKUP_MODEL, DEFAULT_VISION_MODEL, EDITABLE_SETTINGS, HEARTBEAT_MIN_MINUTES,
+    SHORTCUT_MODIFIERS,
 };
 use crate::error::CoreError;
 
@@ -442,6 +443,10 @@ pub struct AgentConfig {
     pub verify: bool,
     /// Thrall's final reply is checked against what it actually did; false claims get corrected.
     pub claim_check: bool,
+    /// When Thrall stops to ask instead of deciding and noting what it assumed.
+    pub questions: Questions,
+    /// How long a question card waits before Thrall goes ahead with its recommended answers.
+    pub question_wait_minutes: u32,
 }
 
 impl Default for AgentConfig {
@@ -449,8 +454,23 @@ impl Default for AgentConfig {
         Self {
             verify: true,
             claim_check: true,
+            questions: Questions::default(),
+            question_wait_minutes: crate::constants::DEFAULT_QUESTION_WAIT_MINUTES,
         }
     }
+}
+
+/// When Thrall asks instead of deciding. Full auto never asks, whatever this says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Questions {
+    /// Never: Thrall decides everything and lists what it assumed.
+    Never,
+    /// Only for what can't be undone, costs money, or could go two very different ways.
+    #[default]
+    WhenItMatters,
+    /// Also when Thrall isn't sure what's wanted.
+    WhenUnsure,
 }
 
 /// AI providers Thrall can talk to.
@@ -517,6 +537,9 @@ pub struct ProviderConfig {
     pub transcribe_model: String,
     /// fal.ai's job queue, for video (`make_video`; its key: `thrall key set fal`).
     pub fal_base_url: String,
+    /// A model server on this computer or network (Ollama, LM Studio) for `local/<model>`
+    /// models: free, and no key needed. Empty: local models are off.
+    pub local_base_url: String,
 }
 
 impl Default for ProviderConfig {
@@ -533,6 +556,7 @@ impl Default for ProviderConfig {
             speech_voice: DEFAULT_SPEECH_VOICE.to_owned(),
             transcribe_model: DEFAULT_TRANSCRIBE_MODEL.to_owned(),
             fal_base_url: DEFAULT_FAL_BASE_URL.to_owned(),
+            local_base_url: DEFAULT_LOCAL_BASE_URL.to_owned(),
         }
     }
 }

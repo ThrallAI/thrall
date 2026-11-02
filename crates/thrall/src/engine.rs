@@ -15,7 +15,12 @@ use crate::key;
 /// The engine, or `None` (after telling the user what to do) when no key is set yet.
 pub async fn build(paths: &Paths, config: Config) -> anyhow::Result<Option<AppState>> {
     let provider = config.provider.kind;
-    let Some(api_key) = key::resolve(provider)? else {
+    // A local model needs no key; the main provider then only answers when asked by name.
+    let local_only = config
+        .provider
+        .model
+        .starts_with(thrall_core::constants::LOCAL_MODEL_PREFIX);
+    let Some(api_key) = key::resolve(provider)?.or_else(|| local_only.then(String::new)) else {
         eprintln!(
             "Thrall needs your {name} key first. Run `thrall key set {name}` and paste it in.",
             name = provider.as_str()
@@ -45,7 +50,12 @@ pub async fn build(paths: &Paths, config: Config) -> anyhow::Result<Option<AppSt
         }
         None => None,
     };
-    let llm = Routed::new(openrouter, chatgpt);
+    let mut llm = Routed::new(openrouter, chatgpt);
+    let local_url = config.provider.local_base_url.trim();
+    if !local_url.is_empty() {
+        // Ollama and LM Studio speak the same API; they ignore the key.
+        llm = llm.with_local(Arc::new(OpenRouter::new(String::new(), local_url)?));
+    }
     let mut state = AppState::new(
         config,
         Arc::new(store),

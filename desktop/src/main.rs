@@ -414,7 +414,12 @@ async fn run_engine(app: AppHandle) {
     // First run: the engine can't start without an AI key, so ask for one here (unless an
     // engine is already running, set up some other way).
     let mut shown = false;
-    while !has_key() && engine::connect(&paths).await.is_err() {
+    // A local model (`local/…`) needs no key.
+    let local = settings(&paths)
+        .provider
+        .model
+        .starts_with(thrall_core::constants::LOCAL_MODEL_PREFIX);
+    while !local && !has_key() && engine::connect(&paths).await.is_err() {
         if !shown {
             show(&app);
             shown = true;

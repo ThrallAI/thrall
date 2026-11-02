@@ -35,6 +35,12 @@ pub const CALC_SIGNIFICANT_DIGITS: usize = 12;
 pub const SHELL_DEFAULT_TIMEOUT_SECS: u64 = 120;
 /// The longest a shell command may run.
 pub const SHELL_MAX_TIMEOUT_SECS: u64 = 600;
+/// Output kept for a program left running in the background (the newest part).
+pub const BACKGROUND_OUTPUT_MAX_CHARS: usize = 20_000;
+/// Most of a background program's output `shell_output` returns at once.
+pub const BACKGROUND_READ_MAX_CHARS: usize = 6_000;
+/// Programs one person may leave running in the background at once.
+pub const BACKGROUND_MAX_PER_PERSON: usize = 5;
 /// Git commands time out after this.
 pub const GIT_TIMEOUT_SECS: u64 = 60;
 /// Most characters of live output sent to clients per step (the model still gets the result).
@@ -578,3 +584,70 @@ pub const ARCHIVE_MAX_FILES: usize = 50_000;
 pub const ARCHIVE_MAX_ADDED: usize = 50_000;
 /// Most entries listed (in a listing, a preview or a result) before "… and N more".
 pub const ARCHIVE_LIST_ENTRIES: usize = 300;
+
+/// Words in a learned skill that mean it deletes things (rated High).
+pub const SKILL_RISK_DELETES: &[&str] = &[
+    "rm -rf",
+    "rm -r ",
+    "remove-item",
+    "del /",
+    "rmdir",
+    "rd /s",
+    "--force",
+    "push -f",
+    "drop table",
+    "format ",
+    "delete ",
+];
+
+/// … that it sends or publishes things (rated High).
+pub const SKILL_RISK_SENDS: &[&str] = &[
+    "send email",
+    "send an email",
+    "smtp",
+    "-method post",
+    "curl -x post",
+    "publish",
+    "upload",
+    "post to",
+    "tweet",
+    "send a message",
+];
+
+/// … that it handles keys or passwords (rated High).
+pub const SKILL_RISK_SECRETS: &[&str] = &[
+    "api key",
+    "api_key",
+    "apikey",
+    "password",
+    "token",
+    "secret",
+    "credential",
+    "private key",
+];
+
+/// … that it runs code it downloads (rated High).
+pub const SKILL_RISK_RUNS_DOWNLOADS: &[&str] = &[
+    "| sh",
+    "| bash",
+    "|sh",
+    "|bash",
+    "invoke-expression",
+    "iex ",
+    "| iex",
+    "curl -s",
+    "wget ",
+];
+
+/// … that it runs commands (at least Medium).
+pub const SKILL_RISK_COMMANDS: &[&str] = &[
+    "```sh",
+    "```bash",
+    "```powershell",
+    "```ps1",
+    "```shell",
+    "```cmd",
+    "run `",
+    "shell",
+    "terminal",
+];

@@ -177,6 +177,38 @@ describe("apply", () => {
     expect(v.items.map((i) => i.kind)).toEqual(["plan"]);
   });
 
+  it("shows a question card and says how it was answered", () => {
+    seq = 0;
+    const asked = run(emptyView(), [
+      ev({
+        type: "question.ask",
+        question: "q1",
+        items: [{ text: "Which database?", options: ["SQLite", "Postgres"], recommended: "SQLite" }],
+        why: "It decides the design",
+        expires_at: 1000,
+      }),
+    ]);
+    expect(asked.card).toMatchObject({ kind: "question", request: "q1", why: "It decides the design", expiresAt: 1000 });
+    expect(asked.activity).toBe("waiting");
+    const answered = apply(
+      asked,
+      ev({ type: "question.resolved", question: "q1", answers: ["Postgres"], answered_by: "web" }),
+      "web",
+      CLIENT_LABELS,
+    );
+    expect(answered.card).toBeNull();
+    expect(answered.items.at(-1)).toMatchObject({ kind: "notice", text: "You answered: Postgres" });
+    const timedOut = apply(
+      asked,
+      ev({ type: "question.resolved", question: "q1", answers: ["SQLite"], answered_by: "timeout" }),
+      "web",
+      CLIENT_LABELS,
+    );
+    expect(timedOut.items.at(-1)).toMatchObject({
+      text: "No answer in time, so Thrall went with its picks: SQLite",
+    });
+  });
+
   it("drops a stale card once a reopened session's replay ends", () => {
     seq = 0;
     const opened = openedView(info({ last_seq: 1, state: "idle" }), "m");

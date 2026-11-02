@@ -147,7 +147,7 @@ export const SETTINGS_SECTIONS = [
   { id: "personality", label: "Personality" },
   { id: "models", label: "Models" },
   { id: "safety", label: "Permissions & safety" },
-  { id: "memory", label: "Memory & skills" },
+  { id: "memory", label: "Learning" },
   { id: "writing", label: "Writing" },
   { id: "tools", label: "Tools & integrations" },
   { id: "people", label: "People" },
@@ -158,6 +158,13 @@ export const SETTINGS_SECTIONS = [
 
 /** One settings section's id. */
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]["id"];
+
+/** What a learned skill's safety rating is called on screen. */
+export const RATING_LABELS: Readonly<Record<string, string>> = {
+  low: "Low risk",
+  medium: "Medium risk",
+  high: "High risk",
+};
 
 /** The personality written in the person's own words (`personality.set {preset}`). */
 export const PERSONALITY_CUSTOM = "custom";
@@ -173,6 +180,19 @@ export const FRESH_STARTS = ["daily", "weekly", "never"] as const;
 
 /** Humaniser levels (config `writing.humanise`), least to most. */
 export const HUMANISE_LEVELS = ["off", "light", "full"] as const;
+
+/** `answered_by` on a question card nobody answered in time. */
+export const QUESTION_TIMEOUT = "timeout";
+
+/** When Thrall asks instead of deciding (config `agent.questions`). */
+export const QUESTION_MODES = ["never", "when_it_matters", "when_unsure"] as const;
+
+/** What each question mode is called on the settings screen. */
+export const QUESTION_MODE_LABELS: Readonly<Record<string, string>> = {
+  never: "Never: decide and note it",
+  when_it_matters: "Only when it matters",
+  when_unsure: "When it's unsure",
+};
 
 /** How often the settings screen checks whether a ChatGPT sign-in has landed. */
 export const SIGN_IN_POLL_MS = 2000;

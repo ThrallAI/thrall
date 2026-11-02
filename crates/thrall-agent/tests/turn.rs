@@ -545,8 +545,13 @@ async fn run_with(
         while let Some(frame) = rx.recv().await {
             match &frame.event {
                 Event::PermissionRequest { request, .. }
-                | Event::PlanProposed { plan: request, .. } => {
-                    state.prompts.answer(request, &state.user_id, reply, "test");
+                | Event::PlanProposed { plan: request, .. }
+                | Event::QuestionAsk {
+                    question: request, ..
+                } => {
+                    state
+                        .prompts
+                        .answer(request, &state.user_id, reply.clone(), "test");
                 }
                 _ => {}
             }
@@ -649,6 +654,86 @@ async fn edits_need_a_read_first() {
     )));
 }
 
+#[tokio::test]
+async fn a_question_card_waits_for_answers_and_is_asked_once() {
+    let (mut state, _) = setup(vec![
+        tool_call(
+            "c1",
+            "ask_user",
+            r#"{"why": "It decides the whole design", "questions": [
+                {"text": "Which database?", "options": ["Postgres"], "recommended": "SQLite"},
+                {"text": "Name?", "recommended": "notes"}]}"#,
+        ),
+        tool_call(
+            "c2",
+            "ask_user",
+            r#"{"questions": [{"text": "Colour?", "recommended": "blue"}]}"#,
+        ),
+        reply(&["Done."]),
+        reply(&["Asking"]),
+    ])
+    .await;
+    checks_off(&mut state);
+    let s = session::create(&state, Some(workspace("ask")))
+        .await
+        .unwrap();
+    let answer = Reply::Question(vec!["Postgres".into()]);
+    let (_, frames) = run_with(&state, &s.id, "build it", answer, |_, _| {}).await;
+
+    let asked: Vec<_> = frames
+        .iter()
+        .filter_map(|f| match &f.event {
+            Event::QuestionAsk { items, why, .. } => Some((items.clone(), why.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(asked.len(), 1, "one card per task");
+    assert_eq!(asked[0].0[0].options, ["SQLite", "Postgres"]);
+    assert_eq!(asked[0].1, "It decides the whole design");
+    assert!(frames.iter().any(|f| matches!(
+        &f.event,
+        Event::QuestionResolved { answers, answered_by, .. }
+            if answers == &["Postgres", "notes"] && answered_by == "test"
+    )));
+    let statuses: Vec<StepStatus> = frames
+        .iter()
+        .filter_map(|f| match f.event {
+            Event::StepCompleted { status, .. } => Some(status),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(statuses, vec![StepStatus::Ok, StepStatus::Error]);
+}
+
+#[tokio::test]
+async fn full_auto_goes_with_thralls_own_answers() {
+    let (mut state, _) = setup(vec![
+        tool_call(
+            "c1",
+            "ask_user",
+            r#"{"questions": [{"text": "Which?", "recommended": "this one"}]}"#,
+        ),
+        reply(&["Done."]),
+        reply(&["Deciding"]),
+    ])
+    .await;
+    checks_off(&mut state);
+    let s = session::create(&state, Some(workspace("ask-auto")))
+        .await
+        .unwrap();
+    session::set_mode(&state, &s.id, thrall_agent::Mode::FullAuto)
+        .await
+        .unwrap();
+    let (_, frames) = run_with(&state, &s.id, "go", yes(), |_, _| {}).await;
+    assert!(
+        !kinds(&frames).contains(&"question.ask"),
+        "Full auto never asks"
+    );
+    assert!(frames.iter().any(|f| matches!(
+        &f.event,
+        Event::StepCompleted { status: StepStatus::Ok, summary, .. } if summary == "Went with its own answers"
+    )));
+}
 #[tokio::test]
 async fn a_noted_lesson_is_kept_and_followed_from_then_on() {
     let (mut state, provider) = setup(vec![
@@ -2418,12 +2503,47 @@ async fn saved_facts_are_announced_and_asked_for_when_saving_freely_is_off() {
 }
 
 #[tokio::test]
-async fn a_proposed_skill_is_saved_on_yes_runs_in_a_helper_and_by_its_name() {
+async fn a_risky_learned_skill_is_put_to_the_person_first() {
+    let (mut state, _) = setup(vec![
+        tool_call(
+            "c1",
+            "skill_propose",
+            r#"{"name": "Clean Up", "description": "Clean the build", "learned_from": "web", "instructions": "Remove-Item -Recurse build"}"#,
+        ),
+        reply(&["Not saved."]),
+        reply(&["Cleaning"]),
+    ])
+    .await;
+    checks_off(&mut state);
+    let dir = workspace("skill-risky");
+    let data = std::path::PathBuf::from(&dir).join("data");
+    state.data_dir = Some(data.clone());
+    let s = session::create(&state, Some(dir.clone())).await.unwrap();
+    let no = Reply::Permission(PermissionChoice::No);
+    let (_, frames) = run_with(&state, &s.id, "learn it", no, |_, _| {}).await;
+    let summary = frames
+        .iter()
+        .find_map(|f| match &f.event {
+            Event::PermissionRequest { summary, risk, .. } => {
+                assert_eq!(*risk, thrall_protocol::Risk::High);
+                Some(summary.clone())
+            }
+            _ => None,
+        })
+        .expect("a high-rated skill is put to the person");
+    assert!(summary.contains("rated High") && summary.contains("deletes things"));
+    assert!(
+        !data.join("skills").join("clean-up").exists(),
+        "turned down, so not kept"
+    );
+}
+#[tokio::test]
+async fn a_learned_skill_is_saved_without_asking_runs_in_a_helper_and_by_its_name() {
     let (mut state, provider) = setup(vec![
         tool_call(
             "c1",
             "skill_propose",
-            r#"{"name": "Tidy Notes", "description": "Tidy a notes file", "instructions": "1. Read it.\n2. Sort the lines."}"#,
+            r#"{"name": "Tidy Notes", "description": "Tidy a notes file", "learned_from": "user", "instructions": "1. Read it.\n2. Sort the lines."}"#,
         ),
         reply(&["Saved it."]),
         reply(&["Tidy notes"]),
@@ -2445,25 +2565,17 @@ async fn a_proposed_skill_is_saved_on_yes_runs_in_a_helper_and_by_its_name() {
     let s = session::create(&state, Some(dir.clone())).await.unwrap();
 
     let (_, frames) = run_with(&state, &s.id, "tidy my notes", yes(), |_, _| {}).await;
-    let (diff, choices) = frames
-        .iter()
-        .find_map(|f| match &f.event {
-            Event::PermissionRequest { diff, choices, .. } => Some((diff.clone(), choices.clone())),
-            _ => None,
-        })
-        .expect("the skill is put to the user");
-    let unified = diff.expect("with the file shown").unified;
-    assert!(unified.contains("+name: tidy-notes") && unified.contains("+run: helper"));
     assert!(
-        !choices.contains(&PermissionChoice::Always),
-        "asked every time"
+        !kinds(&frames).contains(&"permission.request"),
+        "a low-rated skill isn't put to the user"
     );
+    assert!(frames.iter().any(|f| matches!(
+        &f.event,
+        Event::StepCompleted { summary, .. } if summary == "Learned skill tidy-notes (low)"
+    )));
     let file = data.join("skills").join("tidy-notes").join("SKILL.md");
-    assert!(
-        std::fs::read_to_string(&file)
-            .unwrap()
-            .contains("2. Sort the lines.")
-    );
+    let saved = std::fs::read_to_string(&file).unwrap();
+    assert!(saved.contains("2. Sort the lines.") && saved.contains("rating: low"));
 
     // Used again: a helper does it; only its answer comes back.
     provider

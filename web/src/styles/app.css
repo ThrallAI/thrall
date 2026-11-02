@@ -633,6 +633,32 @@ button {
   flex-wrap: wrap;
   gap: var(--space-2);
 }
+.th-question {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.th-question legend {
+  padding: 0;
+  margin-bottom: var(--space-1);
+  font: 500 14px/20px var(--font-sans);
+  overflow-wrap: anywhere;
+}
+.th-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 14px;
+  cursor: pointer;
+}
+.th-pick {
+  font-size: 12px;
+  color: var(--accent);
+}
 .th-risk {
   font: 500 12px/16px var(--font-sans);
   border-radius: var(--radius-full);
@@ -1917,6 +1943,15 @@ button.th-file-chip:focus-visible {
   border: 1px solid var(--line-strong);
   color: var(--ink-muted);
   white-space: nowrap;
+}
+.th-badge.is-rating-low {
+  color: var(--ok);
+}
+.th-badge.is-rating-medium {
+  color: var(--warn);
+}
+.th-badge.is-rating-high {
+  color: var(--danger);
 }
 .th-badge.is-ok {
   color: var(--ok);

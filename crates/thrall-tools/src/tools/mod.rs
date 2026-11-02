@@ -31,8 +31,9 @@ pub use browse::BrowserTool;
 pub use calc::Calc;
 pub use clipboard::Clipboard;
 pub use control::{
-    AgentResult, DELEGATE, Delegate, EXIT_PLAN_MODE, EXPERIENCE_NOTE, ExitPlanMode, ExperienceNote,
-    PROPOSE_SKILL, ProposeSkill, Restart, USE_SKILL, UseSkill, find_skill, skill_text,
+    ASK_USER, AgentResult, AskUser, DELEGATE, Delegate, EXIT_PLAN_MODE, EXPERIENCE_NOTE,
+    ExitPlanMode, ExperienceNote, PROPOSE_SKILL, ProposeSkill, Restart, USE_SKILL, UseSkill,
+    find_skill, skill_text,
 };
 pub use documents::ReadDocument;
 pub use files::{EditFile, ListDir, ReadFile, WriteFile};
@@ -42,7 +43,7 @@ pub use office::{EditPdf, EditSpreadsheet, EditWord, MakePdf};
 pub use schedule::{Schedule, ScheduleList, ScheduleRemove};
 pub use search::{Glob, Grep};
 pub use sessions::{SessionRead, SessionsList};
-pub use shell::{Git, Shell, shell_command};
+pub use shell::{Git, Shell, ShellOutput, ShellStop, shell_command};
 pub use system::SystemInfo;
 pub use web::{WebFetch, WebSearch};
 pub use work::{MEMORY_SAVE, MemorySave, MemorySearch, TodoWrite};
@@ -68,6 +69,8 @@ pub fn core() -> Vec<Arc<dyn Tool>> {
         Arc::new(Grep),
         Arc::new(Calc),
         Arc::new(Shell),
+        Arc::new(ShellOutput),
+        Arc::new(ShellStop),
         Arc::new(Git),
         Arc::new(WebFetch),
         Arc::new(WebSearch),
@@ -94,6 +97,7 @@ pub fn core() -> Vec<Arc<dyn Tool>> {
         Arc::new(ScheduleList),
         Arc::new(ScheduleRemove),
         Arc::new(ExitPlanMode),
+        Arc::new(AskUser),
         Arc::new(ExperienceNote),
         Arc::new(Restart),
     ]
@@ -104,6 +108,8 @@ pub const NOT_FOR_HELPERS: &[&str] = &[
     DELEGATE,
     "agent_result",
     EXIT_PLAN_MODE,
+    // Helpers decide for themselves; only Thrall asks the person.
+    ASK_USER,
     // Lessons are Thrall's own, noted in the person's conversation.
     EXPERIENCE_NOTE,
     "thrall_restart",

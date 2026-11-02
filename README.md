@@ -49,6 +49,14 @@ Prefer to build it yourself? See [BUILDING.md](BUILDING.md).
    command palette, Ctrl+K → "Take the tour").
 3. To use your phone: Settings → Phones → **Add a phone**, then scan the code with the Android app.
 
+## Local models (no key, no cost)
+
+Running [Ollama](https://ollama.com) or [LM Studio](https://lmstudio.ai)? Set the model to
+`local/<name>` (Settings → Models, or `/model local/llama3.1`). Thrall talks to Ollama at
+`http://localhost:11434/v1` by default; for LM Studio set Settings → Models → Local model server to
+`http://localhost:1234/v1`. With a local model as the main model, Thrall starts without an
+OpenRouter key. Pictures, speech and transcription still use OpenRouter for now.
+
 ## Safety: read this once
 
 Thrall acts on **your** computer with **your** permissions. That's what makes it useful, and why

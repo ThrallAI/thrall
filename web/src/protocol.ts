@@ -334,6 +334,17 @@ export type RequestFrame = {
       type: "plan.decide";
     }
   | {
+      /**
+       * One answer per question.
+       */
+      answers: string[];
+      /**
+       * Question id.
+       */
+      question: string;
+      type: "question.answer";
+    }
+  | {
       type: "session.watch_all";
     }
   | {
@@ -1228,6 +1239,40 @@ export type EventFrame = {
     }
   | {
       /**
+       * When Thrall goes ahead with its recommended answers, Unix ms.
+       */
+      expires_at: number;
+      /**
+       * The questions, in order.
+       */
+      items: QuestionItem[];
+      /**
+       * Question id; answers quote it.
+       */
+      question: string;
+      type: "question.ask";
+      /**
+       * Why Thrall is asking instead of deciding, in a sentence.
+       */
+      why?: string;
+    }
+  | {
+      /**
+       * Which client answered; `timeout` when nobody did and the recommended answers were used.
+       */
+      answered_by: string;
+      /**
+       * One answer per question, in order.
+       */
+      answers: string[];
+      /**
+       * Question id.
+       */
+      question: string;
+      type: "question.resolved";
+    }
+  | {
+      /**
        * Which client answered.
        */
       answered_by: string;
@@ -1706,6 +1751,11 @@ export interface SkillInfo {
    * One of the person's own (`false`: the project's).
    */
   personal: boolean;
+  /**
+   * Safety rating of a skill Thrall learned: `low`, `medium` or `high` (none for ones
+   * written by hand).
+   */
+  rating?: string | null;
 }
 /**
  * A paired phone.
@@ -1951,6 +2001,23 @@ export interface TaskItem {
   status: "pending" | "in_progress" | "done";
   /**
    * What it is.
+   */
+  text: string;
+}
+/**
+ * One question on a `question.ask` card.
+ */
+export interface QuestionItem {
+  /**
+   * Answers to pick from (the person can always type their own instead).
+   */
+  options?: string[];
+  /**
+   * Thrall's recommended answer: picked to start with, and used if nobody answers.
+   */
+  recommended: string;
+  /**
+   * The question, in plain words.
    */
   text: string;
 }

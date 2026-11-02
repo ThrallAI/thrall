@@ -9,8 +9,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub use events::{
-    Diff, DiffKind, ErrorCode, Event, EventFrame, FileRef, NoticeLevel, PermissionChoice, Risk,
-    Role, StepStatus, TaskItem, TaskStatus, TurnStatus, Usage,
+    Diff, DiffKind, ErrorCode, Event, EventFrame, FileRef, NoticeLevel, PermissionChoice,
+    QuestionItem, Risk, Role, StepStatus, TaskItem, TaskStatus, TurnStatus, Usage,
 };
 pub use requests::{
     AppRelease, ClientInfo, ClientKind, CommandItem, DeviceInfo, EngineInfo, FactInfo, FolderEntry,

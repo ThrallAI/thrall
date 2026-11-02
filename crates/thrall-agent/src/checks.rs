@@ -28,6 +28,8 @@ pub struct Track {
     pub in_helper: bool,
     /// These steps are split mode's Thinker's: it may only look.
     pub look_only: bool,
+    /// Thrall already put a question card to the person this task.
+    pub asked: bool,
 }
 
 impl Track {
@@ -160,6 +162,7 @@ mod tests {
         let off = AgentConfig {
             verify: false,
             claim_check: false,
+            ..AgentConfig::default()
         };
         let mut t = Track::default();
         t.edited("a.rs");

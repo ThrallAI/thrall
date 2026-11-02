@@ -46,6 +46,8 @@ class Notifier(
                     is Event.PlanProposed -> if (!visible()) plan(f.session, e.plan)
                     is Event.PermissionResolved -> manager.cancel(TAG, e.request.hashCode())
                     is Event.PlanResolved -> manager.cancel(TAG, e.plan.hashCode())
+                    is Event.QuestionAsk -> if (!visible()) question(f.session, e)
+                    is Event.QuestionResolved -> manager.cancel(TAG, e.question.hashCode())
                     is Event.TurnCompleted -> if (!visible() && e.status != CANCELLED) finished(f.session, e.turn, e.status)
                     else -> Unit
                 }
@@ -77,6 +79,18 @@ class Notifier(
     private fun plan(session: String, plan: String) {
         val id = plan.hashCode()
         post(id, base(CHANNEL_NEEDS_YOU, session, id).setContentTitle("Thrall has a plan for you").setContentText("Open it to approve or change it."))
+    }
+
+    private fun question(session: String, e: Event.QuestionAsk) {
+        val id = e.question.hashCode()
+        val first = e.items.firstOrNull()?.text.orEmpty()
+        post(
+            id,
+            base(CHANNEL_NEEDS_YOU, session, id)
+                .setContentTitle("Thrall has a question")
+                .setContentText(first)
+                .setStyle(NotificationCompat.BigTextStyle().bigText("$first\n\nNo answer in time? Thrall goes ahead with its own picks.")),
+        )
     }
 
     private fun finished(session: String, turn: String, status: String) {

@@ -112,7 +112,8 @@ impl Watch {
             Event::StepStarted { .. } => self.set(s, Activity::Tool),
             Event::StepCompleted { .. }
             | Event::PermissionResolved { .. }
-            | Event::PlanResolved { .. } => self.set(s, Activity::Thinking),
+            | Event::PlanResolved { .. }
+            | Event::QuestionResolved { .. } => self.set(s, Activity::Thinking),
             Event::PermissionRequest { summary, .. } => {
                 self.set(s, Activity::Waiting);
                 return Some(note(
@@ -127,6 +128,15 @@ impl Watch {
                     Kind::NeedsYou,
                     format!("Thrall needs you · {}", self.title(s)),
                     "A plan is ready for you to approve.".to_owned(),
+                ));
+            }
+            Event::QuestionAsk { items, .. } => {
+                self.set(s, Activity::Waiting);
+                let first = items.first().map(|q| q.text.clone()).unwrap_or_default();
+                return Some(note(
+                    Kind::NeedsYou,
+                    format!("Thrall has a question · {}", self.title(s)),
+                    first,
                 ));
             }
             Event::SessionUpdated { title: Some(t), .. } => {

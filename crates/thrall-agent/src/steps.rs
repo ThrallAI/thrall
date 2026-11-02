@@ -13,8 +13,8 @@ use thrall_protocol::{Event, PermissionChoice, Risk, StepStatus};
 use thrall_store::{AuditEntry, NewStep};
 use thrall_tools::tool::arg_str;
 use thrall_tools::tools::{
-    DELEGATE, EXIT_PLAN_MODE, EXPERIENCE_NOTE, MAKE_IMAGE, MAKE_VIDEO, MEMORY_SAVE, SPEAK,
-    TRANSCRIBE, USE_SKILL, VIDEO_TRANSCRIPT, VIEW_IMAGE, find_skill, skill_text,
+    ASK_USER, DELEGATE, EXIT_PLAN_MODE, EXPERIENCE_NOTE, MAKE_IMAGE, MAKE_VIDEO, MEMORY_SAVE,
+    SPEAK, TRANSCRIBE, USE_SKILL, VIDEO_TRANSCRIPT, VIEW_IMAGE, find_skill, skill_text,
 };
 use thrall_tools::{Cancel, ToolContext, ToolOutput};
 use tokio::sync::mpsc;
@@ -213,6 +213,9 @@ pub(crate) async fn run_step(
                     ToolOutput::error(why)
                 }
             }
+        }
+        Some(t) if t.name() == ASK_USER => {
+            crate::questions::ask(emitter, state, &args, *mode, track, cancel).await?
         }
         Some(t) if t.name() == EXPERIENCE_NOTE => {
             match crate::experience::note(state, arg_str(&args, "lesson")) {
@@ -778,6 +781,8 @@ pub(crate) async fn decide_plan(
             Ok(a) => match a.reply {
                 Reply::Plan { approve, auto_edits } => (approve, auto_edits, a.answered_by),
                 Reply::Permission(c) => (c != PermissionChoice::No, false, a.answered_by),
+                // Not an answer to a plan.
+                Reply::Question(_) => (false, false, a.answered_by),
             },
             Err(_) => (false, false, String::new()),
         },

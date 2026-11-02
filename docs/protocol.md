@@ -239,10 +239,20 @@ carry `mode_limit {until, ends_at?}` while it's on; a `notice` says why it ended
 **Questions** (Thrall needs information, not permission)
 
 ```
-engine → question.ask      { question, session, text, options? }
-client → question.answer   { question, text }
-engine → question.resolved { question, answered_by }
+engine → question.ask      { question, items: [{text, options?, recommended}], why?, expires_at }
+client → question.answer   { question, answers: [string] }       // one per item, in order
+engine → question.resolved { question, answers, answered_by }    // answered_by "timeout": nobody did
 ```
+
+- Thrall decides what it sensibly can and lists what it assumed at the end; it asks (the
+  `ask_user` tool) only per `[agent] questions`: `never`, `when_it_matters` (default: things that
+  can't be undone, cost money, or could take the work two very different ways) or `when_unsure`.
+- One card per task, at the start, holding every question, each with Thrall's recommended answer
+  already picked. Clients let the person pick an option or type their own answer.
+- Nobody answering by `expires_at` (`[agent] question_wait_minutes`, default 5) means the
+  recommended answers are used (`answered_by: "timeout"`). Full auto, scheduled jobs and helpers
+  never show a card: Thrall goes with its own answers.
+- First answer wins, as with permissions; an empty answer counts as the recommended one.
 
 **Plans** (plan mode)
 

@@ -291,6 +291,11 @@ impl AppState {
         self.stopping.store(true, Ordering::SeqCst);
     }
 
+    /// Stop the programs Thrall left running in the background (`shell` with `keep_running`).
+    pub async fn stop_background(&self) {
+        thrall_tools::background::stop_all().await;
+    }
+
     /// Whether background helpers can run here (the runners are going).
     pub fn can_run_background(&self) -> bool {
         self.runners_started.load(Ordering::SeqCst)
