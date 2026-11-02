@@ -39,6 +39,8 @@ Thrall learns, asks, and gets a personality.
   the desktop app signs its own window in.
 - The data folder is private to your user on Linux and macOS (0700).
 - SECURITY.md now says plainly what Thrall protects and what it can't.
+- Updated pulldown-cmark (RUSTSEC-2026-0433) and calamine (now on the fixed zip 9); the zip 8
+  advisory RUSTSEC-2026-0429 is in archive extraction, which Thrall's Office libraries never use.
 
 ### Fixed
 
