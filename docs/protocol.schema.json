@@ -1910,6 +1910,65 @@
           ]
         },
         {
+          "description": "Answer to `skill.get` and `skill.edit`.",
+          "type": "object",
+          "properties": {
+            "skill": {
+              "description": "The skill as saved.",
+              "$ref": "#/$defs/SkillDetail"
+            },
+            "type": {
+              "type": "string",
+              "const": "skill.shown"
+            }
+          },
+          "required": [
+            "type",
+            "skill"
+          ]
+        },
+        {
+          "description": "Answer to `skill.make_safe`: a safer version, not saved.",
+          "type": "object",
+          "properties": {
+            "description": {
+              "description": "When to use it.",
+              "type": "string"
+            },
+            "instructions": {
+              "description": "The rewritten instructions.",
+              "type": "string"
+            },
+            "name": {
+              "description": "The skill's name.",
+              "type": "string"
+            },
+            "rating": {
+              "description": "What this version would be rated: `low`, `medium` or `high`.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "skill.safer"
+            },
+            "why": {
+              "description": "Why, when it isn't low.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "name",
+            "description",
+            "instructions",
+            "rating",
+            "why"
+          ]
+        },
+        {
           "description": "Answer to `memory.list`.",
           "type": "object",
           "properties": {
@@ -3332,6 +3391,70 @@
           ]
         },
         {
+          "description": "One of the person's own skills in full, to read or edit. Answered by `skill.shown`, or\n`error {invalid}` when there's no such skill of theirs.",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "The skill's name.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "skill.get"
+            }
+          },
+          "required": [
+            "type",
+            "name"
+          ]
+        },
+        {
+          "description": "Change one of the person's own skills. A skill Thrall learned is rated again from what it\nnow says (the person wrote it, so only what it does can raise the rating). Answered by\n`skill.shown`, or `error {invalid}` with the reason.",
+          "type": "object",
+          "properties": {
+            "description": {
+              "description": "When to use it, one sentence.",
+              "type": "string"
+            },
+            "instructions": {
+              "description": "The instructions (Markdown).",
+              "type": "string"
+            },
+            "name": {
+              "description": "The skill's name (it keeps it).",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "skill.edit"
+            }
+          },
+          "required": [
+            "type",
+            "name",
+            "description",
+            "instructions"
+          ]
+        },
+        {
+          "description": "Ask the model for a safer version of one of the person's own skills: the same job without\ndeleting, sending, handling keys or running downloads on its own (it asks the person\ninstead). Nothing is saved: `skill.edit` with the answer keeps it. Answered by\n`skill.safer`, or `error {invalid}` / `error {provider_unavailable}`.",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "The skill's name.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "skill.make_safe"
+            }
+          },
+          "required": [
+            "type",
+            "name"
+          ]
+        },
+        {
           "description": "The engine's settings, for the settings screen (read only for now). Key values never\nleave the engine: only whether each one is set. Answered by `settings.shown`.",
           "type": "object",
           "properties": {
@@ -4038,6 +4161,46 @@
           "description": "Text.",
           "type": "string"
         }
+      ]
+    },
+    "SkillDetail": {
+      "description": "One of the person's own skills in full.",
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "When to use it.",
+          "type": "string"
+        },
+        "enabled": {
+          "description": "It's turned on.",
+          "type": "boolean"
+        },
+        "helper": {
+          "description": "It runs in a helper.",
+          "type": "boolean"
+        },
+        "instructions": {
+          "description": "The instructions (Markdown).",
+          "type": "string"
+        },
+        "name": {
+          "description": "Its name.",
+          "type": "string"
+        },
+        "rating": {
+          "description": "Safety rating of a skill Thrall learned (none for ones written by hand).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "instructions",
+        "helper",
+        "enabled"
       ]
     },
     "SkillInfo": {

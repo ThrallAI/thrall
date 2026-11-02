@@ -73,6 +73,12 @@ pub const SKILL_RUN_HELPER: &str = "helper";
 pub const SKILL_NAME_MAX_CHARS: usize = 48;
 /// Longest description a proposed skill may have.
 pub const SKILL_DESCRIPTION_MAX_CHARS: usize = 300;
+/// `learned_from` for a skill the person taught (or wrote themselves).
+pub const SKILL_SOURCE_USER: &str = "user";
+/// `learned_from` for a skill Thrall worked out in its own work.
+pub const SKILL_SOURCE_MY_WORK: &str = "my_work";
+/// `learned_from` for a skill made from the person's files.
+pub const SKILL_SOURCE_FILES: &str = "files";
 
 /// The shortest repeat a scheduled job may have.
 pub const MIN_INTERVAL_SECS: i64 = 5 * 60;
