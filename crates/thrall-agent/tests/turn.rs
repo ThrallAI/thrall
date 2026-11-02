@@ -528,7 +528,7 @@ async fn commands_answer_in_markdown() {
     assert!(err.to_string().contains("/help"));
 }
 
-// ---------- phase 3: modes, gates, plan mode, interrupts, checks ----------
+// ---------- modes, gates, plan mode, interrupts, checks ----------
 
 /// Run a turn, answering prompts with `reply`, and calling `during` on each event (for
 /// interrupting or typing mid-turn).
@@ -923,7 +923,7 @@ async fn a_plan_written_as_a_reply_still_gets_an_approval_card() {
     );
 }
 
-// ---------- phase 4: project memory, @file, skills ----------
+// ---------- project memory, @file, skills ----------
 
 #[tokio::test]
 async fn project_instructions_and_skills_reach_the_model() {
@@ -1139,7 +1139,7 @@ async fn hooks_can_block_tools_and_add_to_messages() {
     );
 }
 
-// ---------- phase 4: helpers, background tasks, scheduler ----------
+// ---------- helpers, background tasks, scheduler ----------
 
 #[tokio::test]
 async fn a_helper_works_in_its_own_context_and_hands_back_its_answer() {
@@ -1318,7 +1318,7 @@ async fn scheduled_jobs_run_unattended_and_never_ask() {
     assert!(jobs[0].next_run_at > 0 && jobs[0].last_run_at.is_some());
 }
 
-// ---------- phase 5: long-term memory and compaction ----------
+// ---------- long-term memory and compaction ----------
 
 /// Vectors from keywords: dimension 0 = cats, 1 = dogs, 2 = always a little.
 struct KeywordEmbedder;

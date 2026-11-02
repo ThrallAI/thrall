@@ -1,6 +1,6 @@
 # Thrall client protocol — v1
 
-*Phase 0 · draft 1 · 2026-10-13*
+*Protocol v1 · changes are listed in [CHANGELOG.md](../CHANGELOG.md)*
 
 Every client (terminal, web app, desktop app, Android, Telegram) talks to the engine with the messages
 in this document, and nothing else. Clients display and collect input; all agent logic stays in the
@@ -38,7 +38,7 @@ engine. The Rust types live in the `thrall-protocol` crate; the TypeScript (web,
   only while `remote.enabled` is on; a tunnel such as Tailscale Funnel forwards the public address
   (`remote.address`) to it. Its one path, `/v1/remote`, takes binary WebSocket messages, all
   encrypted with Noise (see §13a); anything sending `Origin` (a browser page) is refused.
-- **Server mode:** TLS only; the token comes from signing in (accounts arrive in phase 10).
+- **Server mode (planned):** TLS only; the token comes from signing in to an account.
 - **Frame size:** at most 1 MiB. Larger content goes through `/v1/files`.
 - **Heartbeat:** the client sends `ping` every 20 s; the engine answers `pong`. Either side treats
   60 s of silence as a dead connection. (App-level, because browsers can't send WebSocket ping frames.)
@@ -218,7 +218,6 @@ engine → permission.resolved { request, choice, answered_by: "desktop" }
 ```
 
 - `summary` is plain language: "Delete 3 files in build/".
-- Until permission modes arrive (phase 3), `choices` is `["yes", "no"]`: every command asks every time.
 - `risk`: `low` · `medium` · `high`. Clients colour by it, from the design system.
 - **`always` is left out of `choices`** for actions that always ask (restarts, deleting outside the
   workspace, anything that sends or publishes). The engine refuses an `always` it didn't offer.
@@ -384,10 +383,11 @@ local midnight on the 1st.
 
 ## 13c. Signing browsers in
 
-No passwords. The owner makes a one-time sign-in link for a person; the browser that opens it
-becomes theirs. The page is served with the owner's access token, so on the owner's own computer
-this separates people only by convenience; it becomes the way in when the web app is reached from
-other computers (M5).
+No passwords. A browser only gets in through a one-time sign-in link: the page itself carries no
+token, because anything on the computer (other accounts, other programs) can load it. The owner
+makes links for people; the desktop app makes one for its own window each time it connects (a
+window that's already signed in keeps its sign-in); `thrall open` and `thrall engine` make one
+for the owner's browser.
 
 | Request | Reply |
 |---|---|
@@ -402,13 +402,26 @@ itself, e.g. "Edge on Windows") answers `{"token", "person": {"id", "name"}}`, o
 its person (their sessions, files and folder). Only the token's SHA-256 is stored. Removing a
 person signs all their browsers out.
 
+## 13d. Personality
+
+How Thrall talks to each person. Everyone starts on the standard one Thrall ships with; each person
+(children included) chooses their own, and it never changes anyone else's. It's tone only: it's
+added after Thrall's rules and says it can't change them, what needs permission, or what's safe.
+
+| Request | Reply |
+|---|---|
+| `personality.get {}` | `personality.shown {preset, custom, presets: [{id, name, description}]}`: your choice, and the presets (standard first) |
+| `personality.set {preset, custom?}` | `personality.shown`. `preset` is a preset's id or `custom` (then `custom` is your own words, up to 1500 characters). An unknown preset means the standard one |
+
+Kept in the person's own data folder (`personality.json`).
+
 ## 14. Not in v1 yet (names reserved)
 
-- `runner.*` — the desktop app's companion link to a server-hosted engine (phase 11). A separate
+- `runner.*` — the desktop app's companion link to a server-hosted engine. A separate
   endpoint (`/v1/runner`) with its own message set: the engine asks the runner to run a tool inside an
   approved folder; the runner can always refuse.
-- `account.*` — sign-in and accounts (phase 10).
-- `sync.*` — anything else Android needs beyond events (phase 9; the phone link and file pieces are in §13a).
+- `account.*` — sign-in and accounts, for a server edition.
+- `sync.*` — anything else the phone needs beyond events (the phone link and file pieces are in §13a).
 
 **Telegram** runs inside the engine process. It uses these same message types internally, so it
 behaves like every other client, but it doesn't need a WebSocket.

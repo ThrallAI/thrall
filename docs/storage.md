@@ -1,6 +1,6 @@
 # Thrall storage — schema v1
 
-*Phase 0 · draft 1 · 2026-10-13*
+*Schema v1 · the migrations in `crates/thrall-store/migrations` are the source of truth*
 
 Everything Thrall remembers lives in one database: **SQLite** on your PC, **Postgres** on a server.
 Both are reached through one `Store` trait in `thrall-store`; the rest of the engine never knows which
@@ -42,8 +42,8 @@ metadata.
 
 | Table | Columns | Notes |
 |---|---|---|
-| `devices` | `id`, `user_id`, `name`, `token_hash` (SHA-256 of the device token, unique), `created_at`, `last_seen_at`, `removed_at` | Browsers signed in with a sign-in link (M2c). Signing out sets `removed_at`; the row stays |
-| `users` | `id`, `name`, `created_at`, `role`, `plan`, `removed_at`, `own_key`, `model`, `monthly_limit_micros` | Locally: one row, made on first start; the person running the engine is `owner`, everyone added later a `member`. `plan` is `free` (a hook for paid plans). `removed_at` set: the owner removed them; they can't connect, their things are kept. `own_key` 1: their turns use their own AI key (keychain `openrouter-<id>`); `model`: their own; `monthly_limit_micros`: their monthly limit in millionths of a dollar (M2e/M2f) |
+| `devices` | `id`, `user_id`, `name`, `token_hash` (SHA-256 of the device token, unique), `created_at`, `last_seen_at`, `removed_at` | Browsers signed in with a sign-in link. Signing out sets `removed_at`; the row stays |
+| `users` | `id`, `name`, `created_at`, `role`, `plan`, `removed_at`, `own_key`, `model`, `monthly_limit_micros` | Locally: one row, made on first start; the person running the engine is `owner`, everyone added later a `member`. `plan` is `free` (a hook for paid plans). `removed_at` set: the owner removed them; they can't connect, their things are kept. `own_key` 1: their turns use their own AI key (keychain `openrouter-<id>`); `model`: their own; `monthly_limit_micros`: their monthly limit in millionths of a dollar |
 
 ### Conversations
 
@@ -117,9 +117,9 @@ needs it, then dropped. `preview` (`sk-…a1b2`) is all a client is ever shown.
   allows, done by a maintenance task, never by the agent.
 - Deleting a session never deletes `knowledge` it produced. Memory is managed separately (`/memory`).
 
-## 7. Importing from Python Thrall (phase 5)
+## 7. Importing from Thrall-Legacy (planned, not built yet)
 
-`thrall import --from ../Thrall` reads the Python data and writes it in:
+A planned `thrall import --from <folder>` would read Thrall-Legacy's data and write it in:
 
 | Python | Rust |
 |---|---|
@@ -129,11 +129,10 @@ needs it, then dropped. `preview` (`sk-…a1b2`) is all a client is ever shown.
 | `config/config.toml` (model, provider) | config file + `settings` |
 | API keys in `.env` | OS keychain, after asking — never copied into the database |
 
-The importer is safe to run twice (it skips what's already there) and never changes the Python files.
+It would be safe to run twice (it skips what's already there) and never changes the Python files.
 
 ## 8. Testing
 
-- Every migration runs against both SQLite and Postgres in CI (Postgres from phase 10; SQLite from
-  phase 1).
+- Every migration runs against SQLite in CI (and against Postgres too, if a server edition adds it).
 - Store tests run the same suite against both backends through the `Store` trait.
 - The "same tables in both dialects" test from §1.

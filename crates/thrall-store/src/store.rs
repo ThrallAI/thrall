@@ -13,7 +13,7 @@ use crate::models::{
 /// Shorthand for a storage call's future.
 pub type StoreFuture<'a, T> = BoxFuture<'a, Result<T, StoreError>>;
 
-/// Storage. SQLite today; Postgres implements the same trait in phase 10.
+/// Storage. SQLite today; a server edition could implement the same trait on Postgres.
 pub trait Store: Send + Sync {
     /// Create the user row if it doesn't exist.
     fn ensure_user<'a>(&'a self, user_id: &'a str, name: &'a str, at: i64) -> StoreFuture<'a, ()>;

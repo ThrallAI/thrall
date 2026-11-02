@@ -1,5 +1,5 @@
-//! Engine → client session events (protocol §7–§8, §12). Phase 1 covers turns, streamed messages,
-//! notices and errors; tool steps, prompts and tasks arrive with the phases that need them.
+//! Engine → client session events (protocol §7–§8, §12): turns, streamed messages, tool steps,
+//! prompts, tasks, notices and errors.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

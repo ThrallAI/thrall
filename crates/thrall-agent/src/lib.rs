@@ -1,5 +1,5 @@
-//! The reasoning loop, workers and scheduler. Phase 3: permission modes and the five gates, plan
-//! mode, interrupts, messages typed mid-turn, the verify step and claim check.
+//! The reasoning loop, workers and scheduler: permission modes and the five gates, plan mode,
+//! interrupts, messages typed mid-turn, the verify step and claim check, memory and helpers.
 
 pub mod audio;
 pub mod checkpoints;
@@ -17,6 +17,7 @@ pub mod images;
 pub mod keys;
 pub mod links;
 pub mod people;
+pub mod personality;
 pub mod prompts;
 pub mod runners;
 pub mod session;

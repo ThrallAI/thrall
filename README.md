@@ -4,7 +4,7 @@
 Thrall reads and changes files, runs commands, browses the web and remembers what matters, while
 asking before anything changes. Use it from the desktop app, a browser, the terminal or your phone.
 
-> **Preview (v0.1.0-preview).** Early and actively changing. Windows is used day to day; Linux
+> **Preview (0.x).** Early and actively changing; see the [changelog](CHANGELOG.md) for what's new. Windows is used day to day; Linux
 > (Ubuntu, Omarchy) is new; **macOS builds are made automatically but haven't been tested by hand
 > yet: Mac users, your feedback is very welcome** (see [Contributing](CONTRIBUTING.md)).
 
@@ -12,8 +12,8 @@ asking before anything changes. Use it from the desktop app, a browser, the term
 
 - **The desktop app** (Windows, Linux, macOS): Thrall in its own window and the system tray, with
   notifications when a task finishes or needs you.
-- **The same app in any browser** on the computer, and a **terminal app** (`thrall`) for
-  keyboard people.
+- **The same app in any browser** on the computer (`thrall open` opens it, signed in), and a
+  **terminal app** (`thrall`) for keyboard people.
 - **An Android app** that pairs with your computer, so you can start and answer tasks from your
   phone (on your home network, or anywhere with [Tailscale](#away-from-home)).
 - Sessions with their own folders, groups, plans and task lists, file changes shown as diffs and
@@ -70,6 +70,14 @@ it asks first.
 - Commands and tools run as your user. Don't give it a folder you wouldn't let a helpful but
   fallible person work in, and read what you approve.
 
+> **First run safely**
+> - Stay in **Ask** mode until you know how Thrall behaves.
+> - Start it on a **throwaway folder**, not your real projects.
+> - Give it an OpenRouter key with a **spending limit** (you can set one on the key at OpenRouter).
+> - Check the installer against **`SHA256SUMS.txt`** from the release.
+> - Text on web pages and in files can try to steer an AI. Thrall is told to ignore it, but the
+>   real safeguard is you reading what you approve. More in [SECURITY.md](SECURITY.md).
+
 ## Away from home
 
 The phone talks to your computer over your home network. To use it elsewhere, install
@@ -98,6 +106,11 @@ Set `THRALL_HOME` to keep everything in another folder.
   **Try now**.
 - Logs are in the `logs` folder of the data folder above. Please attach the relevant lines (with
   any keys removed) to bug reports.
+
+## Who's behind this
+
+Thrall is built by one developer and published as **ThrallAI**. Issues and pull requests are read
+and answered here on GitHub, and every change is listed in the [changelog](CHANGELOG.md).
 
 ## Contact
 

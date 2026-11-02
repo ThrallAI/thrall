@@ -57,6 +57,7 @@ pub async fn run(connected: Connected, launch: Launch) -> anyhow::Result<()> {
         client,
         mut events,
         engine,
+        ..
     } = connected;
     let mut app = App::new(engine.model, plain::wanted());
     if let Ok(Reply::CommandListed { items }) = client.request(Request::CommandList {}).await {
