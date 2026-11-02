@@ -418,6 +418,14 @@ pub enum Request {
         /// The new value.
         value: SettingValue,
     },
+    /// Check that a supplier works with the key Thrall has for it (the key never leaves the
+    /// engine), and list the models it offers. The owner only. Answered by `provider.tested`.
+    #[serde(rename = "provider.test")]
+    ProviderTest {
+        /// `openrouter`, `chatgpt`, `local`, `fal`, or a supplier reached directly (`openai`,
+        /// `anthropic`, `google`, `elevenlabs`).
+        supplier: String,
+    },
     /// Paired phones and the phone link's state. Not on the phone link itself. Answered by
     /// `phone.listed`.
     #[serde(rename = "phone.list")]
@@ -653,6 +661,7 @@ impl Request {
             Self::SkillMakeSafe { .. } => "skill.make_safe",
             Self::SettingsGet {} => "settings.get",
             Self::SettingsSet { .. } => "settings.set",
+            Self::ProviderTest { .. } => "provider.test",
             Self::PhoneList {} => "phone.list",
             Self::PhonePair { .. } => "phone.pair",
             Self::PhoneAssign { .. } => "phone.assign",
@@ -943,6 +952,20 @@ pub enum Reply {
         /// Helper types Thrall can hand work to: its own and the person's (`agents/<name>.md`).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         helper_types: Vec<HelperTypeInfo>,
+    },
+    /// Answer to `provider.test`.
+    #[serde(rename = "provider.tested")]
+    ProviderTested {
+        /// The supplier tested.
+        supplier: String,
+        /// It answered and took the key.
+        ok: bool,
+        /// What happened, in plain words (credit left, or what's wrong and how to fix it).
+        message: String,
+        /// Models it offers, as Thrall names them (`direct/openai/gpt-5`, `local/llama3.1`), when
+        /// it lists them.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        models: Vec<String>,
     },
     /// Answer to `phone.list` and `phone.remove`.
     #[serde(rename = "phone.listed")]

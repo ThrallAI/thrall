@@ -21,6 +21,16 @@ pub fn resolve(provider: ProviderKind) -> anyhow::Result<Option<String>> {
     Ok(secrets::get_key(provider)?)
 }
 
+/// The key for a supplier reached directly (`openai`): `env_var` if set, otherwise the keychain.
+pub fn resolve_named(name: &str, env_var: &str) -> anyhow::Result<Option<String>> {
+    if let Ok(key) = std::env::var(env_var)
+        && !key.trim().is_empty()
+    {
+        return Ok(Some(key.trim().to_owned()));
+    }
+    Ok(secrets::get_named(name)?)
+}
+
 /// `thrall key set <name>`.
 pub fn set(name: &str) -> anyhow::Result<ExitCode> {
     let key = if std::io::stdin().is_terminal() {
@@ -68,6 +78,24 @@ pub fn status(config: &Config) -> anyhow::Result<ExitCode> {
             _ => match secrets::get_key(provider)? {
                 Some(key) => println!("{name}: {} (system keychain)", secrets::preview(&key)),
                 None => println!("{name}: not set. Run `thrall key set {name}` to add one."),
+            },
+        }
+    }
+    // Companies reached directly with their own key (Settings → Providers).
+    for s in thrall_llm::constants::DIRECT_SUPPLIERS {
+        match std::env::var(s.key_env_var) {
+            Ok(key) if !key.trim().is_empty() => println!(
+                "{}: {} (from the {} environment variable)",
+                s.id,
+                secrets::preview(&key),
+                s.key_env_var
+            ),
+            _ => match secrets::get_named(s.id)? {
+                Some(key) => println!("{}: {} (system keychain)", s.id, secrets::preview(&key)),
+                None => println!(
+                    "{}: not set (only needed to use {} directly). Run `thrall key set {}`.",
+                    s.id, s.name, s.id
+                ),
             },
         }
     }

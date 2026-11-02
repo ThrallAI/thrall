@@ -542,7 +542,27 @@ pub const SETTINGS_KEYS: &[(&str, &str)] = &[
         CHATGPT_KEY_NAME,
         "Your ChatGPT plan: chat models named chatgpt/<model>",
     ),
+    (
+        "openai",
+        "OpenAI directly: models named direct/openai/<model>",
+    ),
+    (
+        "anthropic",
+        "Anthropic directly: models named direct/anthropic/<model>",
+    ),
+    (
+        "google",
+        "Google directly: models named direct/google/<model>",
+    ),
+    (
+        "elevenlabs",
+        "ElevenLabs voices: direct/elevenlabs/<model> as the speaking model",
+    ),
 ];
+
+/// Suppliers `provider.test` knows besides those reached directly.
+pub const SUPPLIER_OPENROUTER: &str = "openrouter";
+pub const SUPPLIER_LOCAL: &str = "local";
 
 /// The keychain entry holding the ChatGPT sign-in (refresh token and account id).
 pub const CHATGPT_KEY_NAME: &str = "chatgpt";

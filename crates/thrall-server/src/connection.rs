@@ -1167,6 +1167,10 @@ impl Connection {
                     id,
                     thrall_agent::settings::shown(&self.me(), hub.settings_pending()).await,
                 )],
+                Request::ProviderTest { supplier } => vec![reply(
+                    id,
+                    thrall_agent::settings::test_supplier(&hub.state(), supplier.trim()).await,
+                )],
                 Request::SettingsSet { key, value } => {
                     hub.save_setting(&key, &value.to_json()).await?;
                     vec![reply(
@@ -1413,6 +1417,7 @@ fn personality_shown(state: &thrall_agent::AppState) -> Reply {
 fn owner_only(request: &Request) -> bool {
     match request {
         Request::SettingsSet { .. }
+        | Request::ProviderTest { .. }
         | Request::HeartbeatGet {}
         | Request::HeartbeatSet { .. }
         | Request::HeartbeatRun {}

@@ -3376,3 +3376,57 @@ async fn without_split_mode_calls_are_ordinary_chat_calls() {
             .all(|r| r.role == "chat" && r.model == state.model())
     );
 }
+
+/// A local model server that lists one model.
+async fn fake_local_server() -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        let Ok((mut sock, _)) = listener.accept().await else {
+            return;
+        };
+        let mut buf = vec![0; 4096];
+        let _ = sock.read(&mut buf).await;
+        let body = r#"{"data":[{"id":"llama3.1"}]}"#;
+        let reply = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let _ = sock.write_all(reply.as_bytes()).await;
+    });
+    base
+}
+
+#[tokio::test]
+async fn testing_a_supplier_says_what_works_and_how_to_fix_what_doesnt() {
+    use thrall_protocol::Reply;
+    let (mut state, _) = setup(Vec::new()).await;
+    state.keys = Arc::new(TestKeys(Some("fal-key".to_owned())));
+    state.config.provider.local_base_url = fake_local_server().await;
+    let tested = |r: Reply| match r {
+        Reply::ProviderTested {
+            ok,
+            message,
+            models,
+            ..
+        } => (ok, message, models),
+        other => panic!("not provider.tested: {other:?}"),
+    };
+    let (ok, _, models) = tested(thrall_agent::settings::test_supplier(&state, "local").await);
+    assert!(ok);
+    assert_eq!(models, vec!["local/llama3.1"]);
+    let (ok, message, _) = tested(thrall_agent::settings::test_supplier(&state, "fal").await);
+    assert!(ok, "{message}");
+    let (ok, message, _) = tested(thrall_agent::settings::test_supplier(&state, "nobody").await);
+    assert!(!ok && message.contains("doesn't know"));
+    // No key (and none in the environment): say how to add one.
+    if std::env::var_os("ELEVENLABS_API_KEY").is_none() {
+        let (ok, message, _) =
+            tested(thrall_agent::settings::test_supplier(&state, "elevenlabs").await);
+        assert!(
+            !ok && message.contains("thrall key set elevenlabs"),
+            "{message}"
+        );
+    }
+}
