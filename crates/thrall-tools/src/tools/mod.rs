@@ -42,7 +42,7 @@ pub use office::{EditPdf, EditSpreadsheet, EditWord, MakePdf};
 pub use schedule::{Schedule, ScheduleList, ScheduleRemove};
 pub use search::{Glob, Grep};
 pub use sessions::{SessionRead, SessionsList};
-pub use shell::{Git, Shell, shell_command};
+pub use shell::{Git, Shell, ShellOutput, ShellStop, shell_command};
 pub use system::SystemInfo;
 pub use web::{WebFetch, WebSearch};
 pub use work::{MEMORY_SAVE, MemorySave, MemorySearch, TodoWrite};
@@ -68,6 +68,8 @@ pub fn core() -> Vec<Arc<dyn Tool>> {
         Arc::new(Grep),
         Arc::new(Calc),
         Arc::new(Shell),
+        Arc::new(ShellOutput),
+        Arc::new(ShellStop),
         Arc::new(Git),
         Arc::new(WebFetch),
         Arc::new(WebSearch),

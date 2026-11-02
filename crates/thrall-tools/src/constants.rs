@@ -35,6 +35,12 @@ pub const CALC_SIGNIFICANT_DIGITS: usize = 12;
 pub const SHELL_DEFAULT_TIMEOUT_SECS: u64 = 120;
 /// The longest a shell command may run.
 pub const SHELL_MAX_TIMEOUT_SECS: u64 = 600;
+/// Output kept for a program left running in the background (the newest part).
+pub const BACKGROUND_OUTPUT_MAX_CHARS: usize = 20_000;
+/// Most of a background program's output `shell_output` returns at once.
+pub const BACKGROUND_READ_MAX_CHARS: usize = 6_000;
+/// Programs one person may leave running in the background at once.
+pub const BACKGROUND_MAX_PER_PERSON: usize = 5;
 /// Git commands time out after this.
 pub const GIT_TIMEOUT_SECS: u64 = 60;
 /// Most characters of live output sent to clients per step (the model still gets the result).

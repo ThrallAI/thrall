@@ -1,5 +1,6 @@
 //! Native tools, one file per tool group, each implementing the `Tool` trait.
 
+pub mod background;
 pub mod browser;
 pub mod constants;
 pub mod diff;
