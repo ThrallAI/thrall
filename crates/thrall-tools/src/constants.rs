@@ -651,3 +651,56 @@ pub const SKILL_RISK_COMMANDS: &[&str] = &[
     "shell",
     "terminal",
 ];
+
+/// Programs and models on this computer (`program/…` models) live in this folder inside the
+/// data folder: whisper.cpp models (`ggml-*.bin`) in `whisper/`, Piper voices (`*.onnx`) in
+/// `piper/`. Thrall never downloads them itself.
+pub const LOCAL_MODELS_DIR: &str = "models";
+pub const WHISPER_MODELS_DIR: &str = "whisper";
+pub const PIPER_VOICES_DIR: &str = "piper";
+
+/// whisper.cpp's command-line program, by the names its builds and packages use.
+pub const WHISPER_PROGRAMS: &[&str] = &["whisper-cli", "whisper-cpp"];
+
+/// Piper's command-line program.
+pub const PIPER_PROGRAM: &str = "piper";
+
+/// The file endings of whisper.cpp models and Piper voices.
+pub const WHISPER_MODEL_EXT: &str = "bin";
+pub const PIPER_VOICE_EXT: &str = "onnx";
+
+/// The `program/…` names: whisper.cpp, Piper, a Stable Diffusion web UI.
+pub const PROGRAM_WHISPER: &str = "whisper";
+pub const PROGRAM_PIPER: &str = "piper";
+pub const PROGRAM_SD_WEBUI: &str = "sd-webui";
+
+/// whisper.cpp reads 16 kHz mono sound.
+pub const WHISPER_SAMPLE_RATE: &str = "16000";
+
+/// Longest one local program may run, in seconds (long recordings are cut into parts first).
+pub const PROGRAM_MAX_SECS: u64 = 15 * 60;
+
+/// A Stable Diffusion web UI's (AUTOMATIC1111, Forge) picture and model-list endpoints.
+pub const SD_TXT2IMG_PATH: &str = "/sdapi/v1/txt2img";
+pub const SD_IMG2IMG_PATH: &str = "/sdapi/v1/img2img";
+pub const SD_MODELS_PATH: &str = "/sdapi/v1/sd-models";
+
+/// Steps a local picture takes.
+pub const SD_STEPS: u32 = 25;
+
+/// Picture sizes per shape (sizes SDXL-class models are trained on); anything else is square.
+pub const SD_SIZES: &[(&str, u32, u32)] = &[
+    ("1:1", 1024, 1024),
+    ("16:9", 1344, 768),
+    ("9:16", 768, 1344),
+    ("4:3", 1152, 896),
+    ("3:4", 896, 1152),
+    ("3:2", 1216, 832),
+    ("2:3", 832, 1216),
+];
+
+/// Seconds a quick look for a program's web server may take.
+pub const PROGRAM_PROBE_SECS: u64 = 3;
+
+/// LM Studio's usual address (Ollama's is the default local server).
+pub const LM_STUDIO_URL: &str = "http://localhost:1234/v1";

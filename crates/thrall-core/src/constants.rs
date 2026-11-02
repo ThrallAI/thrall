@@ -127,6 +127,10 @@ pub const DEFAULT_OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 /// Ollama's OpenAI-compatible address (LM Studio's is http://localhost:1234/v1).
 pub const DEFAULT_LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
 
+/// Where `program/sd-webui` pictures are made unless `[provider] sd_webui_url` says otherwise:
+/// AUTOMATIC1111's and Forge's usual address.
+pub const DEFAULT_SD_WEBUI_URL: &str = "http://127.0.0.1:7860";
+
 /// Model ids starting with this run on the local model server (free, no key needed).
 pub const LOCAL_MODEL_PREFIX: &str = "local/";
 
@@ -216,6 +220,7 @@ pub const EDITABLE_SETTINGS: &[&str] = &[
     "provider.base_url",
     "provider.fal_base_url",
     "provider.local_base_url",
+    "provider.sd_webui_url",
     "agent.verify",
     "agent.claim_check",
     "agent.questions",

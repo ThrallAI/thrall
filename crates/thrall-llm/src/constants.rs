@@ -54,6 +54,10 @@ pub const CHATGPT_MODEL_PREFIX: &str = "chatgpt/";
 /// `local/llama3.1`: a model on a server on this computer or network (Ollama, LM Studio), free.
 pub const LOCAL_MODEL_PREFIX: &str = "local/";
 
+/// `program/whisper`, `program/piper`, `program/sd-webui`: a program on this computer does the
+/// job (transcribing, speaking, making pictures); free, and nothing leaves it.
+pub const PROGRAM_MODEL_PREFIX: &str = "program/";
+
 /// `direct/openai/gpt-5`: a model reached straight at the company that makes it, with the
 /// person's own key for that company, instead of through OpenRouter.
 pub const DIRECT_MODEL_PREFIX: &str = "direct/";

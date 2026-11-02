@@ -9,7 +9,7 @@ use crate::constants::{
     DEFAULT_FAL_BASE_URL, DEFAULT_HEARTBEAT_HOURS, DEFAULT_HEARTBEAT_MINUTES,
     DEFAULT_HOME_KEEP_DAYS, DEFAULT_IMAGE_MODEL, DEFAULT_LOCAL_BASE_URL, DEFAULT_LOG_LEVEL,
     DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_OPENROUTER_BASE_URL, DEFAULT_REMOTE_PORT,
-    DEFAULT_SPEECH_MODEL, DEFAULT_SPEECH_VOICE, DEFAULT_TRANSCRIBE_MODEL,
+    DEFAULT_SD_WEBUI_URL, DEFAULT_SPEECH_MODEL, DEFAULT_SPEECH_VOICE, DEFAULT_TRANSCRIBE_MODEL,
     DEFAULT_VISION_BACKUP_MODEL, DEFAULT_VISION_MODEL, EDITABLE_SETTINGS, HEARTBEAT_MIN_MINUTES,
     SHORTCUT_MODIFIERS,
 };
@@ -540,6 +540,9 @@ pub struct ProviderConfig {
     /// A model server on this computer or network (Ollama, LM Studio) for `local/<model>`
     /// models: free, and no key needed. Empty: local models are off.
     pub local_base_url: String,
+    /// A Stable Diffusion web UI on this computer (AUTOMATIC1111 or Forge, started with `--api`)
+    /// for `program/sd-webui` pictures: free.
+    pub sd_webui_url: String,
 }
 
 impl Default for ProviderConfig {
@@ -557,6 +560,7 @@ impl Default for ProviderConfig {
             transcribe_model: DEFAULT_TRANSCRIBE_MODEL.to_owned(),
             fal_base_url: DEFAULT_FAL_BASE_URL.to_owned(),
             local_base_url: DEFAULT_LOCAL_BASE_URL.to_owned(),
+            sd_webui_url: DEFAULT_SD_WEBUI_URL.to_owned(),
         }
     }
 }

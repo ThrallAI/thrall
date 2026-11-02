@@ -1,7 +1,8 @@
 //! Picks the provider per model: ids starting with `chatgpt/` go to ChatGPT (the person's plan),
 //! `local/` to a model server on this computer or network (Ollama, LM Studio; the prefix is
 //! dropped and nothing is charged), `direct/<supplier>/` straight to that company with the
-//! person's own key for it, everything else to the main provider (OpenRouter).
+//! person's own key for it, `program/` to programs on this computer (whisper.cpp, Piper, a
+//! Stable Diffusion web UI; free), everything else to the main provider (OpenRouter).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -9,7 +10,7 @@ use std::sync::Arc;
 use futures::future::BoxFuture;
 use futures::{StreamExt, stream};
 
-use crate::constants::{CHATGPT_MODEL_PREFIX, LOCAL_MODEL_PREFIX};
+use crate::constants::{CHATGPT_MODEL_PREFIX, LOCAL_MODEL_PREFIX, PROGRAM_MODEL_PREFIX};
 use crate::direct::{self, DirectSupplier};
 use crate::error::LlmError;
 use crate::provider::{LlmProvider, ReplyStream};
@@ -25,6 +26,7 @@ pub struct Routed {
     chatgpt: Option<Arc<dyn LlmProvider>>,
     local: Option<Arc<dyn LlmProvider>>,
     direct: HashMap<&'static str, Arc<dyn LlmProvider>>,
+    programs: Option<Arc<dyn LlmProvider>>,
 }
 
 /// Where one model's calls go.
@@ -32,6 +34,7 @@ enum Route<'a> {
     Main,
     ChatGpt,
     Local(&'a str),
+    Program(&'a str),
     Direct(&'static DirectSupplier, &'a str),
 }
 
@@ -43,7 +46,14 @@ impl Routed {
             chatgpt,
             local: None,
             direct: HashMap::new(),
+            programs: None,
         }
+    }
+
+    /// Also send `program/` models to `programs` (programs on this computer).
+    pub fn with_programs(mut self, programs: Arc<dyn LlmProvider>) -> Self {
+        self.programs = Some(programs);
+        self
     }
 
     /// Also send `local/` models to `local` (an OpenAI-compatible server).
@@ -62,6 +72,9 @@ impl Routed {
         if let Some(m) = model.strip_prefix(LOCAL_MODEL_PREFIX) {
             return Route::Local(m);
         }
+        if let Some(m) = model.strip_prefix(PROGRAM_MODEL_PREFIX) {
+            return Route::Program(m);
+        }
         if model.starts_with(CHATGPT_MODEL_PREFIX) {
             return Route::ChatGpt;
         }
@@ -69,6 +82,16 @@ impl Routed {
             Some((s, m)) => Route::Direct(s, m),
             None => Route::Main,
         }
+    }
+
+    /// The programs on this computer, or why they can't be used.
+    fn program(&self) -> Result<&Arc<dyn LlmProvider>, LlmError> {
+        self.programs.as_ref().ok_or_else(|| LlmError::Rejected {
+            provider: "This computer".to_owned(),
+            status: 0,
+            message: "This Thrall can't run programs on its computer; pick another model."
+                .to_owned(),
+        })
     }
 
     /// The provider for a direct supplier, or why there isn't one.
@@ -183,6 +206,13 @@ impl LlmProvider for Routed {
                     })
                     .boxed()
             }
+            Route::Program(model) => match self.program() {
+                Ok(p) => {
+                    request.model = model.to_owned();
+                    p.stream(request)
+                }
+                Err(e) => stream::once(async { Err(e) }).boxed(),
+            },
             Route::Main => self.main.stream(request),
         }
     }
@@ -206,6 +236,7 @@ impl LlmProvider for Routed {
                 }
                 None
             }),
+            Route::Program(_) => Box::pin(async { Some(false) }),
             Route::Main => self.main.accepts_images(model),
         }
     }
@@ -213,7 +244,7 @@ impl LlmProvider for Routed {
     fn prices<'a>(&'a self, model: &'a str) -> BoxFuture<'a, Option<ModelPrices>> {
         match Self::route(model) {
             // Included in the ChatGPT plan, or run locally.
-            Route::ChatGpt | Route::Local(_) => Box::pin(async {
+            Route::ChatGpt | Route::Local(_) | Route::Program(_) => Box::pin(async {
                 Some(ModelPrices {
                     prompt: 0.0,
                     completion: 0.0,
@@ -237,6 +268,13 @@ impl LlmProvider for Routed {
     }
 
     fn speak(&self, mut request: SpeechRequest) -> BoxFuture<'_, Result<SpeechReply, LlmError>> {
+        if let Route::Program(model) = Self::route(&request.model) {
+            let model = model.to_owned();
+            return Box::pin(async move {
+                request.model = model;
+                self.program()?.speak(request).await
+            });
+        }
         let Route::Direct(s, model) = Self::route(&request.model) else {
             return self.main.speak(request);
         };
@@ -256,6 +294,13 @@ impl LlmProvider for Routed {
     }
 
     fn make_image(&self, mut request: ImageRequest) -> BoxFuture<'_, Result<ImageReply, LlmError>> {
+        if let Route::Program(model) = Self::route(&request.model) {
+            let model = model.to_owned();
+            return Box::pin(async move {
+                request.model = model;
+                self.program()?.make_image(request).await
+            });
+        }
         let Route::Direct(s, model) = Self::route(&request.model) else {
             return self.main.make_image(request);
         };
@@ -344,6 +389,19 @@ mod tests {
         assert!(e.to_string().contains("local_base_url"));
     }
 
+    #[tokio::test]
+    async fn program_models_go_to_this_computers_programs_and_are_free() {
+        let r = Routed::new(Arc::new(Named("main")), None).with_programs(Arc::new(Echo));
+        assert_eq!(
+            first(&r, "program/whisper/ggml-base.en").await.unwrap(),
+            StreamEvent::Text("whisper/ggml-base.en".into())
+        );
+        let free = r.prices("program/sd-webui").await.unwrap();
+        assert_eq!((free.prompt, free.completion), (0.0, 0.0));
+        let none = Routed::new(Arc::new(Named("main")), None);
+        let e = first(&none, "program/whisper").await.unwrap_err();
+        assert!(e.to_string().contains("can't run programs"));
+    }
     /// Knows OpenRouter's prices for `anthropic/sonnet-4.5` only.
     struct Priced;
     impl LlmProvider for Priced {

@@ -16,6 +16,7 @@ thrall-protocol = { path = "../thrall-protocol" }
 thrall-llm = { path = "../thrall-llm" }
 thrall-store = { path = "../thrall-store" }
 thrall-agent = { path = "../thrall-agent" }
+thrall-tools = { path = "../thrall-tools" }
 thrall-tui = { path = "../thrall-tui" }
 thrall-gates = { path = "../thrall-gates" }
 thrall-server = { path = "../thrall-server" }
