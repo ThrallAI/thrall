@@ -94,6 +94,9 @@ pub(crate) struct Emitter<'a> {
     /// What this turn spent besides its own model calls (picture reading and making, helpers),
     /// added to the turn's total.
     side_usage: std::sync::Mutex<Usage>,
+    /// Held while a permission card is out: clients show one card at a time, so helpers working
+    /// side by side ask one after another.
+    pub(crate) asking: tokio::sync::Mutex<()>,
 }
 
 impl<'a> Emitter<'a> {
@@ -113,6 +116,7 @@ impl<'a> Emitter<'a> {
             record,
             plan_rejected: std::sync::atomic::AtomicBool::new(false),
             side_usage: std::sync::Mutex::new(Usage::default()),
+            asking: tokio::sync::Mutex::new(()),
         }
     }
 

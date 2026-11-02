@@ -685,6 +685,12 @@ async fn ask(
     always: bool,
     cancel: &Cancel,
 ) -> Result<Asked, AgentError> {
+    // One card at a time: a helper working beside another waits until that one is answered.
+    let mut waiting = cancel.clone();
+    let _asking = tokio::select! {
+        held = emitter.asking.lock() => held,
+        () = waiting.cancelled() => return Ok(Asked::Interrupted),
+    };
     let request = new_id(id_prefix::REQUEST);
     let answer = state.prompts.register(&request, &state.user_id);
     let mut choices = vec![PermissionChoice::Yes];
