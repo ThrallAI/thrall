@@ -229,13 +229,14 @@ pub fn embed(sources: &Sources<'_>, html: &str) -> Result<Embedded, String> {
 mod tests {
     use super::*;
 
+    /// A folder of its own for each test. A counter, not the clock: on Windows two tests can read
+    /// the same time, share a folder, and one deletes the other's pictures.
     fn folder() -> PathBuf {
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let dir = std::env::temp_dir().join(format!(
             "thrall-embed-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_nanos())
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
         ));
         std::fs::create_dir_all(dir.join("art")).unwrap();
         std::fs::write(dir.join("art/page one.png"), b"PNGDATA").unwrap();

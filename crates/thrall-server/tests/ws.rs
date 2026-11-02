@@ -133,12 +133,23 @@ type Socket =
 struct Client {
     socket: Socket,
     next_id: u32,
+    /// Events that arrived while a request waited for its reply, kept for `events_until`.
+    held: std::collections::VecDeque<ServerFrame>,
 }
 
 impl Client {
+    /// A client on an open socket that hasn't said hello yet.
+    fn wrap(socket: Socket) -> Self {
+        Self {
+            socket,
+            next_id: 0,
+            held: std::collections::VecDeque::new(),
+        }
+    }
+
     async fn connect(url: &str, kind: ClientKind) -> Self {
         let (socket, _) = tokio_tungstenite::connect_async(url).await.unwrap();
-        let mut client = Self { socket, next_id: 0 };
+        let mut client = Self::wrap(socket);
         let welcome = client
             .request(Request::Hello {
                 protocols: vec![1],
@@ -163,6 +174,9 @@ impl Client {
     }
 
     async fn frame(&mut self) -> ServerFrame {
+        if let Some(held) = self.held.pop_front() {
+            return held;
+        }
         loop {
             let msg = tokio::time::timeout(Duration::from_secs(10), self.socket.next())
                 .await
@@ -175,16 +189,23 @@ impl Client {
         }
     }
 
-    /// Send a request and return its reply, setting aside events that arrive first.
+    /// Send a request and return its reply. Events that arrive first are kept for later reads
+    /// (an answer's `permission.resolved` can beat its `ack`).
     async fn request(&mut self, request: Request) -> Reply {
         let id = self.send(request).await;
-        loop {
-            if let ServerFrame::Reply(r) = self.frame().await
-                && r.re == id
-            {
-                return r.reply;
+        let mut events = Vec::new();
+        let reply = loop {
+            match self.frame().await {
+                ServerFrame::Reply(r) if r.re == id => break r.reply,
+                ServerFrame::Reply(_) => {}
+                event @ ServerFrame::Event(_) => events.push(event),
             }
+        };
+        // Ahead of anything held from before, in the order they came.
+        for event in events.into_iter().rev() {
+            self.held.push_front(event);
         }
+        reply
     }
 
     /// Events until (and including) the first that matches `stop`.
@@ -740,7 +761,7 @@ async fn sessions_can_be_pinned_and_grouped() {
 async fn welcome_says_who_you_are_and_the_edition() {
     let (url, _hub) = engine(vec![reply("x")]).await;
     let (socket, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    let mut c = Client { socket, next_id: 0 };
+    let mut c = Client::wrap(socket);
     let welcome = c
         .request(Request::Hello {
             protocols: vec![1],
@@ -1245,7 +1266,7 @@ async fn http_post_json(ws_url: &str, path: &str, json: &str) -> String {
 /// Say hello with `token`; the socket and what came back.
 async fn hello_with(url: &str, token: &str) -> (Client, Reply) {
     let (socket, _) = tokio_tungstenite::connect_async(url).await.unwrap();
-    let mut client = Client { socket, next_id: 0 };
+    let mut client = Client::wrap(socket);
     let answer = client
         .request(Request::Hello {
             protocols: vec![1],
