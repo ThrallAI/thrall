@@ -12,14 +12,16 @@ ignore = [
     # Font parsing inside PDFs (pdf-extract → lopdf → ttf-parser). Marked unmaintained in 2026, no
     # known vulnerability; safe Rust. Revisit when lopdf moves to skrifa, or swap the PDF reader.
     { id = "RUSTSEC-2026-0192", reason = "PDF text extraction via lopdf; unmaintained notice, no vulnerability" },
-    # zip 8.x, brought in only by calamine, docx-rs and umya-spreadsheet (all at their newest, all
-    # still on zip ^8.6). The three advisories are about extracting archives to disk (`extract()`:
-    # links escaping the folder, Unix setuid/permission bits). Those libraries only read Office
-    # files in memory; Thrall's own code is on zip 9 and its archive tool unpacks entry by entry
-    # with its own checks. Revisit when the three libraries move to zip 9.
+    # zip 8.x, brought in only by docx-rs and umya-spreadsheet (both at their newest, both still on
+    # zip ^8.6; calamine has moved to zip 9). The four advisories are all in `extract()`, unpacking
+    # an archive to disk (links escaping the folder, Unix setuid/permission bits, a symlink-target
+    # buffer sized from a crafted header). Those libraries only read Office files in memory and
+    # never call it; Thrall's own code is on zip 9 and its archive tool unpacks entry by entry with
+    # its own checks. Revisit when both libraries move to zip 9.
     { id = "RUSTSEC-2026-0367", reason = "zip 8 only via Office libraries reading in memory; no extract() to disk" },
     { id = "RUSTSEC-2026-0368", reason = "zip 8 only via Office libraries reading in memory; no extract() to disk" },
     { id = "RUSTSEC-2026-0369", reason = "zip 8 only via Office libraries reading in memory; no extract() to disk" },
+    { id = "RUSTSEC-2026-0429", reason = "zip 8 only via Office libraries reading in memory; no extract() to disk" },
     # Only on Linux, through zbus 5 (keyring's secret-service and notify-rust). zbus's helper crates
     # (zvariant, zvariant_derive, zbus_names) are marked unmaintained, not vulnerable; no newer zbus
     # drops them yet. Revisit when keyring / notify-rust move off zbus 5.
