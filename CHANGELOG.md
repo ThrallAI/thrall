@@ -7,6 +7,36 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ## [Unreleased]
 
+### Added
+
+- Settings → Learning: open any of your skills to change when it's used and what it says. A
+  skill Thrall learned is rated again when you save it, and a medium or high-rated one can be
+  made safe: Thrall writes a version that asks before deleting, sending, handling keys or running
+  downloads, shown beside yours with its rating, and yours stays until you pick the safer one.
+- Helpers work side by side: when Thrall asks for several in one reply they run at once (3 by
+  default, up to 8), each with its steps under its own row. Built-in helper types (Researcher,
+  Coder, Reviewer, Planner; only the Coder changes files) and your own in the data folder's
+  `agents/`. Each helper stops at its spending limit ($1 by default). Settings → Permissions & safety → Helpers.
+- Settings → Providers: pick a supplier and model for each job (chat, reading pictures, making
+  pictures, speaking, transcribing, memory search), with a Test for each supplier. Use OpenAI,
+  Anthropic and Google directly with your own key (`direct/<supplier>/<model>`, `thrall key set
+  <supplier>`), and ElevenLabs voices. Their cost is worked out from OpenRouter's prices, so
+  spending limits keep counting.
+- Programs on your own computer, free and with nothing leaving it: whisper.cpp transcribes
+  (`program/whisper`), Piper reads aloud (`program/piper`) and a Stable Diffusion web UI makes
+  pictures (`program/sd-webui`). "Found on this PC" in Settings → Providers shows what's
+  installed and what's missing; Thrall never downloads or installs them itself.
+
+### Fixed
+
+- The browser gets a minute to start instead of 20 seconds, so it no longer fails on a slow or
+  busy computer.
+- Errors from a local model server or a direct supplier name that supplier, not OpenRouter.
+
+### Security
+
+- Updated async-executor to 1.14.1: 1.14.0 was withdrawn by its maintainers for a
+  use-after-free.
 ## [0.2.0] - 2026-11-02
 
 Thrall learns, asks, and gets a personality.
