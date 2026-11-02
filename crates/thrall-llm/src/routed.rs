@@ -1,24 +1,38 @@
 //! Picks the provider per model: ids starting with `chatgpt/` go to ChatGPT (the person's plan),
 //! `local/` to a model server on this computer or network (Ollama, LM Studio; the prefix is
-//! dropped and nothing is charged), everything else (and pictures, speech) to the main provider.
+//! dropped and nothing is charged), `direct/<supplier>/` straight to that company with the
+//! person's own key for it, everything else to the main provider (OpenRouter).
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
 use futures::{StreamExt, stream};
 
 use crate::constants::{CHATGPT_MODEL_PREFIX, LOCAL_MODEL_PREFIX};
+use crate::direct::{self, DirectSupplier};
 use crate::error::LlmError;
 use crate::provider::{LlmProvider, ReplyStream};
 use crate::types::{
-    ChatRequest, ImageReply, ImageRequest, ModelPrices, SpeechReply, SpeechRequest,
+    ChatRequest, ImageReply, ImageRequest, ModelPrices, SpeechReply, SpeechRequest, StreamEvent,
+    TokenUsage,
 };
 
-/// The main provider, plus ChatGPT when the person has signed in.
+/// The main provider, plus ChatGPT when the person has signed in, a local server, and the
+/// companies the person has a key for.
 pub struct Routed {
     main: Arc<dyn LlmProvider>,
     chatgpt: Option<Arc<dyn LlmProvider>>,
     local: Option<Arc<dyn LlmProvider>>,
+    direct: HashMap<&'static str, Arc<dyn LlmProvider>>,
+}
+
+/// Where one model's calls go.
+enum Route<'a> {
+    Main,
+    ChatGpt,
+    Local(&'a str),
+    Direct(&'static DirectSupplier, &'a str),
 }
 
 impl Routed {
@@ -28,6 +42,7 @@ impl Routed {
             main,
             chatgpt,
             local: None,
+            direct: HashMap::new(),
         }
     }
 
@@ -37,13 +52,61 @@ impl Routed {
         self
     }
 
-    fn local_model(model: &str) -> Option<&str> {
-        model.strip_prefix(LOCAL_MODEL_PREFIX)
+    /// Also send `direct/<supplier>/` models to `provider` (built with the person's key for it).
+    pub fn with_direct(mut self, supplier: &'static str, provider: Arc<dyn LlmProvider>) -> Self {
+        self.direct.insert(supplier, provider);
+        self
     }
 
-    fn is_chatgpt(model: &str) -> bool {
-        model.starts_with(CHATGPT_MODEL_PREFIX)
+    fn route(model: &str) -> Route<'_> {
+        if let Some(m) = model.strip_prefix(LOCAL_MODEL_PREFIX) {
+            return Route::Local(m);
+        }
+        if model.starts_with(CHATGPT_MODEL_PREFIX) {
+            return Route::ChatGpt;
+        }
+        match direct::split(model) {
+            Some((s, m)) => Route::Direct(s, m),
+            None => Route::Main,
+        }
     }
+
+    /// The provider for a direct supplier, or why there isn't one.
+    fn supplier(&self, s: &DirectSupplier) -> Result<&Arc<dyn LlmProvider>, LlmError> {
+        self.direct.get(s.id).ok_or_else(|| missing_key(s))
+    }
+
+    /// A direct model's prices, from the main provider's list under OpenRouter's name for it.
+    async fn direct_prices(&self, s: &DirectSupplier, model: &str) -> Option<ModelPrices> {
+        for id in direct::price_ids(s, model) {
+            if let Some(p) = self.main.prices(&id).await {
+                return Some(p);
+            }
+        }
+        None
+    }
+}
+
+/// Thrall has no key for `s`.
+fn missing_key(s: &DirectSupplier) -> LlmError {
+    LlmError::Rejected {
+        provider: s.name.to_owned(),
+        status: 0,
+        message: format!(
+            "Thrall has no {name} key. Add one with `thrall key set {id}` (Settings → Providers \
+             shows how), or pick another model.",
+            name = s.name,
+            id = s.id
+        ),
+    }
+}
+
+/// `usage` with its cost worked out from `prices` when the supplier didn't say.
+fn priced(mut usage: TokenUsage, prices: Option<ModelPrices>) -> TokenUsage {
+    if usage.cost_usd.is_none() {
+        usage.cost_usd = prices.map(|p| direct::cost(&p, &usage));
+    }
+    usage
 }
 
 impl LlmProvider for Routed {
@@ -52,66 +115,114 @@ impl LlmProvider for Routed {
     }
 
     fn stream(&self, mut request: ChatRequest) -> ReplyStream {
-        if let Some(model) = Self::local_model(&request.model) {
-            request.model = model.to_owned();
-            return match &self.local {
-                Some(local) => local.stream(request),
+        match Self::route(&request.model) {
+            Route::Local(model) => {
+                request.model = model.to_owned();
+                match &self.local {
+                    Some(local) => local
+                        .stream(request)
+                        .map(|item| item.map_err(|e| e.relabel("The local model server", "local")))
+                        .boxed(),
+                    None => stream::once(async {
+                        Err(LlmError::Rejected {
+                            provider: "local".to_owned(),
+                            status: 0,
+                            message: "No local model server is set up. Set [provider] \
+                                      local_base_url (Ollama: http://localhost:11434/v1), or pick \
+                                      another model."
+                                .to_owned(),
+                        })
+                    })
+                    .boxed(),
+                }
+            }
+            Route::ChatGpt => match &self.chatgpt {
+                Some(chatgpt) => chatgpt.stream(request),
                 None => stream::once(async {
                     Err(LlmError::Rejected {
-                        provider: "local".to_owned(),
+                        provider: "ChatGPT".to_owned(),
                         status: 0,
-                        message: "No local model server is set up. Set [provider] local_base_url \
-                                  (Ollama: http://localhost:11434/v1), or pick another model."
+                        message: "Thrall isn't signed in to ChatGPT. Sign in with `/login \
+                                  chatgpt` (or Settings → Models), or pick another model."
                             .to_owned(),
                     })
                 })
                 .boxed(),
-            };
-        }
-        if !Self::is_chatgpt(&request.model) {
-            return self.main.stream(request);
-        }
-        match &self.chatgpt {
-            Some(chatgpt) => chatgpt.stream(request),
-            None => stream::once(async {
-                Err(LlmError::Rejected {
-                    provider: "ChatGPT".to_owned(),
-                    status: 0,
-                    message: "Thrall isn't signed in to ChatGPT. Sign in with `/login chatgpt` \
-                              (or Settings → Models), or pick another model."
-                        .to_owned(),
-                })
-            })
-            .boxed(),
+            },
+            Route::Direct(s, model) => {
+                let provider = match self.supplier(s) {
+                    Ok(p) => p.clone(),
+                    Err(e) => return stream::once(async { Err(e) }).boxed(),
+                };
+                let model = model.to_owned();
+                request.model = model.clone();
+                let main = self.main.clone();
+                // These suppliers report tokens but not cost: work it out from OpenRouter's
+                // prices for the same model, looked up only when the count arrives.
+                provider
+                    .stream(request)
+                    .then(move |item| {
+                        let main = main.clone();
+                        let model = model.clone();
+                        async move {
+                            match item {
+                                Ok(StreamEvent::Usage(u)) if u.cost_usd.is_none() => {
+                                    let mut prices = None;
+                                    for id in direct::price_ids(s, &model) {
+                                        prices = main.prices(&id).await;
+                                        if prices.is_some() {
+                                            break;
+                                        }
+                                    }
+                                    Ok(StreamEvent::Usage(priced(u, prices)))
+                                }
+                                Ok(event) => Ok(event),
+                                Err(e) => Err(e.relabel(s.name, s.id)),
+                            }
+                        }
+                    })
+                    .boxed()
+            }
+            Route::Main => self.main.stream(request),
         }
     }
 
     fn accepts_images<'a>(&'a self, model: &'a str) -> BoxFuture<'a, Option<bool>> {
-        if let Some(m) = Self::local_model(model) {
-            return match &self.local {
+        match Self::route(model) {
+            Route::Local(m) => match &self.local {
                 Some(l) => l.accepts_images(m),
                 None => Box::pin(async { None }),
-            };
-        }
-        match (&self.chatgpt, Self::is_chatgpt(model)) {
-            (Some(c), true) => c.accepts_images(model),
-            (None, true) => Box::pin(async { None }),
-            _ => self.main.accepts_images(model),
+            },
+            Route::ChatGpt => match &self.chatgpt {
+                Some(c) => c.accepts_images(model),
+                None => Box::pin(async { None }),
+            },
+            // OpenRouter's list says what the same model accepts.
+            Route::Direct(s, m) => Box::pin(async move {
+                for id in direct::price_ids(s, m) {
+                    if let Some(yes) = self.main.accepts_images(&id).await {
+                        return Some(yes);
+                    }
+                }
+                None
+            }),
+            Route::Main => self.main.accepts_images(model),
         }
     }
 
     fn prices<'a>(&'a self, model: &'a str) -> BoxFuture<'a, Option<ModelPrices>> {
-        if Self::is_chatgpt(model) || Self::local_model(model).is_some() {
+        match Self::route(model) {
             // Included in the ChatGPT plan, or run locally.
-            return Box::pin(async {
+            Route::ChatGpt | Route::Local(_) => Box::pin(async {
                 Some(ModelPrices {
                     prompt: 0.0,
                     completion: 0.0,
                     image_output: None,
                 })
-            });
+            }),
+            Route::Direct(s, m) => Box::pin(self.direct_prices(s, m)),
+            Route::Main => self.main.prices(model),
         }
-        self.main.prices(model)
     }
 
     fn credit_left(&self) -> BoxFuture<'_, Option<f64>> {
@@ -125,12 +236,40 @@ impl LlmProvider for Routed {
         }
     }
 
-    fn speak(&self, request: SpeechRequest) -> BoxFuture<'_, Result<SpeechReply, LlmError>> {
-        self.main.speak(request)
+    fn speak(&self, mut request: SpeechRequest) -> BoxFuture<'_, Result<SpeechReply, LlmError>> {
+        let Route::Direct(s, model) = Self::route(&request.model) else {
+            return self.main.speak(request);
+        };
+        let model = model.to_owned();
+        Box::pin(async move {
+            let provider = self.supplier(s)?;
+            request.model = model.clone();
+            let mut reply = provider
+                .speak(request)
+                .await
+                .map_err(|e| e.relabel(s.name, s.id))?;
+            if reply.usage != TokenUsage::default() {
+                reply.usage = priced(reply.usage, self.direct_prices(s, &model).await);
+            }
+            Ok(reply)
+        })
     }
 
-    fn make_image(&self, request: ImageRequest) -> BoxFuture<'_, Result<ImageReply, LlmError>> {
-        self.main.make_image(request)
+    fn make_image(&self, mut request: ImageRequest) -> BoxFuture<'_, Result<ImageReply, LlmError>> {
+        let Route::Direct(s, model) = Self::route(&request.model) else {
+            return self.main.make_image(request);
+        };
+        let model = model.to_owned();
+        Box::pin(async move {
+            let provider = self.supplier(s)?;
+            request.model = model.clone();
+            let mut reply = provider
+                .make_image(request)
+                .await
+                .map_err(|e| e.relabel(s.name, s.id))?;
+            reply.usage = priced(reply.usage, self.direct_prices(s, &model).await);
+            Ok(reply)
+        })
     }
 }
 
@@ -203,5 +342,89 @@ mod tests {
         let none = Routed::new(Arc::new(Named("main")), None);
         let e = first(&none, "local/llama3.1").await.unwrap_err();
         assert!(e.to_string().contains("local_base_url"));
+    }
+
+    /// Knows OpenRouter's prices for `anthropic/sonnet-4.5` only.
+    struct Priced;
+    impl LlmProvider for Priced {
+        fn name(&self) -> &str {
+            "main"
+        }
+        fn stream(&self, _request: ChatRequest) -> ReplyStream {
+            stream::once(async { Ok(StreamEvent::Text("main".into())) }).boxed()
+        }
+        fn prices<'a>(&'a self, model: &'a str) -> BoxFuture<'a, Option<ModelPrices>> {
+            Box::pin(async move {
+                (model == "anthropic/sonnet-4.5").then_some(ModelPrices {
+                    prompt: 0.000_003,
+                    completion: 0.000_015,
+                    image_output: None,
+                })
+            })
+        }
+    }
+
+    /// Answers with the model it was asked for and a token count without a cost; or, asked for
+    /// `bad`, refuses the key.
+    struct Counting;
+    impl LlmProvider for Counting {
+        fn name(&self) -> &str {
+            "OpenRouter"
+        }
+        fn stream(&self, request: ChatRequest) -> ReplyStream {
+            if request.model == "bad" {
+                return stream::once(async {
+                    Err(LlmError::Unauthorized {
+                        provider: "OpenRouter".into(),
+                        provider_id: "openrouter".into(),
+                    })
+                })
+                .boxed();
+            }
+            stream::iter(vec![
+                Ok(StreamEvent::Text(request.model)),
+                Ok(StreamEvent::Usage(TokenUsage {
+                    input_tokens: 1000,
+                    output_tokens: 100,
+                    cached_tokens: 0,
+                    cost_usd: None,
+                })),
+            ])
+            .boxed()
+        }
+    }
+
+    #[tokio::test]
+    async fn direct_models_go_to_their_supplier_priced_from_openrouter() {
+        let r = Routed::new(Arc::new(Priced), None).with_direct("anthropic", Arc::new(Counting));
+        let request = |model: &str| ChatRequest {
+            model: model.into(),
+            messages: vec![ChatMessage::new(ChatRole::User, "hi")],
+            max_tokens: 10,
+            tools: Vec::new(),
+        };
+        let events: Vec<_> = r
+            .stream(request("direct/anthropic/sonnet-4-5"))
+            .collect()
+            .await;
+        assert_eq!(
+            events[0].as_ref().unwrap(),
+            &StreamEvent::Text("sonnet-4-5".into())
+        );
+        let Ok(StreamEvent::Usage(u)) = &events[1] else {
+            panic!("no usage: {events:?}");
+        };
+        assert!((u.cost_usd.unwrap() - 0.0045).abs() < 1e-12);
+        // Its errors name the supplier and its key.
+        let e = first(&r, "direct/anthropic/bad").await.unwrap_err();
+        assert!(e.to_string().contains("Anthropic") && e.to_string().contains("key set anthropic"));
+        // No key for a supplier: say how to add one.
+        let e = first(&r, "direct/openai/gpt-5").await.unwrap_err();
+        assert!(e.to_string().contains("thrall key set openai"));
+        // OpenRouter's own ids are untouched.
+        assert_eq!(
+            first(&r, "anthropic/sonnet-4.5").await.unwrap(),
+            StreamEvent::Text("main".into())
+        );
     }
 }

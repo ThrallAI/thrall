@@ -87,6 +87,45 @@ pub enum LlmError {
 }
 
 impl LlmError {
+    /// The same error, naming `name` (and `id` in the key hint) as the provider: a supplier
+    /// reached through a client built for another (an OpenAI key through the compatible client).
+    pub fn relabel(self, name: &str, id: &str) -> Self {
+        let name = name.to_owned();
+        match self {
+            Self::Unauthorized { .. } => Self::Unauthorized {
+                provider: name,
+                provider_id: id.to_owned(),
+            },
+            Self::RateLimited {
+                retry_after_secs, ..
+            } => Self::RateLimited {
+                provider: name,
+                retry_after_secs,
+            },
+            Self::OutOfCredit { .. } => Self::OutOfCredit { provider: name },
+            Self::Rejected {
+                status, message, ..
+            } => Self::Rejected {
+                provider: name,
+                status,
+                message,
+            },
+            Self::ServerError { status, .. } => Self::ServerError {
+                provider: name,
+                status,
+            },
+            Self::Network { detail, .. } => Self::Network {
+                provider: name,
+                detail,
+            },
+            Self::BadResponse { detail, .. } => Self::BadResponse {
+                provider: name,
+                detail,
+            },
+            other @ (Self::KeyMissing { .. } | Self::OverLimit { .. }) => other,
+        }
+    }
+
     /// Whether trying again may work.
     pub fn is_retryable(&self) -> bool {
         matches!(

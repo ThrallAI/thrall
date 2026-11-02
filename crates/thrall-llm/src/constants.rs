@@ -54,6 +54,67 @@ pub const CHATGPT_MODEL_PREFIX: &str = "chatgpt/";
 /// `local/llama3.1`: a model on a server on this computer or network (Ollama, LM Studio), free.
 pub const LOCAL_MODEL_PREFIX: &str = "local/";
 
+/// `direct/openai/gpt-5`: a model reached straight at the company that makes it, with the
+/// person's own key for that company, instead of through OpenRouter.
+pub const DIRECT_MODEL_PREFIX: &str = "direct/";
+
+/// Companies Thrall reaches directly with the person's own key (`thrall key set <id>`).
+pub const DIRECT_SUPPLIERS: &[crate::direct::DirectSupplier] = &[
+    crate::direct::DirectSupplier {
+        id: "openai",
+        name: "OpenAI",
+        base_url: "https://api.openai.com/v1",
+        key_env_var: "OPENAI_API_KEY",
+        max_tokens_field: Some("max_completion_tokens"),
+    },
+    crate::direct::DirectSupplier {
+        id: "anthropic",
+        name: "Anthropic",
+        base_url: "https://api.anthropic.com/v1",
+        key_env_var: "ANTHROPIC_API_KEY",
+        max_tokens_field: Some("max_tokens"),
+    },
+    crate::direct::DirectSupplier {
+        id: "google",
+        name: "Google",
+        base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
+        key_env_var: "GEMINI_API_KEY",
+        max_tokens_field: Some("max_tokens"),
+    },
+    crate::direct::DirectSupplier {
+        id: ELEVENLABS_ID,
+        name: "ElevenLabs",
+        base_url: "https://api.elevenlabs.io/v1",
+        key_env_var: "ELEVENLABS_API_KEY",
+        max_tokens_field: None,
+    },
+];
+
+/// ElevenLabs' supplier id (voices only).
+pub const ELEVENLABS_ID: &str = "elevenlabs";
+
+/// ElevenLabs: speech for one voice is made at this path, then the voice id.
+pub const ELEVENLABS_SPEECH_PATH: &str = "/text-to-speech/";
+
+/// The audio ElevenLabs sends back: raw 16-bit samples at `SPEECH_SAMPLE_RATE`.
+pub const ELEVENLABS_OUTPUT_FORMAT: &str = "pcm_24000";
+
+/// The header ElevenLabs reads the key from.
+pub const ELEVENLABS_KEY_HEADER: &str = "xi-api-key";
+
+/// The header Anthropic reads the key from on its own endpoints (the model list).
+pub const ANTHROPIC_KEY_HEADER: &str = "x-api-key";
+
+/// Anthropic's API version header, and the version asked for.
+pub const ANTHROPIC_VERSION_HEADER: &str = "anthropic-version";
+pub const ANTHROPIC_VERSION: &str = "2023-06-01";
+
+/// Google lists its models as `models/<id>`; the id alone is what chats take.
+pub const GOOGLE_MODEL_LIST_PREFIX: &str = "models/";
+
+/// Most model ids a supplier's Test reports.
+pub const TEST_MODELS_MAX: usize = 200;
+
 /// ChatGPT's Codex backend (the endpoint the official Codex app uses with a ChatGPT sign-in).
 pub const CHATGPT_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
 

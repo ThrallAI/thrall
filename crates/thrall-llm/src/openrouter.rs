@@ -33,6 +33,10 @@ pub struct OpenRouter {
     credits_endpoint: String,
     /// What each model accepts and costs, fetched once from the model list.
     models: std::sync::Mutex<Option<std::collections::HashMap<String, ModelInfo>>>,
+    /// Talking to a plain OpenAI-compatible API (OpenAI, Anthropic, Google) instead of
+    /// OpenRouter: the name it gives the reply-length limit. Such APIs refuse OpenRouter's own
+    /// fields and don't list what models accept or cost.
+    standard: Option<&'static str>,
 }
 
 /// One model's entry in the model list.
@@ -58,11 +62,38 @@ impl OpenRouter {
             models_endpoint: format!("{}{MODELS_PATH}", base_url.trim_end_matches('/')),
             credits_endpoint: format!("{}{CREDITS_PATH}", base_url.trim_end_matches('/')),
             models: std::sync::Mutex::new(None),
+            standard: None,
         })
     }
 
-    /// `model`'s entry in the model list (fetched once, then remembered).
+    /// A client for a plain OpenAI-compatible API at `base_url`, which calls the reply-length
+    /// limit `max_tokens_field` (`max_tokens`, or `max_completion_tokens` at OpenAI).
+    pub fn standard(
+        api_key: String,
+        base_url: &str,
+        max_tokens_field: &'static str,
+    ) -> Result<Self, LlmError> {
+        let mut client = Self::new(api_key, base_url)?;
+        client.standard = Some(max_tokens_field);
+        Ok(client)
+    }
+
+    /// Ask for token counts the way this API understands: OpenRouter's `usage.include` (which
+    /// also reports cost), or the standard `stream_options` (streamed calls only).
+    fn ask_for_usage(&self, body: &mut serde_json::Value, streamed: bool) {
+        match self.standard {
+            None => body["usage"] = json!({ "include": true }),
+            Some(_) if streamed => body["stream_options"] = json!({ "include_usage": true }),
+            Some(_) => {}
+        }
+    }
+
+    /// `model`'s entry in the model list (fetched once, then remembered). A standard API's list
+    /// doesn't say, so there it's always unknown.
     async fn model_info(&self, model: &str) -> Option<ModelInfo> {
+        if self.standard.is_some() {
+            return None;
+        }
         let known = self
             .models
             .lock()
@@ -222,7 +253,7 @@ impl LlmProvider for OpenRouter {
     fn speak(&self, request: SpeechRequest) -> BoxFuture<'_, Result<SpeechReply, LlmError>> {
         Box::pin(async move {
             // Streamed audio comes as raw 16-bit samples; it's wrapped into a WAV file below.
-            let body = json!({
+            let mut body = json!({
                 "model": request.model,
                 "messages": [
                     { "role": "system", "content": SPEAK_PROMPT },
@@ -231,8 +262,8 @@ impl LlmProvider for OpenRouter {
                 "modalities": ["text", "audio"],
                 "audio": { "voice": request.voice, "format": "pcm16" },
                 "stream": true,
-                "usage": { "include": true },
             });
+            self.ask_for_usage(&mut body, true);
             let response =
                 send_with_retry(&self.client, &self.endpoint, &self.api_key, &body).await?;
             let mut events = response.bytes_stream().eventsource();
@@ -273,8 +304,8 @@ impl LlmProvider for OpenRouter {
                 "model": request.model,
                 "messages": wire_messages(&[message]),
                 "modalities": ["image", "text"],
-                "usage": { "include": true },
             });
+            self.ask_for_usage(&mut body, false);
             if let Some(ratio) = request.aspect_ratio {
                 body["image_config"] = json!({ "aspect_ratio": ratio });
             }
@@ -291,10 +322,10 @@ impl LlmProvider for OpenRouter {
         let mut body = json!({
             "model": request.model,
             "messages": wire_messages(&request.messages),
-            "max_tokens": request.max_tokens,
             "stream": true,
-            "usage": { "include": true },
         });
+        body[self.standard.unwrap_or("max_tokens")] = json!(request.max_tokens);
+        self.ask_for_usage(&mut body, true);
         if !request.tools.is_empty() {
             body["tools"] = wire_tools(&request.tools);
         }
@@ -367,7 +398,7 @@ fn parse_audio_event(data: &str) -> Result<(Vec<u8>, Option<TokenUsage>), LlmErr
 }
 
 /// Raw mono 16-bit little-endian samples as a WAV file.
-fn wav_from_pcm16(pcm: &[u8], sample_rate: u32) -> Vec<u8> {
+pub(crate) fn wav_from_pcm16(pcm: &[u8], sample_rate: u32) -> Vec<u8> {
     let data_len = u32::try_from(pcm.len()).unwrap_or(u32::MAX);
     let mut wav = Vec::with_capacity(pcm.len() + 44);
     wav.extend_from_slice(b"RIFF");
@@ -560,7 +591,7 @@ async fn send_with_retry(
     }
 }
 
-async fn error_from_response(response: reqwest::Response) -> LlmError {
+pub(crate) async fn error_from_response(response: reqwest::Response) -> LlmError {
     let status = response.status().as_u16();
     let retry_after_secs = response
         .headers()
@@ -614,7 +645,7 @@ fn error_message(body: &str) -> String {
     text.chars().take(MAX_ERROR_BODY_CHARS).collect()
 }
 
-fn network(e: &reqwest::Error) -> LlmError {
+pub(crate) fn network(e: &reqwest::Error) -> LlmError {
     LlmError::Network {
         provider: NAME.to_owned(),
         detail: if e.is_timeout() {
