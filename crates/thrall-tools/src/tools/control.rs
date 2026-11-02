@@ -150,15 +150,22 @@ impl Tool for Delegate {
     fn description(&self) -> &'static str {
         "Hand a self-contained task to a helper with a fresh context, and get its final answer. Use \
          it for research or work that would fill your context (searching a codebase, reading many \
-         files, comparing sources). The helper has your tools (not this one) and the same \
-         permissions; write `task` so it stands on its own. With background: true the helper works \
-         read-only while you carry on, and its result comes later (agent_result)."
+         files, comparing sources). Pick a `type` from the helper types listed in your \
+         instructions. The helper has your tools (not this one) and the same permissions; write \
+         `task` so it stands on its own. Several agent calls in one reply run at the same time: use \
+         that for independent parts, and never give two helpers the same files to change. With \
+         background: true the helper works read-only while you carry on, and its result comes \
+         later (agent_result)."
     }
     fn parameters(&self) -> Value {
         json!({
             "type": "object",
             "properties": {
                 "title": { "type": "string", "description": "A few words for the user" },
+                "type": {
+                    "type": "string",
+                    "description": "The helper type, e.g. researcher, coder, reviewer or planner"
+                },
                 "task": { "type": "string", "description": "Full instructions for the helper" },
                 "background": { "type": "boolean", "description": "Run read-only in the background" }
             },
@@ -170,11 +177,24 @@ impl Tool for Delegate {
             .get("background")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        format!(
-            "{} {}",
-            if bg { "Background helper:" } else { "Helper:" },
-            arg_str(args, "title")
-        )
+        let kind = match arg_str(args, "type").trim() {
+            "" => "Helper".to_owned(),
+            t => {
+                let mut c = t.chars();
+                c.next()
+                    .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+                    .unwrap_or_default()
+            }
+        };
+        if bg {
+            format!(
+                "Background {}: {}",
+                kind.to_lowercase(),
+                arg_str(args, "title")
+            )
+        } else {
+            format!("{kind}: {}", arg_str(args, "title"))
+        }
     }
     fn run<'a>(&'a self, _ctx: &'a ToolContext, _args: Value) -> BoxFuture<'a, ToolOutput> {
         Box::pin(async {
