@@ -1,6 +1,6 @@
 [package]
 name = "thrall-bench"
-description = "Developer tool, never shipped: runs the same prompt through Thrall's engine with different models side by side and measures time, tokens, cost and results."
+description = "A tool for people working on Thrall (not included in the installers): runs the same prompt through Thrall's engine with different models side by side and measures time, tokens, cost and results."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

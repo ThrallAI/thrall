@@ -604,9 +604,9 @@ object ProtocolTypes {
         "phone.list", "phone.pair", "phone.assign", "phone.remove",
         // Moving a chat to another folder: the phone has /folder for now.
         "session.set_folder",
-        // People are managed on the computer's People page (M2d); the phone shows only its own person.
+        // People are managed on the computer's People page; the phone shows only its own person.
         "people.add", "people.rename", "people.remove", "people.terms",
-        // Browser sign-in links and signed-in browsers: managed in the web app (M2c/M2d).
+        // Browser sign-in links and signed-in browsers: managed in the web app.
         "signin.create", "device.list", "device.remove",
         // Starting with Windows is a setting of the computer, changed in its Settings or tray.
         "startup.get", "startup.set",
