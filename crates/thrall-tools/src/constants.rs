@@ -169,6 +169,10 @@ pub const BROWSER_WINDOW_HEIGHT: u32 = 900;
 /// Longest wait for a page to load or answer, in seconds.
 pub const BROWSER_TIMEOUT_SECS: u64 = 30;
 
+/// Longest Chrome may take to start, in seconds. The library's own 20 isn't enough on a slow or
+/// busy PC (or several starting at once), the first start after an update especially.
+pub const BROWSER_LAUNCH_SECS: u64 = 60;
+
 /// Longest one browser action (click, fill, read, back, screenshot) may take in all, in seconds:
 /// a page that stops answering fails the step instead of holding the turn.
 pub const BROWSER_ACTION_SECS: u64 = 60;
