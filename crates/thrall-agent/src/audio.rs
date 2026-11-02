@@ -273,6 +273,7 @@ pub(crate) async fn transcribe_attachment(
             step: step.clone(),
             tool: "transcribe".to_owned(),
             title: format!("Listening to {name}"),
+            helper: None,
         })
         .await?;
     let result = listen_shown(emitter, state, path, &step).await;

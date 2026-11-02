@@ -940,6 +940,9 @@ pub enum Reply {
         /// MCP servers on the web that Thrall is signed in to (`/mcp login <name>`).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         mcp_signed_in: Vec<String>,
+        /// Helper types Thrall can hand work to: its own and the person's (`agents/<name>.md`).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        helper_types: Vec<HelperTypeInfo>,
     },
     /// Answer to `phone.list` and `phone.remove`.
     #[serde(rename = "phone.listed")]
@@ -1246,6 +1249,22 @@ pub struct SkillDetail {
     /// Safety rating of a skill Thrall learned (none for ones written by hand).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating: Option<String>,
+}
+
+/// A helper type, for the settings screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HelperTypeInfo {
+    /// Its name (`agent {type}`).
+    pub name: String,
+    /// What it's for.
+    pub description: String,
+    /// It only looks (works in plan mode).
+    pub read_only: bool,
+    /// Its own model, if it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// `built_in` or `personal`.
+    pub source: String,
 }
 
 /// A file a rewind would put back.

@@ -117,6 +117,10 @@ pub enum Event {
         tool: String,
         /// Plain-language title: "Reading src/main.rs".
         title: String,
+        /// The helper's own step when a helper took this step: clients list it under that one.
+        /// Several helpers can run at once, so their steps interleave.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        helper: Option<String>,
     },
     /// Live output from a running step (shell). Live-only; capped.
     #[serde(rename = "step.output")]

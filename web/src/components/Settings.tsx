@@ -8,6 +8,7 @@ import {
   FRESH_STARTS,
   HUMANISE_LEVELS,
   LOG_LEVELS,
+  MAX_HELPERS_AT_ONCE,
   QUESTION_MODE_LABELS,
   QUESTION_MODES,
   RATING_LABELS,
@@ -881,6 +882,26 @@ export function Settings({
             <Row label="Wait for an answer" hint="Minutes before Thrall goes ahead with its recommended answers">
               <Field k="agent.question_wait_minutes" v={agent.question_wait_minutes} label="Wait for an answer" onSave={save} number />
             </Row>
+          </Group>
+          <Group
+            title="Helpers"
+            note="Thrall can hand parts of a task to helpers, each with a fresh start. Helpers asked for together work at the same time; their steps show under their own row. Ones that only look can't change anything, and the rest ask you just as Thrall does. Add your own type as a file in agents/ in Thrall's data folder."
+          >
+            <Row label="At the same time" hint={`How many helpers work at once (1 to ${MAX_HELPERS_AT_ONCE})`}>
+              <Field k="agent.helpers_at_once" v={agent.helpers_at_once} label="Helpers at the same time" onSave={save} number />
+            </Row>
+            <Row label="Spending limit per helper" hint="In US cents: 100 is $1.00. A helper that reaches it stops and hands back what it has. 0 means no limit.">
+              <Field k="agent.helper_cost_limit_cents" v={agent.helper_cost_limit_cents} label="Spending limit per helper, in cents" onSave={save} number />
+            </Row>
+            {(shown?.helper_types ?? []).map((h) => (
+              <Row key={h.name} label={h.name} hint={h.description || undefined}>
+                <span className="th-badge" title={h.read_only ? "Works in plan mode: reads and searches, changes nothing" : "Can change files, asking you as Thrall does"}>
+                  {h.read_only ? "Looks only" : "Makes changes"}
+                </span>
+                {h.model ? <span className="th-badge th-set-mono">{h.model}</span> : null}
+                <span className="th-badge">{h.source === "built_in" ? "Thrall's" : "Yours"}</span>
+              </Row>
+            ))}
           </Group>
           <Group title="Permissions">
             <Planned label="Mode for new sessions" hint="Ask, auto-accept edits, plan or full auto" />

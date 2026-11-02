@@ -14,13 +14,14 @@ use thrall_gates::Mode;
 use thrall_llm::{ChatMessage, ChatRequest, ChatRole, StreamEvent, ToolCallAssembler, ToolSpec};
 use thrall_protocol::{Event, Usage};
 use thrall_store::AgentRow;
-use thrall_tools::tools::NOT_FOR_HELPERS;
+use thrall_tools::agents::{self, AgentType};
+use thrall_tools::tools::{DELEGATE, NOT_FOR_HELPERS};
 use thrall_tools::{Cancel, ToolOutput};
 
 use crate::checks::Track;
 use crate::constants::{
-    ASK_THINKER, BACKGROUND_HELPER_NOTE, HELPER_PROMPT, MAX_HELPER_CALLS, MAX_MODEL_CALLS_PER_TURN,
-    SPLIT_DOER_NOTE,
+    ASK_THINKER, BACKGROUND_HELPER_NOTE, HELPER_PROMPT, HELPER_ROLE_HEADING, LOOKING_HELPER_NOTE,
+    MAX_HELPER_CALLS, MAX_MODEL_CALLS_PER_TURN, SPLIT_DOER_NOTE,
 };
 use crate::error::AgentError;
 use crate::state::{AppState, BackgroundTask};
@@ -28,7 +29,26 @@ use crate::steps::run_step;
 use crate::turn::{CallBy, Emitter, today};
 use thrall_core::constants::usage_role;
 
+/// How a helper is set up beyond its task.
+#[derive(Default)]
+pub(crate) struct Helping<'a> {
+    /// Its type: its instructions, tools, model, and whether it only looks.
+    pub kind: Option<&'a AgentType>,
+    /// The step that started it, so clients list its steps under that one.
+    pub step: Option<&'a str>,
+}
+
+/// Whether `call` is an `agent` call that runs in the foreground (those can run side by side).
+pub(crate) fn is_foreground_helper(call: &thrall_llm::ToolCall) -> bool {
+    call.name == DELEGATE
+        && serde_json::from_str::<Value>(&call.arguments)
+            .ok()
+            .and_then(|a| a.get("background").and_then(Value::as_bool))
+            != Some(true)
+}
+
 /// The `agent` tool: run a helper and hand back its answer (or start one in the background).
+/// `step` is the agent call's own step.
 pub(crate) fn delegate<'a>(
     emitter: &'a Emitter<'a>,
     state: &'a AppState,
@@ -36,6 +56,7 @@ pub(crate) fn delegate<'a>(
     args: &'a Value,
     mode: Mode,
     cancel: &'a Cancel,
+    step: &'a str,
 ) -> BoxFuture<'a, Result<ToolOutput, AgentError>> {
     Box::pin(async move {
         let task = args
@@ -52,10 +73,39 @@ pub(crate) fn delegate<'a>(
         if task.is_empty() {
             return Ok(ToolOutput::error("give the helper a task"));
         }
+        let wanted = args
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        let kind = if wanted.is_empty() {
+            None
+        } else {
+            match agents::find(state.my_dir().as_deref(), workspace, wanted) {
+                Some(kind) => Some(kind),
+                None => {
+                    let names: Vec<String> = agents::discover(state.my_dir().as_deref(), workspace)
+                        .into_iter()
+                        .map(|a| a.name)
+                        .collect();
+                    return Ok(ToolOutput::error(format!(
+                        "there's no helper type called {wanted}; use one of: {}",
+                        names.join(", ")
+                    )));
+                }
+            }
+        };
         if args.get("background").and_then(Value::as_bool) == Some(true) {
-            return start_background(emitter, state, workspace, title, task).await;
+            return start_background(emitter, state, workspace, title, task, kind).await;
         }
-        let answer = run_helper(emitter, state, workspace, &task, mode, cancel, None).await?;
+        let helping = Helping {
+            kind: kind.as_ref(),
+            step: Some(step),
+        };
+        let answer = run_helper(
+            emitter, state, workspace, &task, mode, cancel, None, helping,
+        )
+        .await?;
         Ok(ToolOutput::ok(answer, format!("Helper finished: {title}")))
     })
 }
@@ -66,6 +116,7 @@ async fn start_background(
     workspace: &Path,
     title: String,
     task: String,
+    kind: Option<AgentType>,
 ) -> Result<ToolOutput, AgentError> {
     if !state.can_run_background() {
         return Ok(ToolOutput::error(
@@ -101,6 +152,7 @@ async fn start_background(
         workspace: workspace.to_path_buf(),
         title,
         task,
+        kind,
     });
     Ok(ToolOutput::ok(
         format!(
@@ -113,11 +165,19 @@ async fn start_background(
     ))
 }
 
-fn helper_tools(state: &AppState) -> Vec<ToolSpec> {
+/// Whether a helper of `kind` may use `tool`.
+fn may_use(kind: Option<&AgentType>, tool: &str) -> bool {
+    !NOT_FOR_HELPERS.contains(&tool)
+        && kind
+            .and_then(|k| k.tools.as_ref())
+            .is_none_or(|only| only.iter().any(|t| t == tool))
+}
+
+fn helper_tools(state: &AppState, kind: Option<&AgentType>) -> Vec<ToolSpec> {
     state
         .tools
         .iter()
-        .filter(|t| !NOT_FOR_HELPERS.contains(&t.name()))
+        .filter(|t| may_use(kind, t.name()))
         .map(|t| ToolSpec {
             name: t.name().to_owned(),
             description: t.description().to_owned(),
@@ -128,7 +188,8 @@ fn helper_tools(state: &AppState) -> Vec<ToolSpec> {
 
 /// Work on `task` until the helper answers. Its conversation stays its own; only the answer comes
 /// back. With `doer`, the helper is split mode's Doer: its model, its step limit, and a way to ask
-/// the Thinker.
+/// the Thinker. A helper type that only looks works in plan mode, whatever `mode` is.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_helper(
     emitter: &Emitter<'_>,
     state: &AppState,
@@ -137,25 +198,45 @@ pub(crate) async fn run_helper(
     mode: Mode,
     cancel: &Cancel,
     mut doer: Option<&mut crate::split::Doer>,
+    helping: Helping<'_>,
 ) -> Result<String, AgentError> {
-    let mut mode = mode;
+    let kind = helping.kind;
+    let mut mode = if kind.is_some_and(|k| k.read_only) {
+        Mode::Plan
+    } else {
+        mode
+    };
     let mut track = Track::default();
     track.in_helper = true;
-    let mut tools = helper_tools(state);
+    track.helper_step = helping.step.map(str::to_owned);
+    let mut tools = helper_tools(state, kind);
     let (model, role, max_calls) = match &doer {
         Some(d) => {
             tools.push(crate::split::ask_thinker_spec());
             (d.model.clone(), usage_role::DOER, MAX_MODEL_CALLS_PER_TURN)
         }
-        None => (state.model(), usage_role::CHAT, MAX_HELPER_CALLS),
+        None => (
+            kind.and_then(|k| k.model.clone())
+                .unwrap_or_else(|| state.model()),
+            usage_role::CHAT,
+            MAX_HELPER_CALLS,
+        ),
     };
+    let role_text = kind
+        .map(|k| format!("{HELPER_ROLE_HEADING}{}", k.prompt))
+        .unwrap_or_default();
     let mut messages = vec![
         ChatMessage::new(
             ChatRole::System,
             format!(
-                "{HELPER_PROMPT}{}{}\n\nWorking folder: {}\nOperating system: {}\nToday: {}{}",
+                "{HELPER_PROMPT}{role_text}{}{}{}\n\nWorking folder: {}\nOperating system: {}\nToday: {}{}",
                 if mode == Mode::Plan && !emitter.records() {
                     BACKGROUND_HELPER_NOTE
+                } else {
+                    ""
+                },
+                if mode == Mode::Plan && emitter.records() && kind.is_some_and(|k| k.read_only) {
+                    LOOKING_HELPER_NOTE
                 } else {
                     ""
                 },
@@ -168,8 +249,18 @@ pub(crate) async fn run_helper(
         ),
         ChatMessage::new(ChatRole::User, task),
     ];
+    let limit = state.config.agent.helper_cost_limit_usd();
+    let mut spent = 0.0_f64;
     let mut last = String::new();
     for _ in 0..max_calls {
+        if let Some(limit) = limit
+            && spent >= limit
+        {
+            return Ok(format!(
+                "{last}\n\n(The helper was stopped: it reached its spending limit of ${limit:.2}. \
+                 The limit is in Settings → Helpers.)"
+            ));
+        }
         if cancel.is_cancelled() {
             return Ok(format!("{last}\n\n(The helper was stopped.)"));
         }
@@ -204,6 +295,7 @@ pub(crate) async fn run_helper(
                 }
             }
         }
+        spent += usage.cost_usd.unwrap_or_default();
         let by = CallBy {
             model: model.clone(),
             role,
@@ -230,8 +322,8 @@ pub(crate) async fn run_helper(
                 && call.name == ASK_THINKER
             {
                 crate::split::ask(emitter, state, d, &call.arguments).await?
-            } else if NOT_FOR_HELPERS.contains(&call.name.as_str()) {
-                format!("Error: helpers can't use {}.", call.name)
+            } else if !may_use(kind, &call.name) {
+                format!("Error: this helper can't use {}.", call.name)
             } else {
                 run_step(
                     emitter, state, workspace, call, &mut mode, &mut track, cancel,
@@ -254,6 +346,10 @@ pub(crate) async fn run_background(state: &AppState, task: BackgroundTask) {
     let (sink, _ignored) = tokio::sync::mpsc::channel(1);
     // Background steps are neither shown nor recorded; plan mode keeps them read-only.
     let emitter = Emitter::new(state, &task.session_id, &task.agent_id, &sink, false);
+    let helping = Helping {
+        kind: task.kind.as_ref(),
+        step: None,
+    };
     let result = run_helper(
         &emitter,
         state,
@@ -262,6 +358,7 @@ pub(crate) async fn run_background(state: &AppState, task: BackgroundTask) {
         Mode::Plan,
         &Cancel::never(),
         None,
+        helping,
     )
     .await;
     let (status, answer) = match result {

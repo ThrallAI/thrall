@@ -65,6 +65,9 @@ pub const INPUT_PLACEHOLDER: &str = "Message Thrall · / for commands";
 /// Shown when the person chooses to type their answers to a question card.
 pub const QUESTION_TYPE_HINT: &str = "Type your answers in the message box, one per question in order, separated by |, then press Enter.";
 
+/// Put before a step a helper took, so its steps read as the helper's own.
+pub const HELPER_STEP_MARK: &str = "  > ";
+
 /// `answered_by` on a question card nobody answered in time.
 pub const QUESTION_TIMEOUT: &str = "timeout";
 

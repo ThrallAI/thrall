@@ -6,7 +6,7 @@ use serde_json::Value;
 use thrall_core::config::ProviderKind;
 use thrall_core::constants::CONFIG_FILE;
 use thrall_llm::{ChatMessage, ChatRequest, ChatRole, StreamEvent};
-use thrall_protocol::{ErrorCode, KeyStatus, Reply, SkillDetail, SkillInfo, Usage};
+use thrall_protocol::{ErrorCode, HelperTypeInfo, KeyStatus, Reply, SkillDetail, SkillInfo, Usage};
 use thrall_tools::constants::{
     SKILL_DESCRIPTION_MAX_CHARS, SKILL_FILE, SKILL_MAX_CHARS, SKILL_SOURCE_MY_WORK,
     SKILL_SOURCE_USER, SKILLS_DIR,
@@ -60,6 +60,16 @@ pub async fn shown(state: &AppState, pending: bool) -> Reply {
             .filter(|n| {
                 state.mcp.server(n).is_some_and(|s| s.is_remote())
                     && thrall_mcp::remote::signed_in(n)
+            })
+            .collect(),
+        helper_types: thrall_tools::agents::personal(state.my_dir().as_deref())
+            .into_iter()
+            .map(|a| HelperTypeInfo {
+                name: a.name,
+                description: a.description,
+                read_only: a.read_only,
+                model: a.model,
+                source: a.source.as_str().to_owned(),
             })
             .collect(),
     }

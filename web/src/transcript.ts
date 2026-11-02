@@ -22,6 +22,8 @@ export type Item =
       diff: Diff | null;
       /** Files the step made (pictures). */
       files: FileRef[];
+      /** The step of the helper that took this step; it's listed under that one. */
+      helper: string | null;
     }
   | { kind: "notice"; id: string; level: "info" | "warning"; text: string }
   | { kind: "fact"; id: string; topic: string; content: string; forgotten: boolean }
@@ -159,6 +161,23 @@ function setActivity(view: View, activity: Activity, at: number): View {
   return view.activity === activity ? view : { ...view, activity, activityAt: at };
 }
 
+/**
+ * Add a step. A helper's step goes right after that helper's row and its steps so far, so helpers
+ * working side by side each keep their own list; any other step goes at the end.
+ */
+function underHelper(items: Item[], step: Item & { kind: "step" }): Item[] {
+  const helper = step.helper;
+  if (helper) {
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      if (it?.kind === "step" && (it.id === helper || it.helper === helper)) {
+        return [...items.slice(0, i + 1), step, ...items.slice(i + 1)];
+      }
+    }
+  }
+  return [...items, step];
+}
+
 /** Apply one event. `by` is this client's kind, so answers from elsewhere can be named. */
 export function apply(view: View, frame: EventFrame, by: string, labels: Record<string, string>): View {
   let v = view;
@@ -246,29 +265,22 @@ export function apply(view: View, frame: EventFrame, by: string, labels: Record<
         };
       }
       break;
-    case "step.started":
-      v = setActivity(
-        {
-          ...v,
-          items: [
-            ...v.items,
-            {
-              kind: "step",
-              id: frame.step,
-              title: frame.title,
-              tool: frame.tool,
-              status: null,
-              summary: "",
-              output: "",
-              diff: null,
-              files: [],
-            },
-          ],
-        },
-        "tool",
-        at,
-      );
+    case "step.started": {
+      const step: Item & { kind: "step" } = {
+        kind: "step",
+        id: frame.step,
+        title: frame.title,
+        tool: frame.tool,
+        status: null,
+        summary: "",
+        output: "",
+        diff: null,
+        files: [],
+        helper: frame.helper ?? null,
+      };
+      v = setActivity({ ...v, items: underHelper(v.items, step) }, "tool", at);
       break;
+    }
     case "step.output":
       v = {
         ...v,

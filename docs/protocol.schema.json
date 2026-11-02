@@ -537,6 +537,13 @@
           "description": "A tool call began (a collapsible row in clients).",
           "type": "object",
           "properties": {
+            "helper": {
+              "description": "The helper's own step when a helper took this step: clients list it under that one.\nSeveral helpers can run at once, so their steps interleave.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "step": {
               "description": "Step id.",
               "type": "string"
@@ -1179,6 +1186,41 @@
       "required": [
         "group",
         "name"
+      ]
+    },
+    "HelperTypeInfo": {
+      "description": "A helper type, for the settings screen.",
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "What it's for.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Its own model, if it has one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Its name (`agent {type}`).",
+          "type": "string"
+        },
+        "read_only": {
+          "description": "It only looks (works in plan mode).",
+          "type": "boolean"
+        },
+        "source": {
+          "description": "`built_in` or `personal`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "read_only",
+        "source"
       ]
     },
     "KeyStatus": {
@@ -2002,6 +2044,13 @@
                 "string",
                 "null"
               ]
+            },
+            "helper_types": {
+              "description": "Helper types Thrall can hand work to: its own and the person's (`agents/<name>.md`).",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/HelperTypeInfo"
+              }
             },
             "keys": {
               "description": "Keys Thrall knows about and whether each is stored.",
