@@ -174,6 +174,19 @@ export const FRESH_STARTS = ["daily", "weekly", "never"] as const;
 /** Humaniser levels (config `writing.humanise`), least to most. */
 export const HUMANISE_LEVELS = ["off", "light", "full"] as const;
 
+/** `answered_by` on a question card nobody answered in time. */
+export const QUESTION_TIMEOUT = "timeout";
+
+/** When Thrall asks instead of deciding (config `agent.questions`). */
+export const QUESTION_MODES = ["never", "when_it_matters", "when_unsure"] as const;
+
+/** What each question mode is called on the settings screen. */
+export const QUESTION_MODE_LABELS: Readonly<Record<string, string>> = {
+  never: "Never: decide and note it",
+  when_it_matters: "Only when it matters",
+  when_unsure: "When it's unsure",
+};
+
 /** How often the settings screen checks whether a ChatGPT sign-in has landed. */
 export const SIGN_IN_POLL_MS = 2000;
 

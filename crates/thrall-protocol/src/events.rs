@@ -187,6 +187,31 @@ pub enum Event {
         /// Which client decided.
         answered_by: String,
     },
+    /// Thrall needs information it can't safely guess (not permission). One card holds every
+    /// question of the turn, each with Thrall's recommended answer picked. Nobody answering by
+    /// `expires_at` means the recommended answers are used.
+    #[serde(rename = "question.ask")]
+    QuestionAsk {
+        /// Question id; answers quote it.
+        question: String,
+        /// The questions, in order.
+        items: Vec<QuestionItem>,
+        /// Why Thrall is asking instead of deciding, in a sentence.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        why: String,
+        /// When Thrall goes ahead with its recommended answers, Unix ms.
+        expires_at: i64,
+    },
+    /// A question card was answered, or ran out of time.
+    #[serde(rename = "question.resolved")]
+    QuestionResolved {
+        /// Question id.
+        question: String,
+        /// One answer per question, in order.
+        answers: Vec<String>,
+        /// Which client answered; `timeout` when nobody did and the recommended answers were used.
+        answered_by: String,
+    },
     /// A permission request was answered.
     #[serde(rename = "permission.resolved")]
     PermissionResolved {
@@ -292,6 +317,8 @@ impl Event {
             Self::PermissionResolved { .. } => "permission.resolved",
             Self::PlanProposed { .. } => "plan.proposed",
             Self::PlanResolved { .. } => "plan.resolved",
+            Self::QuestionAsk { .. } => "question.ask",
+            Self::QuestionResolved { .. } => "question.resolved",
             Self::SessionUpdated { .. } => "session.updated",
             Self::AgentStarted { .. } => "agent.started",
             Self::AgentCompleted { .. } => "agent.completed",
@@ -312,6 +339,18 @@ impl Event {
                 | Self::Status { .. }
         )
     }
+}
+
+/// One question on a `question.ask` card.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct QuestionItem {
+    /// The question, in plain words.
+    pub text: String,
+    /// Answers to pick from (the person can always type their own instead).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<String>,
+    /// Thrall's recommended answer: picked to start with, and used if nobody answers.
+    pub recommended: String,
 }
 
 /// A file attached to a message. Clients fetch it with `GET /v1/files/{file}`.

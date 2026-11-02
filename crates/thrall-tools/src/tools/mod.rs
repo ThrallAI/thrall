@@ -31,8 +31,8 @@ pub use browse::BrowserTool;
 pub use calc::Calc;
 pub use clipboard::Clipboard;
 pub use control::{
-    AgentResult, DELEGATE, Delegate, EXIT_PLAN_MODE, ExitPlanMode, PROPOSE_SKILL, ProposeSkill,
-    Restart, USE_SKILL, UseSkill, find_skill, skill_text,
+    ASK_USER, AgentResult, AskUser, DELEGATE, Delegate, EXIT_PLAN_MODE, ExitPlanMode,
+    PROPOSE_SKILL, ProposeSkill, Restart, USE_SKILL, UseSkill, find_skill, skill_text,
 };
 pub use documents::ReadDocument;
 pub use files::{EditFile, ListDir, ReadFile, WriteFile};
@@ -94,6 +94,7 @@ pub fn core() -> Vec<Arc<dyn Tool>> {
         Arc::new(ScheduleList),
         Arc::new(ScheduleRemove),
         Arc::new(ExitPlanMode),
+        Arc::new(AskUser),
         Arc::new(Restart),
     ]
 }
@@ -103,6 +104,8 @@ pub const NOT_FOR_HELPERS: &[&str] = &[
     DELEGATE,
     "agent_result",
     EXIT_PLAN_MODE,
+    // Helpers decide for themselves; only Thrall asks the person.
+    ASK_USER,
     "thrall_restart",
     "schedule",
     "schedule_remove",

@@ -178,11 +178,15 @@ impl Hub {
         let session = frame.session.clone();
         let changed = match &frame.event {
             Event::TurnStarted { .. } => Some(SessionState::Working),
-            Event::PermissionRequest { .. } | Event::PlanProposed { .. } => {
+            Event::PermissionRequest { .. }
+            | Event::PlanProposed { .. }
+            | Event::QuestionAsk { .. } => {
                 self.set_waiting(&session, true);
                 Some(SessionState::WaitingForYou)
             }
-            Event::PermissionResolved { .. } | Event::PlanResolved { .. } => {
+            Event::PermissionResolved { .. }
+            | Event::PlanResolved { .. }
+            | Event::QuestionResolved { .. } => {
                 self.set_waiting(&session, false);
                 Some(SessionState::Working)
             }

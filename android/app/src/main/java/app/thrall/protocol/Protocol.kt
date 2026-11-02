@@ -70,6 +70,10 @@ sealed interface Incoming {
     data class EventFrame(val session: String, val seq: Long?, val event: Event) : Incoming
 }
 
+/** One question on a question card: the person can pick an option or type their own answer. */
+@Serializable
+data class QuestionItem(val text: String, val options: List<String> = emptyList(), val recommended: String)
+
 @Serializable
 data class ClientInfo(val kind: String, val name: String, val version: String)
 
@@ -183,6 +187,10 @@ sealed class Request {
         val approve: Boolean,
         @EncodeDefault @SerialName("auto_edits") val autoEdits: Boolean = false,
     ) : Request()
+
+    /** Answer a question card: one answer per question, in order. */
+    @Serializable @SerialName("question.answer")
+    data class QuestionAnswer(val question: String, val answers: List<String>) : Request()
 
     /** Events from every session (live text left out), for the list's "Needs you" badges. */
     @Serializable @SerialName("session.watch_all")
@@ -571,6 +579,18 @@ sealed class Event {
     @Serializable @SerialName("plan.resolved")
     data class PlanResolved(val plan: String, val approved: Boolean, @SerialName("answered_by") val answeredBy: String) : Event()
 
+    /** Thrall's questions, each with its recommended answer; nobody answering by [expiresAt] means those are used. */
+    @Serializable @SerialName("question.ask")
+    data class QuestionAsk(
+        val question: String,
+        val items: List<QuestionItem>,
+        val why: String = "",
+        @SerialName("expires_at") val expiresAt: Long = 0,
+    ) : Event()
+
+    @Serializable @SerialName("question.resolved")
+    data class QuestionResolved(val question: String, val answers: List<String>, @SerialName("answered_by") val answeredBy: String) : Event()
+
     @Serializable @SerialName("session.updated")
     data class SessionUpdated(
         val title: String? = null,
@@ -603,7 +623,7 @@ sealed class Event {
 object ProtocolTypes {
     val requestsUsed = setOf(
         "hello", "ping", "session.list", "session.open", "session.detach", "session.create", "home.get",
-        "turn.send", "turn.interrupt", "permission.answer", "plan.decide", "session.watch_all",
+        "turn.send", "turn.interrupt", "permission.answer", "plan.decide", "question.answer", "session.watch_all",
         "folder.list", "folder.read", "file.get", "folder.places", "command.list", "command.run", "file.put",
         "folder.create", "session.rename", "session.pin", "session.archive", "session.delete",
         "session.set_mode", "app.latest", "app.get",
@@ -637,7 +657,8 @@ object ProtocolTypes {
     val eventsUsed = setOf(
         "turn.started", "turn.completed", "turn.retracted", "message.started", "message.delta",
         "reasoning.delta", "message.completed", "step.started", "step.output", "step.completed",
-        "permission.request", "permission.resolved", "plan.proposed", "plan.resolved", "session.updated",
+        "permission.request", "permission.resolved", "plan.proposed", "plan.resolved", "question.ask",
+        "question.resolved", "session.updated",
         "status", "notice", "error", "agent.completed",
     )
     val eventsLater = setOf("tasks.updated", "agent.started", "memory.saved")
