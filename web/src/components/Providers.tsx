@@ -5,11 +5,15 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import type { Engine, ReplyOf } from "../engine";
-import { JOBS, SUPPLIERS } from "../constants";
+import { JOBS, LOCAL_JOB_LABELS, LOCAL_JOB_SETTINGS, SUPPLIERS } from "../constants";
 import { bareModel, supplier, supplierOf } from "../suppliers";
 
 type Shown = ReplyOf<"settings.shown">;
 type Tested = ReplyOf<"provider.tested">;
+type Found = ReplyOf<"local.found">;
+
+/** The `program/` prefix (programs on this computer). */
+const PROGRAM_PREFIX = supplier("program")?.prefix ?? "program/";
 type Save = (key: string, value: boolean | number | string) => void;
 type Status = (s: { text: string; warn?: boolean }) => void;
 
@@ -128,6 +132,23 @@ export function Providers({
   const [tests, setTests] = useState<Record<string, Tested | "testing">>({});
   const keySet = (name?: string) => (name ? (shown?.keys.find((k) => k.name === name)?.set ?? false) : true);
 
+  // What's installed on this computer: looked for when the page opens (it only reads).
+  const [found, setFound] = useState<Found | "looking" | null>(null);
+  const findLocal = () => {
+    if (!engine) return;
+    setFound("looking");
+    engine
+      .request<"local.found">({ type: "local.find" })
+      .then(setFound)
+      .catch((e: unknown) => {
+        setFound(null);
+        onStatus({ text: e instanceof Error ? e.message : String(e), warn: true });
+      });
+  };
+  useEffect(findLocal, [engine]);
+  const foundItems = found && found !== "looking" ? found.items : [];
+  const modelsDir = found && found !== "looking" ? found.models_dir : undefined;
+
   const test = (id: string) => {
     if (!engine) return;
     setTests((t) => ({ ...t, [id]: "testing" }));
@@ -144,9 +165,16 @@ export function Providers({
   };
   // Picking a supplier for a job lists its models, once.
   const pick = (id: string) => {
+    if (id === "program") return;
     if (!tests[id] && id !== "openrouter") test(id);
   };
   const models = (id: string) => {
+    if (id === "program") {
+      return foundItems
+        .flatMap((f) => f.models ?? [])
+        .filter((m) => m.startsWith(PROGRAM_PREFIX))
+        .map((m) => m.slice(PROGRAM_PREFIX.length));
+    }
     const t = tests[id];
     const prefix = supplier(id)?.prefix ?? "";
     return t && t !== "testing" ? (t.models ?? []).map((m) => m.slice(prefix.length)) : [];
@@ -180,12 +208,43 @@ export function Providers({
         <Row label="Local model server" hint="Ollama (http://localhost:11434/v1) or LM Studio (http://localhost:1234/v1)">
           <Field k="provider.local_base_url" v={provider.local_base_url} label="Local model server" onSave={onSave} mono allowEmpty />
         </Row>
+        <Row label="Picture web UI" hint="AUTOMATIC1111 or Forge on this computer, started with --api">
+          <Field k="provider.sd_webui_url" v={provider.sd_webui_url} label="Picture web UI" onSave={onSave} mono allowEmpty />
+        </Row>
+      </Group>
+      <Group
+        title="Found on this PC"
+        note={
+          "Free, and nothing leaves this computer. Thrall only looks: it never installs or downloads anything." +
+          (modelsDir ? ` Put whisper.cpp models in ${modelsDir}/whisper and Piper voices in ${modelsDir}/piper.` : "")
+        }
+      >
+        {foundItems.map((f) => {
+          const setting = LOCAL_JOB_SETTINGS[f.job];
+          const job = LOCAL_JOB_LABELS[f.job] ?? f.job;
+          const first = f.models?.[0];
+          return (
+            <Row key={`${f.job}-${f.name}`} label={`${f.name} · ${job}`} hint={f.note}>
+              <span className={`th-badge${f.ready ? " is-ok" : ""}`}>{f.ready ? "Ready" : "Not ready"}</span>
+              {f.ready && setting && first ? (
+                <button type="button" className="th-btn" onClick={() => onSave(setting, first)}>
+                  Use for {job}
+                </button>
+              ) : null}
+            </Row>
+          );
+        })}
+        <Row label="Look again" hint="After installing a program, adding a model or starting a server">
+          <button type="button" className="th-btn" disabled={found === "looking"} onClick={findLocal}>
+            {found === "looking" ? "Looking…" : "Look again"}
+          </button>
+        </Row>
       </Group>
       <Group
         title="Suppliers"
         note="Keys stay in this computer's keychain and never pass through this screen. Add or replace one in a terminal with the command shown, then restart Thrall. Test checks it with the key Thrall has."
       >
-        {SUPPLIERS.map((s) => {
+        {SUPPLIERS.filter((s) => s.id !== "program").map((s) => {
           const t = tests[s.id];
           const hasKey = s.id === "chatgpt" ? keySet("chatgpt") : keySet(s.key);
           return (
