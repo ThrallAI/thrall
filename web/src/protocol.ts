@@ -369,6 +369,16 @@ export type RequestFrame = {
       type: "command.run";
     }
   | {
+      type: "experience.list";
+    }
+  | {
+      /**
+       * The lesson's id.
+       */
+      lesson: string;
+      type: "experience.forget";
+    }
+  | {
       type: "memory.list";
     }
   | {
@@ -769,6 +779,13 @@ export type ReplyFrame = {
        */
       text: string;
       type: "turn.rewound";
+    }
+  | {
+      /**
+       * Newest first.
+       */
+      items: LessonInfo[];
+      type: "experience.listed";
     }
   | {
       /**
@@ -1609,6 +1626,23 @@ export interface RewindFile {
    * The file, relative to the session folder when inside it.
    */
   path: string;
+}
+/**
+ * A lesson in the experience log, for the settings screen.
+ */
+export interface LessonInfo {
+  /**
+   * When it was noted, Unix ms.
+   */
+  at: number;
+  /**
+   * Its id.
+   */
+  lesson: string;
+  /**
+   * The lesson.
+   */
+  text: string;
 }
 /**
  * A fact Thrall remembers.

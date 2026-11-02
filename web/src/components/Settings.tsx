@@ -17,7 +17,7 @@ import {
 } from "../constants";
 import { setTourOn, tourOn } from "../onboarding";
 import { newerRelease } from "../updates";
-import type { FactInfo } from "../protocol";
+import type { FactInfo, LessonInfo } from "../protocol";
 import type { Session } from "../types";
 import { THEME_LABELS, type Theme } from "../theme";
 import { People } from "./People";
@@ -457,6 +457,25 @@ export function Settings({
       .catch((e: unknown) => setStatus({ text: e instanceof Error ? e.message : String(e), warn: true }));
   };
 
+  // Lessons Thrall noted load with the Learning section too.
+  const [lessons, setLessons] = useState<LessonInfo[] | null>(null);
+  useEffect(() => {
+    if (section !== "memory" || !engine) return;
+    engine
+      .request<"experience.listed">({ type: "experience.list" })
+      .then((r) => setLessons(r.items))
+      .catch((e: unknown) => setStatus({ text: e instanceof Error ? e.message : String(e), warn: true }));
+  }, [section, engine]);
+  const forgetLesson = (lesson: string) => {
+    engine
+      ?.request<"experience.listed">({ type: "experience.forget", lesson })
+      .then((r) => {
+        setLessons(r.items);
+        setStatus({ text: "Deleted: Thrall won't follow that lesson any more." });
+      })
+      .catch((e: unknown) => setStatus({ text: e instanceof Error ? e.message : String(e), warn: true }));
+  };
+
   // The check-in checklist lives in the data folder, beside config.toml.
   const [checklist, setChecklist] = useState<string | null>(null);
   const [checklistDraft, setChecklistDraft] = useState("");
@@ -850,6 +869,27 @@ export function Settings({
             <Row label="Trim old tool results (experimental)" hint="Big results from a few exchanges ago are sent shortened to save tokens. Nothing is deleted. If Thrall forgets something it read earlier, turn this off">
               <Toggle k="memory.trim_old_tool_results" v={memory.trim_old_tool_results} label="Trim old tool results" onSave={save} />
             </Row>
+          </Group>
+          <Group
+            title="Lessons Thrall learned"
+            note={
+              lessons === null
+                ? "Loading…"
+                : lessons.length === 0
+                  ? undefined
+                  : "Noted when you corrected Thrall or it found what works. The newest are in every chat; delete any that are wrong."
+            }
+          >
+            {lessons !== null && lessons.length === 0 ? (
+              <p className="th-set-empty">None yet. When you correct Thrall, it notes the lesson here.</p>
+            ) : null}
+            {(lessons ?? []).map((l) => (
+              <Row key={l.lesson} label={l.text} hint={new Date(l.at).toLocaleDateString()}>
+                <button type="button" className="th-btn th-btn-quiet" aria-label={`Delete the lesson: ${l.text}`} onClick={() => forgetLesson(l.lesson)}>
+                  Delete
+                </button>
+              </Row>
+            ))}
           </Group>
           <Group
             title="Facts Thrall remembers"

@@ -59,6 +59,9 @@ about what the file says.
 work is set up, a decision, a person or project that matters to them), save it with memory_save \
 straight away, one fact per call, without asking. Not one-off details of the task at hand, and \
 never keys, passwords or other secrets. The user is shown each saved fact and can forget it.
+- When the user corrects you, or a step failed and you then found what works, note the lesson with \
+experience_note: one line on what to do differently next time, specific to this person or \
+computer (\"use py, not python\"). Not for one-off details of the task.
 - When you had to work something out that's likely to come up again (a procedure that took \
 several steps or tries), offer it as a skill with skill_propose once the task is done. Not for \
 trivial or one-off tasks; the user decides.";
@@ -697,3 +700,19 @@ worth trying next.",
 being clear, and drop the jokes when something goes wrong or the person is stressed.",
     ),
 ];
+
+/// Each person's experience log, in their own data folder.
+pub const EXPERIENCE_FILE: &str = "experience.json";
+
+/// Lessons kept per person (the oldest go first).
+pub const EXPERIENCE_KEPT: usize = 100;
+
+/// The newest lessons added to each turn's instructions.
+pub const EXPERIENCE_IN_PROMPT: usize = 15;
+
+/// Longest lesson kept.
+pub const LESSON_MAX_CHARS: usize = 300;
+
+/// Put before the lessons in the system prompt.
+pub const EXPERIENCE_INTRO: &str = "Lessons from earlier work with this person (follow them; they \
+can be wrong or out of date, so trust what you see now when it says otherwise):";

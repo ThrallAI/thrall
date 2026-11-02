@@ -187,6 +187,8 @@ pub mod id_prefix {
     pub const PERSON: &str = "pe";
     /// Signed-in browsers and PCs.
     pub const DEVICE: &str = "dv";
+    /// Lessons in a person's experience log.
+    pub const LESSON: &str = "ls";
 }
 
 /// Settings the settings screen may change (dotted `config.toml` keys). Lists and tables (MCP

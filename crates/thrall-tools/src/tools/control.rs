@@ -46,6 +46,41 @@ impl Tool for ExitPlanMode {
     }
 }
 
+/// Name of the experience-log tool; the agent keeps the lesson in the person's own log.
+pub const EXPERIENCE_NOTE: &str = "experience_note";
+
+/// Note a lesson for next time. The agent carries it out; `run` is only reached where no log
+/// can be kept.
+pub struct ExperienceNote;
+
+impl Tool for ExperienceNote {
+    fn name(&self) -> &'static str {
+        EXPERIENCE_NOTE
+    }
+    fn description(&self) -> &'static str {
+        "Note a lesson for next time, after the user corrected you or a step failed and you found \
+         what works: one line on what to do differently, specific to this person or computer \
+         (\"use py, not python\"). It's added to your instructions from now on; the user can see \
+         and delete it in Settings → Learning."
+    }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": { "lesson": { "type": "string", "description": "One line: what to do differently next time" } },
+            "required": ["lesson"]
+        })
+    }
+    fn title(&self, _args: &Value) -> String {
+        "Noting a lesson".to_owned()
+    }
+    fn effect(&self, _ctx: &ToolContext, _args: &Value) -> Effect {
+        Effect::Read
+    }
+    fn run<'a>(&'a self, _ctx: &'a ToolContext, _args: Value) -> BoxFuture<'a, ToolOutput> {
+        Box::pin(async { ToolOutput::error("lessons can't be kept here") })
+    }
+}
+
 /// Name of the hand-off tool; the agent runs it (a helper with its own context).
 pub const DELEGATE: &str = "agent";
 

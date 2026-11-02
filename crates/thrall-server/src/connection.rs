@@ -797,6 +797,25 @@ impl Connection {
                         Err(why) => vec![error(id, ErrorCode::Internal, why)],
                     }
                 }
+                Request::ExperienceList {} => vec![reply(
+                    id,
+                    Reply::ExperienceListed {
+                        items: thrall_agent::experience::listed(&self.me()),
+                    },
+                )],
+                Request::ExperienceForget { lesson } => {
+                    let state = self.me();
+                    match thrall_agent::experience::forget(&state, &lesson) {
+                        Ok(true) => vec![reply(
+                            id,
+                            Reply::ExperienceListed {
+                                items: thrall_agent::experience::listed(&state),
+                            },
+                        )],
+                        Ok(false) => vec![error(id, ErrorCode::NotFound, "There's no such lesson.")],
+                        Err(why) => vec![error(id, ErrorCode::Internal, why)],
+                    }
+                }
                 Request::SessionWatchAll {} => {
                     self.watch_all = true;
                     vec![reply(id, Reply::Ack {})]

@@ -1298,6 +1298,10 @@ async fn context(
         system.push_str("\n\n");
         system.push_str(&style);
     }
+    if let Some(lessons) = crate::experience::prompt(&crate::experience::list(state)) {
+        system.push_str("\n\n");
+        system.push_str(&lessons);
+    }
     if mode == Mode::Plan {
         system.push_str(
             "\n\nPlan mode is on: look around with the read-only tools, then present a plan with \

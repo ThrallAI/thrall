@@ -342,6 +342,15 @@ pub enum Request {
         #[serde(default)]
         args: String,
     },
+    /// The lessons in your experience log, newest first. Answered by `experience.listed`.
+    #[serde(rename = "experience.list")]
+    ExperienceList {},
+    /// Delete a lesson from your experience log. Answered by `experience.listed`.
+    #[serde(rename = "experience.forget")]
+    ExperienceForget {
+        /// The lesson's id.
+        lesson: String,
+    },
     /// The facts Thrall remembers about the person, newest first. Answered by `memory.listed`.
     #[serde(rename = "memory.list")]
     MemoryList {},
@@ -596,6 +605,8 @@ impl Request {
             Self::AudioTranscribe { .. } => "audio.transcribe",
             Self::CommandList {} => "command.list",
             Self::CommandRun { .. } => "command.run",
+            Self::ExperienceList {} => "experience.list",
+            Self::ExperienceForget { .. } => "experience.forget",
             Self::MemoryList {} => "memory.list",
             Self::MemoryForget { .. } => "memory.forget",
             Self::SkillRemove { .. } => "skill.remove",
@@ -829,6 +840,12 @@ pub enum Reply {
         restored: Vec<String>,
         /// Files that couldn't be put back, each with the reason.
         failed: Vec<String>,
+    },
+    /// Answer to `experience.list` and `experience.forget`.
+    #[serde(rename = "experience.listed")]
+    ExperienceListed {
+        /// Newest first.
+        items: Vec<LessonInfo>,
     },
     /// Answer to `memory.list`.
     #[serde(rename = "memory.listed")]
@@ -1120,6 +1137,17 @@ pub struct PersonalityPreset {
     pub name: String,
     /// One line about it.
     pub description: String,
+}
+
+/// A lesson in the experience log, for the settings screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LessonInfo {
+    /// Its id.
+    pub lesson: String,
+    /// The lesson.
+    pub text: String,
+    /// When it was noted, Unix ms.
+    pub at: i64,
 }
 
 /// A skill, for the settings screen.
