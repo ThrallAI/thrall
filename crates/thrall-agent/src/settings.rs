@@ -71,6 +71,7 @@ fn skills(state: &AppState) -> Vec<SkillInfo> {
             description: s.description,
             personal: s.personal,
             helper: s.helper,
+            rating: s.rating.map(|r| r.as_str().to_owned()),
         })
         .collect()
 }

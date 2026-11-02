@@ -60,8 +60,9 @@ work is set up, a decision, a person or project that matters to them), save it w
 straight away, one fact per call, without asking. Not one-off details of the task at hand, and \
 never keys, passwords or other secrets. The user is shown each saved fact and can forget it.
 - When you had to work something out that's likely to come up again (a procedure that took \
-several steps or tries), offer it as a skill with skill_propose once the task is done. Not for \
-trivial or one-off tasks; the user decides.";
+several steps or tries), save it as a skill with skill_propose once the task is done, saying \
+where you learned it. It's kept without asking (risky ones are put to the user first), and the \
+user can see and change what you learn in Settings → Learning. Not for trivial or one-off tasks.";
 
 /// Added to the system prompt when the humaniser is on (`writing.humanise` light or full).
 pub const WRITING_RULES: &str = "Writing style (the person turned the humaniser on): write like a \

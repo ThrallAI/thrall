@@ -1944,6 +1944,15 @@ button.th-file-chip:focus-visible {
   color: var(--ink-muted);
   white-space: nowrap;
 }
+.th-badge.is-rating-low {
+  color: var(--ok);
+}
+.th-badge.is-rating-medium {
+  color: var(--warn);
+}
+.th-badge.is-rating-high {
+  color: var(--danger);
+}
 .th-badge.is-ok {
   color: var(--ok);
   border-color: var(--ok);

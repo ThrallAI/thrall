@@ -3987,6 +3987,13 @@
         "personal": {
           "description": "One of the person's own (`false`: the project's).",
           "type": "boolean"
+        },
+        "rating": {
+          "description": "Safety rating of a skill Thrall learned: `low`, `medium` or `high` (none for ones\nwritten by hand).",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [

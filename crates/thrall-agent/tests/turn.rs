@@ -2473,12 +2473,47 @@ async fn saved_facts_are_announced_and_asked_for_when_saving_freely_is_off() {
 }
 
 #[tokio::test]
-async fn a_proposed_skill_is_saved_on_yes_runs_in_a_helper_and_by_its_name() {
+async fn a_risky_learned_skill_is_put_to_the_person_first() {
+    let (mut state, _) = setup(vec![
+        tool_call(
+            "c1",
+            "skill_propose",
+            r#"{"name": "Clean Up", "description": "Clean the build", "learned_from": "web", "instructions": "Remove-Item -Recurse build"}"#,
+        ),
+        reply(&["Not saved."]),
+        reply(&["Cleaning"]),
+    ])
+    .await;
+    checks_off(&mut state);
+    let dir = workspace("skill-risky");
+    let data = std::path::PathBuf::from(&dir).join("data");
+    state.data_dir = Some(data.clone());
+    let s = session::create(&state, Some(dir.clone())).await.unwrap();
+    let no = Reply::Permission(PermissionChoice::No);
+    let (_, frames) = run_with(&state, &s.id, "learn it", no, |_, _| {}).await;
+    let summary = frames
+        .iter()
+        .find_map(|f| match &f.event {
+            Event::PermissionRequest { summary, risk, .. } => {
+                assert_eq!(*risk, thrall_protocol::Risk::High);
+                Some(summary.clone())
+            }
+            _ => None,
+        })
+        .expect("a high-rated skill is put to the person");
+    assert!(summary.contains("rated High") && summary.contains("deletes things"));
+    assert!(
+        !data.join("skills").join("clean-up").exists(),
+        "turned down, so not kept"
+    );
+}
+#[tokio::test]
+async fn a_learned_skill_is_saved_without_asking_runs_in_a_helper_and_by_its_name() {
     let (mut state, provider) = setup(vec![
         tool_call(
             "c1",
             "skill_propose",
-            r#"{"name": "Tidy Notes", "description": "Tidy a notes file", "instructions": "1. Read it.\n2. Sort the lines."}"#,
+            r#"{"name": "Tidy Notes", "description": "Tidy a notes file", "learned_from": "user", "instructions": "1. Read it.\n2. Sort the lines."}"#,
         ),
         reply(&["Saved it."]),
         reply(&["Tidy notes"]),
@@ -2500,25 +2535,17 @@ async fn a_proposed_skill_is_saved_on_yes_runs_in_a_helper_and_by_its_name() {
     let s = session::create(&state, Some(dir.clone())).await.unwrap();
 
     let (_, frames) = run_with(&state, &s.id, "tidy my notes", yes(), |_, _| {}).await;
-    let (diff, choices) = frames
-        .iter()
-        .find_map(|f| match &f.event {
-            Event::PermissionRequest { diff, choices, .. } => Some((diff.clone(), choices.clone())),
-            _ => None,
-        })
-        .expect("the skill is put to the user");
-    let unified = diff.expect("with the file shown").unified;
-    assert!(unified.contains("+name: tidy-notes") && unified.contains("+run: helper"));
     assert!(
-        !choices.contains(&PermissionChoice::Always),
-        "asked every time"
+        !kinds(&frames).contains(&"permission.request"),
+        "a low-rated skill isn't put to the user"
     );
+    assert!(frames.iter().any(|f| matches!(
+        &f.event,
+        Event::StepCompleted { summary, .. } if summary == "Learned skill tidy-notes (low)"
+    )));
     let file = data.join("skills").join("tidy-notes").join("SKILL.md");
-    assert!(
-        std::fs::read_to_string(&file)
-            .unwrap()
-            .contains("2. Sort the lines.")
-    );
+    let saved = std::fs::read_to_string(&file).unwrap();
+    assert!(saved.contains("2. Sort the lines.") && saved.contains("rating: low"));
 
     // Used again: a helper does it; only its answer comes back.
     provider
