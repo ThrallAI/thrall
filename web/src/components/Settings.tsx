@@ -26,6 +26,7 @@ import { THEME_LABELS, type Theme } from "../theme";
 import { People } from "./People";
 import { Personality } from "./Personality";
 import { Phones } from "./Phones";
+import { Providers } from "./Providers";
 
 type Shown = ReplyOf<"settings.shown">;
 type Obj = Record<string, unknown>;
@@ -790,7 +791,7 @@ export function Settings({
             <Row label="Provider"><Value v={provider.kind} /></Row>
             <Row
               label="Model"
-              hint={shown && shown.model !== provider.model ? `In use now: ${shown.model} (picked with /model)` : "An OpenRouter id (xiaomi/mimo-v2.5-pro), or chatgpt/<model> on your ChatGPT plan"}
+              hint={shown && shown.model !== provider.model ? `In use now: ${shown.model} (picked with /model)` : "An OpenRouter id (xiaomi/mimo-v2.5-pro), chatgpt/<model> on your ChatGPT plan, or another supplier's (Providers)"}
             >
               <Field k="provider.model" v={provider.model} label="Model" onSave={save} mono list="th-plan-models" />
               <datalist id="th-plan-models">
@@ -822,17 +823,10 @@ export function Settings({
             })}
             <ProfileAdder onAdd={addProfile} />
           </Group>
-          <Group title="Pictures, voice and video">
-            <Row label="Reads pictures"><Field k="provider.vision_model" v={provider.vision_model} label="Reads pictures" onSave={save} mono /></Row>
-            <Row label="Backup picture reader"><Field k="provider.vision_backup_model" v={provider.vision_backup_model} label="Backup picture reader" onSave={save} mono /></Row>
-            <Row label="Makes pictures"><Field k="provider.image_model" v={provider.image_model} label="Makes pictures" onSave={save} mono /></Row>
-            <Row label="Speaks"><Field k="provider.speech_model" v={provider.speech_model} label="Speaks" onSave={save} mono /></Row>
-            <Row label="Voice"><Field k="provider.speech_voice" v={provider.speech_voice} label="Voice" onSave={save} /></Row>
-            <Row label="Transcribes"><Field k="provider.transcribe_model" v={provider.transcribe_model} label="Transcribes" onSave={save} mono /></Row>
-            <Row label="Local model server" hint="Ollama or LM Studio on this computer or network. Pick a model as local/<name> (e.g. local/llama3.1): free, no key needed">
-              <Field k="provider.local_base_url" v={provider.local_base_url} label="Local model server" onSave={save} mono />
+          <Group title="Pictures, voice and video" note="Who reads and makes pictures, speaks and transcribes is picked in Providers.">
+            <Row label="Backup picture reader" hint="Tried when the picture reader is busy or down">
+              <Field k="provider.vision_backup_model" v={provider.vision_backup_model} label="Backup picture reader" onSave={save} mono />
             </Row>
-            <Planned label="ElevenLabs voices" hint="More natural voices (needs an ElevenLabs key)" />
             <Planned label="Music" hint="Songs and backing tracks" />
           </Group>
         </>
@@ -1080,6 +1074,11 @@ export function Settings({
     }
     if (section === "people") {
       return <People engine={engine} onStatus={setStatus} Row={Row} Group={Group} />;
+    }
+    if (section === "providers") {
+      return (
+        <Providers engine={engine} shown={shown} onSave={save} onStatus={setStatus} Row={Row} Group={Group} Field={Field} />
+      );
     }
     if (section === "phones") {
       return (

@@ -421,6 +421,14 @@ export type RequestFrame = {
       value: boolean | number | string;
     }
   | {
+      /**
+       * `openrouter`, `chatgpt`, `local`, `fal`, or a supplier reached directly (`openai`,
+       * `anthropic`, `google`, `elevenlabs`).
+       */
+      supplier: string;
+      type: "provider.test";
+    }
+  | {
       type: "phone.list";
     }
   | {
@@ -843,6 +851,26 @@ export type ReplyFrame = {
        */
       skills?: SkillInfo[];
       type: "settings.shown";
+    }
+  | {
+      /**
+       * What happened, in plain words (credit left, or what's wrong and how to fix it).
+       */
+      message: string;
+      /**
+       * Models it offers, as Thrall names them (`direct/openai/gpt-5`, `local/llama3.1`), when
+       * it lists them.
+       */
+      models?: string[];
+      /**
+       * It answered and took the key.
+       */
+      ok: boolean;
+      /**
+       * The supplier tested.
+       */
+      supplier: string;
+      type: "provider.tested";
     }
   | {
       /**

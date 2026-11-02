@@ -146,6 +146,7 @@ export const SETTINGS_SECTIONS = [
   { id: "general", label: "General" },
   { id: "personality", label: "Personality" },
   { id: "models", label: "Models" },
+  { id: "providers", label: "Providers" },
   { id: "safety", label: "Permissions & safety" },
   { id: "memory", label: "Learning" },
   { id: "writing", label: "Writing" },
@@ -193,6 +194,38 @@ export const QUESTION_MODE_LABELS: Readonly<Record<string, string>> = {
   when_it_matters: "Only when it matters",
   when_unsure: "When it's unsure",
 };
+
+/** A company or server that can do Thrall's jobs. `prefix` starts its model ids (OpenRouter's have
+ * none); `key` is its keychain name (`thrall key set <key>`), absent when it needs none. */
+export interface Supplier {
+  id: string;
+  name: string;
+  prefix: string;
+  key?: string;
+  about: string;
+}
+
+/** Every supplier, in the order the Providers page lists them. */
+export const SUPPLIERS: readonly Supplier[] = [
+  { id: "openrouter", name: "OpenRouter", prefix: "", key: "openrouter", about: "One key for models from many companies" },
+  { id: "chatgpt", name: "ChatGPT plan", prefix: "chatgpt/", about: "Your ChatGPT Plus or Pro plan (sign in under Models)" },
+  { id: "openai", name: "OpenAI", prefix: "direct/openai/", key: "openai", about: "OpenAI directly, with your own OpenAI key" },
+  { id: "anthropic", name: "Anthropic", prefix: "direct/anthropic/", key: "anthropic", about: "Anthropic's models directly, with your own Anthropic key" },
+  { id: "google", name: "Google", prefix: "direct/google/", key: "google", about: "Gemini models directly, with your own Google AI key" },
+  { id: "elevenlabs", name: "ElevenLabs", prefix: "direct/elevenlabs/", key: "elevenlabs", about: "Natural voices; the voice is an ElevenLabs voice id" },
+  { id: "local", name: "This computer (local)", prefix: "local/", about: "Ollama or LM Studio: free, and nothing leaves your network" },
+  { id: "fal", name: "fal.ai", prefix: "", key: "fal", about: "Makes videos" },
+];
+
+/** Thrall's jobs, the setting holding each one's model, and the suppliers that can do it. */
+export const JOBS: ReadonlyArray<{ key: string; label: string; suppliers: readonly string[] }> = [
+  { key: "provider.model", label: "Chat", suppliers: ["openrouter", "chatgpt", "openai", "anthropic", "google", "local"] },
+  { key: "provider.vision_model", label: "Reads pictures", suppliers: ["openrouter", "openai", "anthropic", "google", "local"] },
+  { key: "provider.image_model", label: "Makes pictures", suppliers: ["openrouter"] },
+  { key: "provider.speech_model", label: "Speaks", suppliers: ["openrouter", "openai", "elevenlabs"] },
+  { key: "provider.transcribe_model", label: "Transcribes", suppliers: ["openrouter", "openai", "google"] },
+  { key: "memory.embedding_model", label: "Memory search", suppliers: ["openrouter", "openai", "google"] },
+];
 
 /** How often the settings screen checks whether a ChatGPT sign-in has landed. */
 export const SIGN_IN_POLL_MS = 2000;
