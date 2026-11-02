@@ -16,7 +16,7 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 - Helpers work side by side: when Thrall asks for several in one reply they run at once (3 by
   default, up to 8), each with its steps under its own row. Built-in helper types (Researcher,
   Coder, Reviewer, Planner; only the Coder changes files) and your own in the data folder's
-  `agents/`. Each helper stops at its spending limit ($1 by default). Settings → Chat → Helpers.
+  `agents/`. Each helper stops at its spending limit ($1 by default). Settings → Permissions & safety → Helpers.
 - Settings → Providers: pick a supplier and model for each job (chat, reading pictures, making
   pictures, speaking, transcribing, memory search), with a Test for each supplier. Use OpenAI,
   Anthropic and Google directly with your own key (`direct/<supplier>/<model>`, `thrall key set
