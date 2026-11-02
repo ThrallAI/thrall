@@ -754,3 +754,17 @@ pub const LESSON_MAX_CHARS: usize = 300;
 /// Put before the lessons in the system prompt.
 pub const EXPERIENCE_INTRO: &str = "Lessons from earlier work with this person (follow them; they \
 can be wrong or out of date, so trust what you see now when it says otherwise):";
+
+/// Most facts saved from one compaction.
+pub const FACTS_MAX: usize = 5;
+
+/// Most tokens the model writes listing them.
+pub const FACTS_MAX_TOKENS: u32 = 600;
+
+/// Draws lasting facts from the person's own messages after a compaction.
+pub const FACTS_PROMPT: &str = "These are things a person said to their assistant. List the \
+lasting facts about the person worth remembering for future conversations: preferences, how \
+their computer or work is set up, decisions, people or projects that matter to them. Only what \
+they clearly stated about themselves; not one-off task details, not guesses, never passwords, keys \
+or other secrets. Answer with a JSON list only, at most 5 items, each {\"topic\": \"two or three \
+words\", \"content\": \"one sentence\"}. If there's nothing lasting, answer [].";
