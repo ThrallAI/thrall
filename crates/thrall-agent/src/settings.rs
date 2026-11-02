@@ -6,7 +6,10 @@ use thrall_core::config::ProviderKind;
 use thrall_core::constants::CONFIG_FILE;
 use thrall_protocol::{KeyStatus, Reply, SkillInfo};
 
-use crate::constants::{HIDDEN_VALUE, SETTINGS_KEYS};
+use crate::constants::{
+    CHATGPT_KEY_NAME, FAL_KEY_NAME, HIDDEN_VALUE, SETTINGS_KEYS, SUPPLIER_LOCAL,
+    SUPPLIER_OPENROUTER,
+};
 use crate::state::AppState;
 
 /// The `settings.shown` answer for `state`; `pending` when saved settings aren't in use yet.
@@ -22,17 +25,13 @@ pub async fn shown(state: &AppState, pending: bool) -> Reply {
     {
         servers.retain(|name, _| state.mcp.server(name).is_some());
     }
-    let provider = ProviderKind::OpenRouter;
     let keys = SETTINGS_KEYS
         .iter()
-        .map(|(name, purpose)| {
-            let from_env =
-                *name == provider.as_str() && std::env::var_os(provider.key_env_var()).is_some();
-            KeyStatus {
-                name: (*name).to_owned(),
-                purpose: (*purpose).to_owned(),
-                set: from_env || state.keys.get(name).is_some(),
-            }
+        .map(|(name, purpose)| KeyStatus {
+            name: (*name).to_owned(),
+            purpose: (*purpose).to_owned(),
+            set: key_env_var(name).is_some_and(|v| std::env::var_os(v).is_some())
+                || state.keys.get(name).is_some(),
         })
         .collect();
     Reply::SettingsShown {
@@ -55,6 +54,130 @@ pub async fn shown(state: &AppState, pending: bool) -> Reply {
                     && thrall_mcp::remote::signed_in(n)
             })
             .collect(),
+    }
+}
+
+/// The environment variable that can hold key `name` instead of the keychain.
+fn key_env_var(name: &str) -> Option<&'static str> {
+    let main = ProviderKind::OpenRouter;
+    if name == main.as_str() {
+        return Some(main.key_env_var());
+    }
+    thrall_llm::direct::supplier(name).map(|s| s.key_env_var)
+}
+
+/// The key Thrall has for `name`: its environment variable, else the keychain.
+fn stored_key(state: &AppState, name: &str) -> Option<String> {
+    key_env_var(name)
+        .and_then(|v| std::env::var(v).ok())
+        .map(|k| k.trim().to_owned())
+        .filter(|k| !k.is_empty())
+        .or_else(|| state.keys.get(name))
+}
+
+/// The `provider.tested` answer: whether `supplier` works with the key Thrall has for it, and the
+/// models it offers.
+pub async fn test_supplier(state: &AppState, supplier: &str) -> Reply {
+    let tested = |ok: bool, message: String, models: Vec<String>| Reply::ProviderTested {
+        supplier: supplier.to_owned(),
+        ok,
+        message,
+        models,
+    };
+    match supplier {
+        SUPPLIER_OPENROUTER => {
+            if stored_key(state, supplier).is_none() {
+                return tested(
+                    false,
+                    "No OpenRouter key yet. Run `thrall key set openrouter`.".to_owned(),
+                    Vec::new(),
+                );
+            }
+            match state.llm.credit_left().await {
+                Some(left) => tested(true, format!("Works. ${left:.2} credit left."), Vec::new()),
+                None => tested(
+                    false,
+                    "OpenRouter didn't answer with that key. Check it, then run `thrall key set \
+                     openrouter`."
+                        .to_owned(),
+                    Vec::new(),
+                ),
+            }
+        }
+        CHATGPT_KEY_NAME => match state.llm.plan_models().await {
+            Ok(models) if !models.is_empty() => {
+                tested(true, "Signed in and working.".to_owned(), models)
+            }
+            Ok(_) => tested(
+                false,
+                "Not signed in to ChatGPT. Use Sign in under Models.".to_owned(),
+                Vec::new(),
+            ),
+            Err(e) => tested(false, e.to_string(), Vec::new()),
+        },
+        SUPPLIER_LOCAL => {
+            let url = state.config.provider.local_base_url.trim();
+            if url.is_empty() {
+                return tested(
+                    false,
+                    "No local model server is set. Fill in its address first.".to_owned(),
+                    Vec::new(),
+                );
+            }
+            match thrall_llm::direct::check_local(url).await {
+                Ok(models) => tested(
+                    true,
+                    format!("Found it: {} model(s) ready.", models.len()),
+                    models,
+                ),
+                Err(e) => tested(
+                    false,
+                    format!("{e} Is Ollama or LM Studio running at {url}?"),
+                    Vec::new(),
+                ),
+            }
+        }
+        FAL_KEY_NAME => {
+            if state.keys.get(FAL_KEY_NAME).is_some() {
+                tested(
+                    true,
+                    "The key is saved. fal.ai checks it when the first video is made (there's no \
+                     free way to try it sooner)."
+                        .to_owned(),
+                    Vec::new(),
+                )
+            } else {
+                tested(
+                    false,
+                    "No fal.ai key yet. Run `thrall key set fal`.".to_owned(),
+                    Vec::new(),
+                )
+            }
+        }
+        other => {
+            let Some(s) = thrall_llm::direct::supplier(other) else {
+                return tested(false, format!("Thrall doesn't know {other}."), Vec::new());
+            };
+            let Some(key) = stored_key(state, s.id) else {
+                return tested(
+                    false,
+                    format!("No {} key yet. Run `thrall key set {}`.", s.name, s.id),
+                    Vec::new(),
+                );
+            };
+            match thrall_llm::direct::check(s, &key, s.base_url).await {
+                Ok(models) => tested(
+                    true,
+                    format!(
+                        "Works: {} model(s) to pick from. A key saved while Thrall was running is \
+                         used once Thrall restarts.",
+                        models.len()
+                    ),
+                    models,
+                ),
+                Err(e) => tested(false, e.to_string(), Vec::new()),
+            }
+        }
     }
 }
 

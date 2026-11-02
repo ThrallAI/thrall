@@ -7,7 +7,10 @@ use thrall_agent::keys::SystemKeys;
 use thrall_core::constants::{LOCAL_USER_ID, LOCAL_USER_NAME, person_role};
 use thrall_core::ids::now_ms;
 use thrall_core::{Config, Paths};
-use thrall_llm::{ChatGpt, LlmProvider, OpenRouter, Routed};
+use thrall_llm::constants::DIRECT_SUPPLIERS;
+use thrall_llm::{
+    ChatGpt, DirectEmbedder, ElevenLabs, Embedder, LlmProvider, OpenRouter, Routed, direct,
+};
 use thrall_store::{SqliteStore, Store};
 
 use crate::key;
@@ -15,11 +18,11 @@ use crate::key;
 /// The engine, or `None` (after telling the user what to do) when no key is set yet.
 pub async fn build(paths: &Paths, config: Config) -> anyhow::Result<Option<AppState>> {
     let provider = config.provider.kind;
-    // A local model needs no key; the main provider then only answers when asked by name.
-    let local_only = config
-        .provider
-        .model
-        .starts_with(thrall_core::constants::LOCAL_MODEL_PREFIX);
+    // A local model, or one reached directly with its maker's key, needs no OpenRouter key; the
+    // main provider then only answers when asked by name.
+    let model = &config.provider.model;
+    let local_only = model.starts_with(thrall_core::constants::LOCAL_MODEL_PREFIX)
+        || model.starts_with(thrall_llm::constants::DIRECT_MODEL_PREFIX);
     let Some(api_key) = key::resolve(provider)?.or_else(|| local_only.then(String::new)) else {
         eprintln!(
             "Thrall needs your {name} key first. Run `thrall key set {name}` and paste it in.",
@@ -36,7 +39,8 @@ pub async fn build(paths: &Paths, config: Config) -> anyhow::Result<Option<AppSt
     let base_url = config.provider.base_url.clone();
     let openrouter: Arc<dyn LlmProvider> =
         Arc::new(OpenRouter::new(api_key.clone(), &config.provider.base_url)?);
-    let embedder = OpenRouter::new(api_key, &config.provider.base_url)?;
+    let mut embedder: Arc<dyn Embedder> =
+        Arc::new(OpenRouter::new(api_key, &config.provider.base_url)?);
     // Signed in to ChatGPT: `chatgpt/<model>` chats on the person's plan.
     let chatgpt = match thrall_agent::signin::stored_chatgpt(&SystemKeys) {
         Some(stored) => {
@@ -56,13 +60,31 @@ pub async fn build(paths: &Paths, config: Config) -> anyhow::Result<Option<AppSt
         // Ollama and LM Studio speak the same API; they ignore the key.
         llm = llm.with_local(Arc::new(OpenRouter::new(String::new(), local_url)?));
     }
+    // Companies the person has their own key for: `direct/<supplier>/<model>`.
+    let memory_model = direct::split(&config.memory.embedding_model).map(|(s, _)| s.id);
+    for s in DIRECT_SUPPLIERS {
+        let Some(key) = key::resolve_named(s.id, s.key_env_var)? else {
+            continue;
+        };
+        let provider: Arc<dyn LlmProvider> = match s.max_tokens_field {
+            Some(field) => {
+                if memory_model == Some(s.id) {
+                    let client = OpenRouter::standard(key.clone(), s.base_url, field)?;
+                    embedder = Arc::new(DirectEmbedder::new(client, s));
+                }
+                Arc::new(OpenRouter::standard(key, s.base_url, field)?)
+            }
+            None => Arc::new(ElevenLabs::new(key, s.base_url)?),
+        };
+        llm = llm.with_direct(s.id, provider);
+    }
     let mut state = AppState::new(
         config,
         Arc::new(store),
         Arc::new(llm),
         LOCAL_USER_ID.to_owned(),
     )?
-    .with_embedder(Arc::new(embedder))
+    .with_embedder(embedder)
     .with_own_keys(Arc::new(thrall_agent::people::KeychainOwnKeys::new(
         provider, &base_url,
     )));

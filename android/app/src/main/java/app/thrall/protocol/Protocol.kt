@@ -650,6 +650,8 @@ object ProtocolTypes {
         "startup.get", "startup.set",
         // The experience log is shown and edited in the computer's Settings → Learning for now.
         "experience.list", "experience.forget",
+        // Suppliers are set up and tested on the computer's Settings → Providers.
+        "provider.test",
     )
     val repliesUsed = setOf(
         "welcome", "pong", "ack", "error", "session.opened", "session.listed", "home.shown", "folder.listed",
@@ -657,7 +659,7 @@ object ProtocolTypes {
         "folder.created", "app.latest", "group.listed", "heartbeat.shown", "checkpoint.shown", "turn.rewound",
         "memory.listed", "settings.shown", "people.listed", "personality.shown",
     )
-    val repliesLater = setOf("experience.listed", "audio.transcribed", "phone.listed", "phone.pairing", "signin.code", "device.listed", "startup.shown")
+    val repliesLater = setOf("experience.listed", "audio.transcribed", "phone.listed", "phone.pairing", "signin.code", "device.listed", "startup.shown", "provider.tested")
     val eventsUsed = setOf(
         "turn.started", "turn.completed", "turn.retracted", "message.started", "message.delta",
         "reasoning.delta", "message.completed", "step.started", "step.output", "step.completed",
