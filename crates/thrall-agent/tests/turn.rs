@@ -1572,11 +1572,46 @@ async fn compact_summarises_the_older_conversation() {
     );
     // The most recent messages are untouched and still in order after the summary.
     assert!(after.last().unwrap().content.contains("ok"));
-    let summary_request = provider.seen.lock().unwrap().last().cloned().unwrap();
+    // The summary, then (facts are saved without asking by default) the facts call.
+    let seen = provider.seen.lock().unwrap().clone();
+    let summary_request = &seen[seen.len() - 2];
     assert!(
         summary_request.messages[1]
             .content
             .contains("User: message 0")
+    );
+    let facts_request = seen.last().unwrap();
+    let source = &facts_request.messages[1].content;
+    assert!(source.contains("- message 0"));
+    assert!(!source.contains("Thrall:"), "only the person's own words");
+}
+
+#[tokio::test]
+async fn facts_the_person_stated_are_kept_after_a_compaction() {
+    let mut replies = vec![reply(&["ok"]), reply(&["Chat"])];
+    replies.extend((0..5).map(|_| reply(&["ok"])));
+    replies.push(reply(&["Summary."]));
+    replies.push(reply(&[
+        r#"[{"topic": "editor", "content": "Uses VS Code for everything"}]"#,
+    ]));
+    let (mut state, _) = setup(replies).await;
+    checks_off(&mut state);
+    state.config.memory.remember_conversations = false;
+    let s = session::create(&state, None).await.unwrap();
+    for i in 0..6 {
+        run(&state, &s.id, &format!("I always use VS Code, message {i}")).await;
+    }
+    commands::run(&state, &s.id, "compact", "").await.unwrap();
+    let facts = state
+        .store
+        .search_knowledge("u_test", "", 50)
+        .await
+        .unwrap();
+    assert!(
+        facts
+            .iter()
+            .any(|f| f.content == "Uses VS Code for everything"),
+        "{facts:?}"
     );
 }
 

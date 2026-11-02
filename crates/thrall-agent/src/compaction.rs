@@ -1,6 +1,10 @@
 //! Compaction: when a session's context grows past the limit, the oldest part is summarised by the
 //! model and the summary takes its place. History (the event log) is untouched; only what the
 //! model is sent changes. Where to cut is decided by `thrall_memory::compaction::plan`.
+//!
+//! After a summary, lasting facts the person stated in that stretch are saved to long-term memory
+//! (when `memory.save_facts` is on). Only the person's own messages are read for them, never
+//! Thrall's replies or tool results, so text from a web page or file can't plant a "fact".
 
 use futures::StreamExt;
 use thrall_core::constants::{id_prefix, usage_role};
@@ -11,7 +15,8 @@ use thrall_protocol::Usage;
 use thrall_store::NewMessage;
 
 use crate::constants::{
-    COMPACT_PROMPT, COMPACT_SOURCE_MAX_CHARS, COMPACT_SUMMARY_MAX_TOKENS, SUMMARY_PREFIX, role,
+    COMPACT_PROMPT, COMPACT_SOURCE_MAX_CHARS, COMPACT_SUMMARY_MAX_TOKENS, FACTS_MAX,
+    FACTS_MAX_TOKENS, FACTS_PROMPT, SUMMARY_PREFIX, role,
 };
 use crate::error::AgentError;
 use crate::state::AppState;
@@ -96,8 +101,9 @@ async fn summarise(
     stored: &[thrall_store::StoredMessage],
     cut: usize,
 ) -> Result<Option<Compacted>, AgentError> {
-    // The older part as plain text for the summary.
+    // The older part as plain text for the summary; the person's own words alone for facts.
     let mut transcript = String::new();
+    let mut said = String::new();
     for m in &stored[..cut] {
         let text = serde_json::from_str::<StoredContent>(&m.content)
             .map(|c| c.text)
@@ -111,6 +117,9 @@ async fn summarise(
             _ => "Tool result",
         };
         transcript.push_str(&format!("{who}: {text}\n\n"));
+        if m.role == role::USER && !text.starts_with(SUMMARY_PREFIX) {
+            said.push_str(&format!("- {text}\n"));
+        }
     }
     let transcript: String = transcript.chars().take(COMPACT_SOURCE_MAX_CHARS).collect();
     let request = ChatRequest {
@@ -178,5 +187,111 @@ async fn summarise(
         .store
         .compact_messages(&state.user_id, session_id, &ids)
         .await?;
+    if state.config.memory.save_facts {
+        remember_facts(state, session_id, turn_id, &said).await?;
+    }
     Ok(Some(Compacted { messages: cut }))
+}
+
+/// A fact the model drew from the person's messages.
+#[derive(serde::Deserialize)]
+struct Drawn {
+    topic: String,
+    content: String,
+}
+
+/// The facts in the model's answer (a JSON list, possibly wrapped in a code fence), at most
+/// [`FACTS_MAX`], blank ones left out.
+fn drawn_facts(answer: &str) -> Vec<Drawn> {
+    let start = answer.find('[');
+    let end = answer.rfind(']');
+    let Some(json) = start
+        .zip(end)
+        .filter(|(s, e)| s < e)
+        .map(|(s, e)| &answer[s..=e])
+    else {
+        return Vec::new();
+    };
+    serde_json::from_str::<Vec<Drawn>>(json)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|f| !f.topic.trim().is_empty() && !f.content.trim().is_empty())
+        .take(FACTS_MAX)
+        .collect()
+}
+
+/// Save the lasting facts in what the person said (one short model call). Failures are only
+/// logged: compaction has already done its job.
+async fn remember_facts(
+    state: &AppState,
+    session_id: &str,
+    turn_id: &str,
+    said: &str,
+) -> Result<(), AgentError> {
+    if said.trim().is_empty() {
+        return Ok(());
+    }
+    let source: String = said.chars().take(COMPACT_SOURCE_MAX_CHARS).collect();
+    let request = ChatRequest {
+        model: state.model(),
+        messages: vec![
+            ChatMessage::new(ChatRole::System, FACTS_PROMPT),
+            ChatMessage::new(ChatRole::User, source),
+        ],
+        max_tokens: FACTS_MAX_TOKENS,
+        tools: Vec::new(),
+    };
+    let mut answer = String::new();
+    let mut usage = Usage::default();
+    let mut stream = state.llm.stream(request);
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(StreamEvent::Text(t)) => answer.push_str(&t),
+            Ok(StreamEvent::Usage(u)) => {
+                usage = Usage {
+                    input_tokens: u.input_tokens,
+                    output_tokens: u.output_tokens,
+                    cost_usd: u.cost_usd,
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(%e, "couldn't draw facts from a summary");
+                return Ok(());
+            }
+        }
+    }
+    let by = CallBy {
+        model: state.model(),
+        role: usage_role::CHAT,
+        cached_tokens: 0,
+    };
+    record_usage(state, session_id, turn_id, usage, by).await?;
+    for fact in drawn_facts(&answer) {
+        if let Err(e) = state
+            .memory
+            .save_fact(&state.user_id, fact.topic.trim(), fact.content.trim())
+            .await
+        {
+            tracing::warn!(%e, "couldn't save a fact drawn from a summary");
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn facts_are_read_from_a_json_list_even_in_a_fence() {
+        let got = drawn_facts(
+            "```json\n[{\"topic\": \"editor\", \"content\": \"Uses VS Code\"}, \
+             {\"topic\": \" \", \"content\": \"x\"}]\n```",
+        );
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].content, "Uses VS Code");
+        assert!(drawn_facts("No lasting facts.").is_empty());
+        assert!(drawn_facts("[]").is_empty());
+    }
 }
