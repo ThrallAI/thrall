@@ -497,6 +497,13 @@ button {
   border-radius: var(--radius-md);
   margin-left: 22px;
 }
+/* A helper's own steps, listed under the helper's row. */
+.th-step.is-in-helper {
+  margin-left: 44px;
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--line);
+  border-radius: 0;
+}
 .th-step > summary {
   list-style: none;
   display: flex;

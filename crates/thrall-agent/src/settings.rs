@@ -4,7 +4,7 @@
 use serde_json::Value;
 use thrall_core::config::ProviderKind;
 use thrall_core::constants::CONFIG_FILE;
-use thrall_protocol::{KeyStatus, Reply, SkillInfo};
+use thrall_protocol::{HelperTypeInfo, KeyStatus, Reply, SkillInfo};
 
 use crate::constants::{HIDDEN_VALUE, SETTINGS_KEYS};
 use crate::state::AppState;
@@ -53,6 +53,16 @@ pub async fn shown(state: &AppState, pending: bool) -> Reply {
             .filter(|n| {
                 state.mcp.server(n).is_some_and(|s| s.is_remote())
                     && thrall_mcp::remote::signed_in(n)
+            })
+            .collect(),
+        helper_types: thrall_tools::agents::personal(state.my_dir().as_deref())
+            .into_iter()
+            .map(|a| HelperTypeInfo {
+                name: a.name,
+                description: a.description,
+                read_only: a.read_only,
+                model: a.model,
+                source: a.source.as_str().to_owned(),
             })
             .collect(),
     }

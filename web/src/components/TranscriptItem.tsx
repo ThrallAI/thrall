@@ -125,7 +125,7 @@ export const TranscriptItem = memo(function TranscriptItem({
       const hasBody = item.output !== "" || item.diff !== null;
       return (
         <>
-        <details className={`th-step ${cls}`} open={open && hasBody}>
+        <details className={`th-step ${cls}${item.helper ? " is-in-helper" : ""}`} open={open && hasBody}>
           <summary>
             <span className="th-glyph" aria-hidden="true">
               {glyph}

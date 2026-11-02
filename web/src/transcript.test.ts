@@ -141,6 +141,15 @@ describe("apply", () => {
     expect(done.items[0]).toMatchObject({ status: "ok", summary: "Passed", output: "ok\n" });
   });
 
+  it("lists each helper's steps under its own row when helpers work side by side", () => {
+    seq = 0;
+    const step = (id: string, helper?: string) =>
+      ev({ type: "step.started", turn: "t1", step: id, tool: "read_file", title: id, ...(helper ? { helper } : {}) });
+    const v = run(emptyView(), [step("a"), step("b"), step("a1", "a"), step("b1", "b"), step("a2", "a"), step("c")]);
+    expect(v.items.map((i) => i.id)).toEqual(["a", "a1", "a2", "b", "b1", "c"]);
+    expect(v.items[1]).toMatchObject({ helper: "a" });
+  });
+
   it("shows a permission card and closes it when answered elsewhere, saying where", () => {
     seq = 0;
     const v = run(emptyView(), [

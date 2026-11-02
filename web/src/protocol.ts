@@ -818,6 +818,10 @@ export type ReplyFrame = {
        */
       config_file?: string | null;
       /**
+       * Helper types Thrall can hand work to: its own and the person's (`agents/<name>.md`).
+       */
+      helper_types?: HelperTypeInfo[];
+      /**
        * Keys Thrall knows about and whether each is stored.
        */
       keys: KeyStatus[];
@@ -1117,6 +1121,11 @@ export type EventFrame = {
       type: "message.completed";
     }
   | {
+      /**
+       * The helper's own step when a helper took this step: clients list it under that one.
+       * Several helpers can run at once, so their steps interleave.
+       */
+      helper?: string | null;
       /**
        * Step id.
        */
@@ -1709,6 +1718,31 @@ export interface FactInfo {
    * Its topic.
    */
   topic: string;
+}
+/**
+ * A helper type, for the settings screen.
+ */
+export interface HelperTypeInfo {
+  /**
+   * What it's for.
+   */
+  description: string;
+  /**
+   * Its own model, if it has one.
+   */
+  model?: string | null;
+  /**
+   * Its name (`agent {type}`).
+   */
+  name: string;
+  /**
+   * It only looks (works in plan mode).
+   */
+  read_only: boolean;
+  /**
+   * `built_in` or `personal`.
+   */
+  source: string;
 }
 /**
  * Whether a key is stored (`thrall key set <name>`). Never the key itself.

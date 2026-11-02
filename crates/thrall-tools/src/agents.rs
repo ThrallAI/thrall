@@ -146,23 +146,38 @@ fn read_dir(root: &Path, source: AgentSource) -> Vec<AgentType> {
     out
 }
 
+/// `more` replaces anything in `all` with the same name.
+fn add(all: &mut Vec<AgentType>, more: Vec<AgentType>) {
+    for agent in more {
+        all.retain(|a| a.name != agent.name);
+        all.push(agent);
+    }
+}
+
+/// Thrall's helper types and the person's own (no project's), by name.
+pub fn personal(data_dir: Option<&Path>) -> Vec<AgentType> {
+    let mut all = built_in();
+    if let Some(data) = data_dir {
+        add(
+            &mut all,
+            read_dir(&data.join(AGENTS_DIR), AgentSource::Personal),
+        );
+    }
+    all.sort_by(|a, b| a.name.cmp(&b.name));
+    all
+}
+
 /// Every helper type for `workspace`, by name: built-ins, then the person's, then the project's,
 /// a later one replacing an earlier one with the same name.
 pub fn discover(data_dir: Option<&Path>, workspace: &Path) -> Vec<AgentType> {
-    let mut all = built_in();
-    let mut add = |more: Vec<AgentType>| {
-        for agent in more {
-            all.retain(|a| a.name != agent.name);
-            all.push(agent);
-        }
-    };
-    if let Some(data) = data_dir {
-        add(read_dir(&data.join(AGENTS_DIR), AgentSource::Personal));
-    }
-    add(read_dir(
-        &workspace.join(PROJECT_DIR).join(AGENTS_DIR),
-        AgentSource::Project,
-    ));
+    let mut all = personal(data_dir);
+    add(
+        &mut all,
+        read_dir(
+            &workspace.join(PROJECT_DIR).join(AGENTS_DIR),
+            AgentSource::Project,
+        ),
+    );
     all.sort_by(|a, b| a.name.cmp(&b.name));
     all
 }
