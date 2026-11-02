@@ -21,6 +21,15 @@ pub const LOGS_DIR: &str = "logs";
 /// The engine's access token (local mode): clients read it to connect. Created at first start.
 pub const TOKEN_FILE: &str = "access-token";
 
+/// Permissions for the data folder on Linux and macOS: this account only (no one else can list or
+/// open anything inside it).
+#[cfg(unix)]
+pub const DATA_DIR_MODE: u32 = 0o700;
+
+/// A sign-in link is the web app's address with this, then a one-time code (the page itself
+/// carries no token: a browser signs in by opening such a link).
+pub const SIGNIN_FRAGMENT: &str = "#signin=";
+
 /// Files people attach to messages are kept here, inside the data folder (one folder per file id).
 pub const UPLOADS_DIR: &str = "uploads";
 

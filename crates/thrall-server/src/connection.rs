@@ -788,6 +788,15 @@ impl Connection {
                         vec![already_answered(id)]
                     }
                 }
+                Request::PersonalityGet {} => vec![reply(id, personality_shown(&self.me()))],
+                Request::PersonalitySet { preset, custom } => {
+                    let state = self.me();
+                    let chosen = thrall_agent::personality::tidy(&preset, &custom);
+                    match thrall_agent::personality::save(&state, &chosen) {
+                        Ok(()) => vec![reply(id, personality_shown(&state))],
+                        Err(why) => vec![error(id, ErrorCode::Internal, why)],
+                    }
+                }
                 Request::SessionWatchAll {} => {
                     self.watch_all = true;
                     vec![reply(id, Reply::Ack {})]
@@ -1334,6 +1343,16 @@ fn startup(id: &str, request: &Request) -> ServerFrame {
             },
         ),
         Err(e) => error(id, ErrorCode::Internal, e.to_string()),
+    }
+}
+
+/// personality.shown for whoever state acts for.
+fn personality_shown(state: &thrall_agent::AppState) -> Reply {
+    let chosen = thrall_agent::personality::load(state);
+    Reply::PersonalityShown {
+        preset: chosen.preset,
+        custom: chosen.custom,
+        presets: thrall_agent::personality::presets(),
     }
 }
 

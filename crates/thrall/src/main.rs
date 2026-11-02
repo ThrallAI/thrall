@@ -1,5 +1,5 @@
 //! The `thrall` program: the terminal app (`thrall`, `thrall -c`, `thrall -r`), plus `thrall run`,
-//! `thrall engine`, `thrall key`, `thrall sessions` and `thrall paths`.
+//! `thrall engine`, `thrall open`, `thrall key`, `thrall sessions` and `thrall paths`.
 
 mod attach;
 mod cli;
@@ -8,6 +8,7 @@ mod discover;
 mod engine;
 mod key;
 mod logging;
+mod open;
 mod run;
 mod serve;
 mod sessions;
@@ -89,6 +90,7 @@ async fn dispatch(cli: Cli) -> anyhow::Result<ExitCode> {
         Some(Command::Key(KeyCommand::Remove { name })) => key::remove(&name),
         Some(Command::Key(KeyCommand::Status)) => key::status(&config),
         Some(Command::Sessions { limit }) => sessions::list(&paths, limit).await,
+        Some(Command::Open) => open::run(&paths, &config).await,
         Some(Command::Paths) => {
             println!("{} {}", constants::APP_NAME, env!("CARGO_PKG_VERSION"));
             println!("Data folder: {}", paths.home.display());

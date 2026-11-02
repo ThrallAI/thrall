@@ -60,17 +60,18 @@ export interface Endpoint {
   device: boolean;
 }
 
-/** The engine that served this page, or the dev overrides. */
+/** The engine that served this page, or the dev overrides. The page itself carries no token
+ * (anyone on the computer can load it): a browser gets its own from a sign-in link. An empty
+ * token means this browser isn't signed in. */
 export function endpoint(): Endpoint {
   const env = import.meta.env;
   const devUrl = env.VITE_THRALL_WS as string | undefined;
   const devToken = env.VITE_THRALL_TOKEN as string | undefined;
-  const meta = document.querySelector<HTMLMetaElement>('meta[name="thrall-token"]');
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
   const device = devToken ? null : storedToken();
   return {
     url: devUrl ?? `${scheme}//${location.host}${WS_PATH}`,
-    token: devToken ?? device ?? meta?.content ?? "",
+    token: devToken ?? device ?? "",
     device: device !== null,
   };
 }
@@ -187,7 +188,7 @@ export class Engine {
           this.listener.onState("open", reply.engine, reply.user);
         })
         .catch((e: unknown) => {
-          // This browser was signed out: forget its sign-in and start again as the page.
+          // This browser was signed out: forget its sign-in and show how to sign in again.
           if (this.where.device && e instanceof EngineError && e.code === "unauthorized") {
             forgetDevice();
             location.reload();

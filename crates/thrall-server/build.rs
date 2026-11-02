@@ -7,8 +7,7 @@ use std::path::{Path, PathBuf};
 const PLACEHOLDER: &str = "<!doctype html><meta charset=\"utf-8\"><title>Thrall</title>\
 <body style=\"font-family:system-ui;background:#111018;color:#ecebf2;padding:32px\">\
 <h1>The web app isn't built into this copy of Thrall.</h1>\
-<p>Run <code>npm ci</code> and <code>npm run build</code> in <code>web/</code>, then build Thrall again.</p>\
-<meta name=\"thrall-token\" content=\"__THRALL_TOKEN__\">";
+<p>Run <code>npm ci</code> and <code>npm run build</code> in <code>web/</code>, then build Thrall again.</p>";
 
 fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;

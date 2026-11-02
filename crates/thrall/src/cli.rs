@@ -50,6 +50,8 @@ pub enum Command {
     },
     /// Show where Thrall keeps its files.
     Paths,
+    /// Open Thrall in your browser, signed in (starts the engine if it isn't running).
+    Open,
     /// Run the engine that the web app, desktop app and terminal connect to.
     #[command(alias = "serve")]
     Engine(EngineArgs),

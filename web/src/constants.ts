@@ -68,6 +68,9 @@ export const SIGNIN_PATH = "/v1/signin";
 /** A sign-in link is the web app's address with this, then the code. */
 export const SIGNIN_HASH = "#signin=";
 
+/** What the desktop app's window is called in a person's list of signed-in devices. */
+export const DESKTOP_DEVICE_NAME = "Thrall desktop app";
+
 /** Key holding the theme choice (system, dark or light). */
 export const THEME_KEY = "thrall.theme";
 
@@ -141,6 +144,7 @@ export const CLIENT_LABELS: Record<string, string> = {
 /** Sections of the settings screen, in order. */
 export const SETTINGS_SECTIONS = [
   { id: "general", label: "General" },
+  { id: "personality", label: "Personality" },
   { id: "models", label: "Models" },
   { id: "safety", label: "Permissions & safety" },
   { id: "memory", label: "Memory & skills" },
@@ -154,6 +158,12 @@ export const SETTINGS_SECTIONS = [
 
 /** One settings section's id. */
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]["id"];
+
+/** The personality written in the person's own words (`personality.set {preset}`). */
+export const PERSONALITY_CUSTOM = "custom";
+
+/** Longest own-words personality the engine keeps. */
+export const PERSONALITY_MAX_CHARS = 1500;
 
 /** Log detail levels, least to most. */
 export const LOG_LEVELS = ["error", "warn", "info", "debug", "trace"] as const;

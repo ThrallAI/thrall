@@ -13,6 +13,7 @@ import "@fontsource/doto/900.css";
 import "./styles/tokens.css";
 import "./styles/app.css";
 import { App } from "./App";
+import { endpoint } from "./engine";
 import { finishSignIn } from "./signin";
 import { applyTheme, readTheme } from "./theme";
 
@@ -23,9 +24,14 @@ const root = document.getElementById("root");
 if (root) {
   // A sign-in link is used up before connecting, so the app connects as the person it signs in.
   void finishSignIn().then((failed) => {
-    createRoot(root).render(
-      <StrictMode>{failed ? <SignInFailed message={failed} /> : <App />}</StrictMode>,
+    const page = failed ? (
+      <SignInFailed message={failed} />
+    ) : endpoint().token ? (
+      <App />
+    ) : (
+      <NotSignedIn />
     );
+    createRoot(root).render(<StrictMode>{page}</StrictMode>);
   });
 }
 
@@ -35,6 +41,20 @@ function SignInFailed({ message }: { message: string }) {
     <main className="signin-failed">
       <h1>Couldn't sign in</h1>
       <p>{message}</p>
+    </main>
+  );
+}
+
+/** Opened without a sign-in: the page carries no token, so this browser needs a link first. */
+function NotSignedIn() {
+  return (
+    <main className="signin-failed">
+      <h1>This browser isn't signed in to Thrall</h1>
+      <p>
+        On the computer Thrall runs on, open the desktop app, or run <code>thrall open</code> in a terminal to
+        open Thrall in your browser.
+      </p>
+      <p>Someone else using this Thrall? Ask its owner for a sign-in link (Settings → People).</p>
     </main>
   );
 }

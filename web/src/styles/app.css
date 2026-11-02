@@ -2282,3 +2282,38 @@ select.th-input {
 .signin-failed p {
   color: var(--ink-muted);
 }
+
+/* ---------- Settings → Personality ---------- */
+.th-personas {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-2);
+}
+.th-persona {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-2);
+  align-items: baseline;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  min-width: 0;
+}
+.th-persona.is-on {
+  border-color: var(--accent);
+}
+.th-persona-name {
+  font-weight: 600;
+}
+.th-persona-about {
+  grid-column: 2;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-muted);
+}
+.th-persona-own {
+  width: 100%;
+  resize: vertical;
+  min-height: 96px;
+}
