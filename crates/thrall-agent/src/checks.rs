@@ -26,6 +26,8 @@ pub struct Track {
     pub restart: bool,
     /// These steps are a helper's (skills run inline there, not in another helper).
     pub in_helper: bool,
+    /// The helper's own step, when these steps are a helper's (clients list them under it).
+    pub helper_step: Option<String>,
     /// These steps are split mode's Thinker's: it may only look.
     pub look_only: bool,
     /// Thrall already put a question card to the person this task.

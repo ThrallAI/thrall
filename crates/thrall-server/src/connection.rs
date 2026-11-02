@@ -905,6 +905,31 @@ impl Connection {
                         thrall_agent::settings::shown(&self.me(), hub.settings_pending()).await,
                     )]
                 }
+                Request::SkillGet { name } => {
+                    match thrall_agent::settings::skill_detail(&self.me(), &name) {
+                        Ok(skill) => vec![reply(id, Reply::SkillShown { skill })],
+                        Err(why) => vec![error(id, ErrorCode::Invalid, why)],
+                    }
+                }
+                Request::SkillEdit {
+                    name,
+                    description,
+                    instructions,
+                } => match thrall_agent::settings::edit_skill(
+                    &self.me(),
+                    &name,
+                    &description,
+                    &instructions,
+                ) {
+                    Ok(skill) => vec![reply(id, Reply::SkillShown { skill })],
+                    Err(why) => vec![error(id, ErrorCode::Invalid, why)],
+                },
+                Request::SkillMakeSafe { name } => {
+                    match thrall_agent::settings::make_skill_safe(&self.me(), &name).await {
+                        Ok(answer) => vec![reply(id, answer)],
+                        Err((code, why)) => vec![error(id, code, why)],
+                    }
+                }
                 Request::CommandRun {
                     session,
                     name,

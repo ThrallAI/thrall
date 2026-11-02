@@ -1074,7 +1074,8 @@ impl Hub {
             uploaded_file(&state, file).ok_or_else(|| AgentError::FileNotFound(file.to_owned()))?;
         match crate::audio::listen(&state, &path, None).await {
             Ok((text, usage)) => {
-                crate::audio::record_loose_usage(&state, session, usage).await?;
+                let model = state.config.provider.transcribe_model.clone();
+                crate::audio::record_loose_usage(&state, session, &model, usage).await?;
                 Ok(text)
             }
             Err(e) => Err(AgentError::Transcription(e)),

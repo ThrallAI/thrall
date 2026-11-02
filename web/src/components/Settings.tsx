@@ -1,13 +1,14 @@
 // The settings screen. Appearance is kept in this browser; the engine's settings are read from and
 // saved to config.toml (settings.get / settings.set); features still being built are marked Planned.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Engine, ReplyOf } from "../engine";
 import {
   FRESH_STARTS,
   HUMANISE_LEVELS,
   LOG_LEVELS,
+  MAX_HELPERS_AT_ONCE,
   QUESTION_MODE_LABELS,
   QUESTION_MODES,
   RATING_LABELS,
@@ -27,6 +28,7 @@ import { People } from "./People";
 import { Personality } from "./Personality";
 import { Phones } from "./Phones";
 import { Providers } from "./Providers";
+import { SkillEditor } from "./SkillEditor";
 
 type Shown = ReplyOf<"settings.shown">;
 type Obj = Record<string, unknown>;
@@ -556,6 +558,20 @@ export function Settings({
       .catch((e: unknown) => setStatus({ text: e instanceof Error ? e.message : String(e), warn: true }));
   };
 
+  // One skill is open for editing at a time, under the list.
+  const [editing, setEditing] = useState<string | null>(null);
+  const closeEditor = useCallback(
+    (saved: boolean) => {
+      setEditing(null);
+      if (!saved) return;
+      engine
+        ?.request<"settings.shown">({ type: "settings.get" })
+        .then(setShown)
+        .catch((e: unknown) => setStatus({ text: e instanceof Error ? e.message : String(e), warn: true }));
+    },
+    [engine],
+  );
+
   // Removing a skill asks once more in its row.
   const [removing, setRemoving] = useState<string | null>(null);
   const removeSkill = (name: string) => {
@@ -861,6 +877,26 @@ export function Settings({
               <Field k="agent.question_wait_minutes" v={agent.question_wait_minutes} label="Wait for an answer" onSave={save} number />
             </Row>
           </Group>
+          <Group
+            title="Helpers"
+            note="Thrall can hand parts of a task to helpers, each with a fresh start. Helpers asked for together work at the same time; their steps show under their own row. Ones that only look can't change anything, and the rest ask you just as Thrall does. Add your own type as a file in agents/ in Thrall's data folder."
+          >
+            <Row label="At the same time" hint={`How many helpers work at once (1 to ${MAX_HELPERS_AT_ONCE})`}>
+              <Field k="agent.helpers_at_once" v={agent.helpers_at_once} label="Helpers at the same time" onSave={save} number />
+            </Row>
+            <Row label="Spending limit per helper" hint="In US cents: 100 is $1.00. A helper that reaches it stops and hands back what it has. 0 means no limit.">
+              <Field k="agent.helper_cost_limit_cents" v={agent.helper_cost_limit_cents} label="Spending limit per helper, in cents" onSave={save} number />
+            </Row>
+            {(shown?.helper_types ?? []).map((h) => (
+              <Row key={h.name} label={h.name} hint={h.description || undefined}>
+                <span className="th-badge" title={h.read_only ? "Works in plan mode: reads and searches, changes nothing" : "Can change files, asking you as Thrall does"}>
+                  {h.read_only ? "Looks only" : "Makes changes"}
+                </span>
+                {h.model ? <span className="th-badge th-set-mono">{h.model}</span> : null}
+                <span className="th-badge">{h.source === "built_in" ? "Thrall's" : "Yours"}</span>
+              </Row>
+            ))}
+          </Group>
           <Group title="Permissions">
             <Planned label="Mode for new sessions" hint="Ask, auto-accept edits, plan or full auto" />
             <Row label="Checkpoints" hint="Files are kept before each edit; Rewind on any of your messages puts them back">
@@ -929,7 +965,7 @@ export function Settings({
           </Group>
           <Group
             title="Your skills"
-            note="Recipes Thrall uses only when a task matches, or when you type /name. Thrall learns new ones by itself after working something out, each with a safety rating; ones rated High are put to you first. Turn any off or remove it here."
+            note="Recipes Thrall uses only when a task matches, or when you type /name. Thrall learns new ones by itself after working something out, each with a safety rating; ones rated High are put to you first. Open one to read or change it, or to make a risky one safe; turn any off or remove it here."
           >
             {(shown?.skills ?? []).length === 0 ? (
               <p className="th-set-empty">None yet. A project's own skills (its .thrall/skills folder) work in that folder.</p>
@@ -945,6 +981,15 @@ export function Settings({
                   {s.helper ? "In a helper" : "Inline"}
                 </span>
                 <Toggle k={`skills.${s.name}.enabled`} v={s.enabled} label={`Use /${s.name}`} onSave={save} />
+                <button
+                  type="button"
+                  className="th-btn th-btn-quiet"
+                  aria-label={`Open /${s.name}`}
+                  aria-expanded={editing === s.name}
+                  onClick={() => setEditing(editing === s.name ? null : s.name)}
+                >
+                  Open
+                </button>
                 {removing === s.name ? (
                   <>
                     <button type="button" className="th-btn th-btn-danger" onClick={() => removeSkill(s.name)}>
@@ -961,6 +1006,7 @@ export function Settings({
                 )}
               </Row>
             ))}
+            {editing ? <SkillEditor key={editing} engine={engine} name={editing} onStatus={setStatus} onClose={closeEditor} /> : null}
           </Group>
         </>
       );

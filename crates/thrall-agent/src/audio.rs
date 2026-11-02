@@ -225,10 +225,12 @@ async fn listen_once(
     Ok((text, usage))
 }
 
-/// Record usage outside a turn (the microphone button), against `session` when there is one.
+/// Record usage outside a turn (the microphone button, a settings action) by `model`, against
+/// `session` when there is one.
 pub(crate) async fn record_loose_usage(
     state: &AppState,
     session: Option<&str>,
+    model: &str,
     usage: Usage,
 ) -> Result<(), AgentError> {
     if usage == Usage::default() {
@@ -242,7 +244,7 @@ pub(crate) async fn record_loose_usage(
             session_id: session.map(str::to_owned),
             turn_id: None,
             provider: state.config.provider.kind.as_str().to_owned(),
-            model: state.config.provider.transcribe_model.clone(),
+            model: model.to_owned(),
             role: usage_role::CHAT.to_owned(),
             input_tokens: usage.input_tokens,
             cached_tokens: 0,
@@ -271,6 +273,7 @@ pub(crate) async fn transcribe_attachment(
             step: step.clone(),
             tool: "transcribe".to_owned(),
             title: format!("Listening to {name}"),
+            helper: None,
         })
         .await?;
     let result = listen_shown(emitter, state, path, &step).await;

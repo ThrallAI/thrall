@@ -57,6 +57,22 @@ pub fn standing_instructions(state: &AppState, workspace: &Path) -> String {
     out
 }
 
+/// The helper types Thrall can hand work to (the `agent` tool's `type`), for its own system
+/// prompt; helpers don't start helpers, so theirs leaves it out.
+pub fn helper_types(state: &AppState, workspace: &Path) -> String {
+    let types = thrall_tools::agents::discover(state.my_dir().as_deref(), workspace);
+    let mut out = format!(
+        "\n\n# Helper types\n\nWith the agent tool, pick the type that fits. Up to {} helpers work \
+         at the same time when you call agent several times in one reply:",
+        state.config.agent.helpers_at_once()
+    );
+    for t in types {
+        let looks = if t.read_only { " (looks only)" } else { "" };
+        out.push_str(&format!("\n- {}{looks}: {}", t.name, t.description));
+    }
+    out
+}
+
 /// A message starting `/name` where `name` is a skill (turned on, here) runs that skill: the
 /// model is told to use it, with the rest of the message as the task. Empty otherwise.
 pub fn skill_run(state: &AppState, workspace: &Path, text: &str) -> String {
