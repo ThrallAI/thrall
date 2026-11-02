@@ -1100,6 +1100,10 @@ pub struct SkillInfo {
     pub helper: bool,
     /// It's turned on.
     pub enabled: bool,
+    /// Safety rating of a skill Thrall learned: `low`, `medium` or `high` (none for ones
+    /// written by hand).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rating: Option<String>,
 }
 
 /// A file a rewind would put back.

@@ -225,11 +225,21 @@ struct ProposeArgs {
     name: String,
     description: String,
     instructions: String,
+    #[serde(default)]
+    learned_from: String,
+}
+
+/// What saving a learned skill means: where it goes, its file, its rating and why.
+struct Prepared {
+    dir: std::path::PathBuf,
+    text: String,
+    rating: crate::skills::Rating,
+    why: Vec<String>,
 }
 
 impl ProposeSkill {
     /// The folder, file text and why it can't be saved (if it can't).
-    fn prepare(ctx: &ToolContext, args: &Value) -> Result<(std::path::PathBuf, String), String> {
+    fn prepare(ctx: &ToolContext, args: &Value) -> Result<Prepared, String> {
         let a: ProposeArgs = serde_json::from_value(args.clone())
             .map_err(|e| format!("the arguments for {PROPOSE_SKILL} weren't right: {e}"))?;
         let data = ctx
@@ -256,8 +266,15 @@ impl ProposeSkill {
                 "there's already a skill called {slug}; pick another name"
             ));
         }
-        let text = crate::skills::skill_file(&slug, description, true, &a.instructions);
-        Ok((crate::skills::personal_dir(data, &slug), text))
+        let (rating, why) = crate::skills::rate(&a.learned_from, &a.instructions);
+        let text =
+            crate::skills::skill_file(&slug, description, true, Some(rating), &a.instructions);
+        Ok(Prepared {
+            dir: crate::skills::personal_dir(data, &slug),
+            text,
+            rating,
+            why,
+        })
     }
 }
 
@@ -266,10 +283,12 @@ impl Tool for ProposeSkill {
         PROPOSE_SKILL
     }
     fn description(&self) -> &'static str {
-        "Offer the user a new skill: step-by-step instructions for something you had to work out \
-         that's likely to come up again (a procedure, a workflow, a fix that took several tries). \
-         The user sees it and decides; it's only saved if they say yes. Don't offer one for \
-         one-off or trivial tasks, or after the user said no to it."
+        "Learn a new skill: step-by-step instructions for something you had to work out that's \
+         likely to come up again (a procedure, a workflow, a fix that took several tries). It's \
+         saved straight away with a safety rating; a skill rated High (learned from the web, or \
+         one that deletes, sends, or handles keys) is put to the user first. Say where it came \
+         from in learned_from. Don't save one for one-off or trivial tasks, or after the user \
+         turned it down."
     }
     fn parameters(&self) -> Value {
         json!({
@@ -285,9 +304,14 @@ impl Tool for ProposeSkill {
                     "description": "Markdown steps someone new could follow, with the details \
                                     that mattered. Commands only as you actually ran them and \
                                     saw them work, never untried variations"
+                },
+                "learned_from": {
+                    "type": "string",
+                    "enum": ["user", "my_work", "files", "web"],
+                    "description": "Where the knowledge came from: the user taught you, your own work this session, the user's files, or the web / a download / a tool's output"
                 }
             },
-            "required": ["name", "description", "instructions"]
+            "required": ["name", "description", "instructions", "learned_from"]
         })
     }
     fn title(&self, args: &Value) -> String {
@@ -296,49 +320,56 @@ impl Tool for ProposeSkill {
     fn precheck(&self, ctx: &ToolContext, args: &Value) -> Option<String> {
         Self::prepare(ctx, args).err()
     }
+    /// Low and medium skills are saved without asking; a high one is put to the person first,
+    /// with why it's rated high.
     fn effect(&self, ctx: &ToolContext, args: &Value) -> Effect {
-        let (summary, diff) = match Self::prepare(ctx, args) {
-            Ok((dir, text)) => {
-                let name = dir
+        match Self::prepare(ctx, args) {
+            Ok(p) if p.rating == crate::skills::Rating::High => {
+                let name = p
+                    .dir
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 let shown = format!("skills/{name}/{SKILL_FILE}");
-                (
-                    format!("Save a new skill, “{name}”"),
-                    Some(crate::diff::make(&shown, None, &text)),
-                )
+                Effect::AlwaysAsk {
+                    summary: format!(
+                        "Keep and turn on a new skill, “{name}”? It's rated High: {}. You can \
+                         change or remove it later in Settings → Learning.",
+                        p.why.join(", ")
+                    ),
+                    risk: Risk::High,
+                    diff: Some(crate::diff::make(&shown, None, &p.text)),
+                }
             }
-            Err(_) => ("Save a new skill".to_owned(), None),
-        };
-        Effect::AlwaysAsk {
-            summary,
-            risk: Risk::Low,
-            diff,
+            _ => Effect::Read,
         }
     }
     fn run<'a>(&'a self, ctx: &'a ToolContext, args: Value) -> BoxFuture<'a, ToolOutput> {
         Box::pin(async move {
-            let (dir, text) = match Self::prepare(ctx, &args) {
+            let p = match Self::prepare(ctx, &args) {
                 Ok(p) => p,
                 Err(why) => return ToolOutput::error(why),
             };
-            if let Err(e) = tokio::fs::create_dir_all(&dir).await {
+            if let Err(e) = tokio::fs::create_dir_all(&p.dir).await {
                 return ToolOutput::error(format!("couldn't make the skill's folder: {e}"));
             }
-            if let Err(e) = tokio::fs::write(dir.join(SKILL_FILE), &text).await {
+            if let Err(e) = tokio::fs::write(p.dir.join(SKILL_FILE), &p.text).await {
                 return ToolOutput::error(format!("couldn't save the skill: {e}"));
             }
-            let name = dir
+            let name = p
+                .dir
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
+            let rating = p.rating.as_str();
             ToolOutput::ok(
                 format!(
-                    "Saved the {name} skill. The user can run it with /{name}, and it's listed \
-                     for you from the next message on."
+                    "Learned the {name} skill (rated {rating}). The user can run it with /{name}, \
+                     and it's listed for you from the next message on. Tell the user in one line \
+                     that you learned it, and that they can see, change or remove what you learn \
+                     in Settings → Learning."
                 ),
-                format!("Saved skill {name}"),
+                format!("Learned skill {name} ({rating})"),
             )
         })
     }

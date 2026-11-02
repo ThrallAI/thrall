@@ -322,6 +322,7 @@ fun SettingsScreen(connection: Connection, owner: Boolean, about: AboutActions, 
                         Column(Modifier.weight(1f)) {
                             Text(skill.name, color = t.ink, fontSize = 14.sp)
                             if (skill.description.isNotBlank()) Text(skill.description, color = t.inkMuted, fontSize = 12.sp, maxLines = 2)
+                            skill.rating?.let { Text("${it.replaceFirstChar { c -> c.uppercase() }} risk", color = if (it == "high") t.danger else t.inkMuted, fontSize = 12.sp) }
                         }
                         if (skill.personal) TextButton(onClick = { removing = skill }) { Text("Remove", color = t.danger) }
                         Switch(

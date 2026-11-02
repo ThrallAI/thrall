@@ -8,6 +8,7 @@ import {
   FRESH_STARTS,
   HUMANISE_LEVELS,
   LOG_LEVELS,
+  RATING_LABELS,
   SETTINGS_SECTIONS,
   SIGN_IN_POLL_MS,
   SIGN_IN_WATCH_MS,
@@ -867,13 +868,18 @@ export function Settings({
           </Group>
           <Group
             title="Your skills"
-            note="Recipes Thrall uses only when a task matches, or when you type /name. Only their one-line descriptions sit in each session. Thrall offers new ones after working something out; you approve each."
+            note="Recipes Thrall uses only when a task matches, or when you type /name. Thrall learns new ones by itself after working something out, each with a safety rating; ones rated High are put to you first. Turn any off or remove it here."
           >
             {(shown?.skills ?? []).length === 0 ? (
               <p className="th-set-empty">None yet. A project's own skills (its .thrall/skills folder) work in that folder.</p>
             ) : null}
             {(shown?.skills ?? []).map((s) => (
               <Row key={s.name} label={`/${s.name}`} hint={s.description || undefined}>
+                {s.rating ? (
+                  <span className={`th-badge is-rating-${s.rating}`} title="Safety rating, from where Thrall learned it and what it does">
+                    {RATING_LABELS[s.rating] ?? s.rating}
+                  </span>
+                ) : null}
                 <span className="th-badge" title={s.helper ? "A helper does the work: you see its steps, but only its result goes into Thrall's conversation" : "Thrall follows it in the conversation itself"}>
                   {s.helper ? "In a helper" : "Inline"}
                 </span>

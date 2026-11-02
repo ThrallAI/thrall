@@ -143,7 +143,7 @@ export const SETTINGS_SECTIONS = [
   { id: "general", label: "General" },
   { id: "models", label: "Models" },
   { id: "safety", label: "Permissions & safety" },
-  { id: "memory", label: "Memory & skills" },
+  { id: "memory", label: "Learning" },
   { id: "writing", label: "Writing" },
   { id: "tools", label: "Tools & integrations" },
   { id: "people", label: "People" },
@@ -154,6 +154,13 @@ export const SETTINGS_SECTIONS = [
 
 /** One settings section's id. */
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]["id"];
+
+/** What a learned skill's safety rating is called on screen. */
+export const RATING_LABELS: Readonly<Record<string, string>> = {
+  low: "Low risk",
+  medium: "Medium risk",
+  high: "High risk",
+};
 
 /** Log detail levels, least to most. */
 export const LOG_LEVELS = ["error", "warn", "info", "debug", "trace"] as const;

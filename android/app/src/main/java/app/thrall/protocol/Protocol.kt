@@ -356,6 +356,8 @@ data class SkillInfo(
     val personal: Boolean = false,
     val helper: Boolean = false,
     val enabled: Boolean = true,
+    /** Safety rating of a skill Thrall learned: `low`, `medium` or `high`. */
+    val rating: String? = null,
 )
 
 /** A build of this app the engine offers as an update. */

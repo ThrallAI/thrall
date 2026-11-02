@@ -1626,6 +1626,11 @@ export interface SkillInfo {
    * One of the person's own (`false`: the project's).
    */
   personal: boolean;
+  /**
+   * Safety rating of a skill Thrall learned: `low`, `medium` or `high` (none for ones
+   * written by hand).
+   */
+  rating?: string | null;
 }
 /**
  * A paired phone.

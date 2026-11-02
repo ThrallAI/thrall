@@ -578,3 +578,70 @@ pub const ARCHIVE_MAX_FILES: usize = 50_000;
 pub const ARCHIVE_MAX_ADDED: usize = 50_000;
 /// Most entries listed (in a listing, a preview or a result) before "… and N more".
 pub const ARCHIVE_LIST_ENTRIES: usize = 300;
+
+/// Words in a learned skill that mean it deletes things (rated High).
+pub const SKILL_RISK_DELETES: &[&str] = &[
+    "rm -rf",
+    "rm -r ",
+    "remove-item",
+    "del /",
+    "rmdir",
+    "rd /s",
+    "--force",
+    "push -f",
+    "drop table",
+    "format ",
+    "delete ",
+];
+
+/// … that it sends or publishes things (rated High).
+pub const SKILL_RISK_SENDS: &[&str] = &[
+    "send email",
+    "send an email",
+    "smtp",
+    "-method post",
+    "curl -x post",
+    "publish",
+    "upload",
+    "post to",
+    "tweet",
+    "send a message",
+];
+
+/// … that it handles keys or passwords (rated High).
+pub const SKILL_RISK_SECRETS: &[&str] = &[
+    "api key",
+    "api_key",
+    "apikey",
+    "password",
+    "token",
+    "secret",
+    "credential",
+    "private key",
+];
+
+/// … that it runs code it downloads (rated High).
+pub const SKILL_RISK_RUNS_DOWNLOADS: &[&str] = &[
+    "| sh",
+    "| bash",
+    "|sh",
+    "|bash",
+    "invoke-expression",
+    "iex ",
+    "| iex",
+    "curl -s",
+    "wget ",
+];
+
+/// … that it runs commands (at least Medium).
+pub const SKILL_RISK_COMMANDS: &[&str] = &[
+    "```sh",
+    "```bash",
+    "```powershell",
+    "```ps1",
+    "```shell",
+    "```cmd",
+    "run `",
+    "shell",
+    "terminal",
+];
