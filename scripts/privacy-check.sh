@@ -46,10 +46,12 @@ if [ -f .git/info/private-files ]; then
   done < .git/info/private-files
 fi
 
-# Commits since a base: author and committer addresses, and no co-author lines.
+# Commits since a base: author and committer addresses, and no co-author lines. GitHub's own
+# merge commits (made when a pull request is tested or merged) are left out of the address check,
+# and the project's public contact address is fine.
 if [ $# -ge 1 ]; then
-  bad=$(git log --format='%h %ae %ce' "$1..HEAD" |
-    awk '{ for (i = 2; i <= 3; i++) if ($i !~ /@users\.noreply\.github\.com$/ && $i != "noreply@github.com") { print; next } }')
+  bad=$(git log --no-merges --format='%h %ae %ce' "$1..HEAD" |
+    awk '{ for (i = 2; i <= 3; i++) { a = tolower($i); if (a !~ /@users\.noreply\.github\.com$/ && a != "noreply@github.com" && a != "thrallai@protonmail.com") { print; next } } }')
   [ -n "$bad" ] && say "commits by an address that isn't a GitHub no-reply one:"$'\n'"$bad"
   coauth=$(git log --format='%h %B' "$1..HEAD" | grep -i 'co-authored-by' || true)
   [ -n "$coauth" ] && say "commit messages carry co-author lines:"$'\n'"$coauth"
