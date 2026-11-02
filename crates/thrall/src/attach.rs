@@ -19,7 +19,12 @@ pub async fn engine(paths: &Paths, config: &Config) -> anyhow::Result<Option<Eng
         return Ok(Some(found));
     }
     let provider = config.provider.kind;
-    if key::resolve(provider)?.is_none() {
+    // A local model (`local/…`) needs no key.
+    let local = config
+        .provider
+        .model
+        .starts_with(thrall_core::constants::LOCAL_MODEL_PREFIX);
+    if key::resolve(provider)?.is_none() && !local {
         eprintln!(
             "Thrall needs your {name} key first. Run `thrall key set {name}` and paste it in.",
             name = provider.as_str()

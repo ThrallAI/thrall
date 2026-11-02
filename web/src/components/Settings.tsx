@@ -804,6 +804,9 @@ export function Settings({
             <Row label="Speaks"><Field k="provider.speech_model" v={provider.speech_model} label="Speaks" onSave={save} mono /></Row>
             <Row label="Voice"><Field k="provider.speech_voice" v={provider.speech_voice} label="Voice" onSave={save} /></Row>
             <Row label="Transcribes"><Field k="provider.transcribe_model" v={provider.transcribe_model} label="Transcribes" onSave={save} mono /></Row>
+            <Row label="Local model server" hint="Ollama or LM Studio on this computer or network. Pick a model as local/<name> (e.g. local/llama3.1): free, no key needed">
+              <Field k="provider.local_base_url" v={provider.local_base_url} label="Local model server" onSave={save} mono />
+            </Row>
             <Planned label="ElevenLabs voices" hint="More natural voices (needs an ElevenLabs key)" />
             <Planned label="Music" hint="Songs and backing tracks" />
           </Group>

@@ -1,12 +1,13 @@
 //! Picks the provider per model: ids starting with `chatgpt/` go to ChatGPT (the person's plan),
-//! everything else (and pictures, speech) to the main provider.
+//! `local/` to a model server on this computer or network (Ollama, LM Studio; the prefix is
+//! dropped and nothing is charged), everything else (and pictures, speech) to the main provider.
 
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
 use futures::{StreamExt, stream};
 
-use crate::constants::CHATGPT_MODEL_PREFIX;
+use crate::constants::{CHATGPT_MODEL_PREFIX, LOCAL_MODEL_PREFIX};
 use crate::error::LlmError;
 use crate::provider::{LlmProvider, ReplyStream};
 use crate::types::{
@@ -17,12 +18,27 @@ use crate::types::{
 pub struct Routed {
     main: Arc<dyn LlmProvider>,
     chatgpt: Option<Arc<dyn LlmProvider>>,
+    local: Option<Arc<dyn LlmProvider>>,
 }
 
 impl Routed {
     /// Route between `main` and `chatgpt` (absent: not signed in).
     pub fn new(main: Arc<dyn LlmProvider>, chatgpt: Option<Arc<dyn LlmProvider>>) -> Self {
-        Self { main, chatgpt }
+        Self {
+            main,
+            chatgpt,
+            local: None,
+        }
+    }
+
+    /// Also send `local/` models to `local` (an OpenAI-compatible server).
+    pub fn with_local(mut self, local: Arc<dyn LlmProvider>) -> Self {
+        self.local = Some(local);
+        self
+    }
+
+    fn local_model(model: &str) -> Option<&str> {
+        model.strip_prefix(LOCAL_MODEL_PREFIX)
     }
 
     fn is_chatgpt(model: &str) -> bool {
@@ -35,7 +51,23 @@ impl LlmProvider for Routed {
         self.main.name()
     }
 
-    fn stream(&self, request: ChatRequest) -> ReplyStream {
+    fn stream(&self, mut request: ChatRequest) -> ReplyStream {
+        if let Some(model) = Self::local_model(&request.model) {
+            request.model = model.to_owned();
+            return match &self.local {
+                Some(local) => local.stream(request),
+                None => stream::once(async {
+                    Err(LlmError::Rejected {
+                        provider: "local".to_owned(),
+                        status: 0,
+                        message: "No local model server is set up. Set [provider] local_base_url \
+                                  (Ollama: http://localhost:11434/v1), or pick another model."
+                            .to_owned(),
+                    })
+                })
+                .boxed(),
+            };
+        }
         if !Self::is_chatgpt(&request.model) {
             return self.main.stream(request);
         }
@@ -55,6 +87,12 @@ impl LlmProvider for Routed {
     }
 
     fn accepts_images<'a>(&'a self, model: &'a str) -> BoxFuture<'a, Option<bool>> {
+        if let Some(m) = Self::local_model(model) {
+            return match &self.local {
+                Some(l) => l.accepts_images(m),
+                None => Box::pin(async { None }),
+            };
+        }
         match (&self.chatgpt, Self::is_chatgpt(model)) {
             (Some(c), true) => c.accepts_images(model),
             (None, true) => Box::pin(async { None }),
@@ -63,8 +101,8 @@ impl LlmProvider for Routed {
     }
 
     fn prices<'a>(&'a self, model: &'a str) -> BoxFuture<'a, Option<ModelPrices>> {
-        if Self::is_chatgpt(model) {
-            // Included in the ChatGPT plan.
+        if Self::is_chatgpt(model) || Self::local_model(model).is_some() {
+            // Included in the ChatGPT plan, or run locally.
             return Box::pin(async {
                 Some(ModelPrices {
                     prompt: 0.0,
@@ -136,5 +174,34 @@ mod tests {
         let signed_out = Routed::new(Arc::new(Named("main")), None);
         let e = first(&signed_out, "chatgpt/gpt-5").await.unwrap_err();
         assert!(e.to_string().contains("/login chatgpt"));
+    }
+
+    /// Answers with the model it was asked for.
+    struct Echo;
+    impl LlmProvider for Echo {
+        fn name(&self) -> &str {
+            "local"
+        }
+        fn stream(&self, request: ChatRequest) -> ReplyStream {
+            stream::once(async move { Ok(StreamEvent::Text(request.model)) }).boxed()
+        }
+    }
+
+    #[tokio::test]
+    async fn local_models_go_to_the_local_server_without_their_prefix_and_free() {
+        let r = Routed::new(Arc::new(Named("main")), None).with_local(Arc::new(Echo));
+        assert_eq!(
+            first(&r, "local/llama3.1").await.unwrap(),
+            StreamEvent::Text("llama3.1".into())
+        );
+        assert_eq!(
+            first(&r, "openai/gpt-5").await.unwrap(),
+            StreamEvent::Text("main".into())
+        );
+        let free = r.prices("local/llama3.1").await.unwrap();
+        assert_eq!((free.prompt, free.completion), (0.0, 0.0));
+        let none = Routed::new(Arc::new(Named("main")), None);
+        let e = first(&none, "local/llama3.1").await.unwrap_err();
+        assert!(e.to_string().contains("local_base_url"));
     }
 }

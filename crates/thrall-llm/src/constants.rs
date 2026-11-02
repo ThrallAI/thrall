@@ -51,6 +51,9 @@ pub const FAL_DOWNLOAD_TIMEOUT_SECS: u64 = 300;
 /// `chatgpt/gpt-5.3-codex`.
 pub const CHATGPT_MODEL_PREFIX: &str = "chatgpt/";
 
+/// `local/llama3.1`: a model on a server on this computer or network (Ollama, LM Studio), free.
+pub const LOCAL_MODEL_PREFIX: &str = "local/";
+
 /// ChatGPT's Codex backend (the endpoint the official Codex app uses with a ChatGPT sign-in).
 pub const CHATGPT_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
 
