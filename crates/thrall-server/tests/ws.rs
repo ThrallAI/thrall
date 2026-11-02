@@ -422,6 +422,38 @@ async fn one_answer_wins_across_clients() {
 }
 
 #[tokio::test]
+async fn each_person_chooses_their_own_personality() {
+    let (url, _hub) = engine(vec![reply("x")]).await;
+    let mut c = Client::connect(&url, ClientKind::Web).await;
+    let Reply::PersonalityShown { presets, .. } = c.request(Request::PersonalityGet {}).await
+    else {
+        panic!("expected personality.shown");
+    };
+    assert_eq!(presets[0].id, "standard", "the shipped one comes first");
+    let set = c
+        .request(Request::PersonalitySet {
+            preset: "custom".into(),
+            custom: "  Call me captain.  ".into(),
+        })
+        .await;
+    assert!(matches!(
+        set,
+        Reply::PersonalityShown { ref preset, ref custom, .. }
+            if preset == "custom" && custom == "Call me captain."
+    ));
+    // Kept: asked again, the choice is still there.
+    assert!(matches!(
+        c.request(Request::PersonalityGet {}).await,
+        Reply::PersonalityShown { ref preset, .. } if preset == "custom"
+    ));
+    // Back to the standard one, so other tests sharing the data folder start from it.
+    c.request(Request::PersonalitySet {
+        preset: "standard".into(),
+        custom: String::new(),
+    })
+    .await;
+}
+#[tokio::test]
 async fn reopening_replays_only_what_was_missed() {
     let (url, _hub) = engine(vec![reply("First."), reply("Title"), reply("Second.")]).await;
     let mut c = Client::connect(&url, ClientKind::Web).await;

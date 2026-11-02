@@ -14,10 +14,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,6 +44,7 @@ import app.thrall.data.UpdateState
 import app.thrall.protocol.FactInfo
 import app.thrall.protocol.GroupInfo
 import app.thrall.protocol.PersonInfo
+import app.thrall.protocol.PersonalityPreset
 import app.thrall.protocol.Reply
 import app.thrall.protocol.Request
 import app.thrall.protocol.SkillInfo
@@ -294,6 +297,7 @@ fun SettingsScreen(connection: Connection, owner: Boolean, about: AboutActions, 
         Header(title = "Settings", subtitle = shown?.model?.let { "Model now: $it" }, onBack = onBack)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             About(about)
+            PersonalitySection(connection)
             problem?.let { Text(it, color = t.danger, fontSize = 13.sp) }
             val s = shown
             if (s == null) {
@@ -338,6 +342,71 @@ fun SettingsScreen(connection: Connection, owner: Boolean, about: AboutActions, 
         Confirm("Remove ${skill.name}?", "This skill of yours is deleted from the computer.", "Remove", onYes = { save(Request.SkillRemove(skill.name)) }, onDone = { removing = null })
     }
 }
+
+/** Your personality: everyone chooses their own, and it changes Thrall's tone only. */
+@Composable
+private fun PersonalitySection(connection: Connection) {
+    val t = LocalTokens.current
+    val scope = rememberCoroutineScope()
+    var shown by remember { mutableStateOf<Reply.PersonalityShown?>(null) }
+    var preset by remember { mutableStateOf("") }
+    var custom by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        runCatching { connection.request(Request.PersonalityGet) as? Reply.PersonalityShown }.getOrNull()?.let {
+            shown = it
+            preset = it.preset
+            custom = it.custom
+        }
+    }
+    val s = shown ?: return
+    Section("How Thrall talks to you")
+    Text("Only yours: it changes Thrall's tone, never its rules or what it asks you first.", color = t.inkMuted, fontSize = 13.sp)
+    val choices = s.presets + PersonalityPreset(PERSONALITY_CUSTOM, "Your own", "Describe it in your own words.")
+    for (p in choices) {
+        Row(Modifier.fillMaxWidth().clickable { preset = p.id }, verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = preset == p.id, onClick = { preset = p.id })
+            Column(Modifier.weight(1f)) {
+                Text(p.name, color = t.ink, fontSize = 14.sp)
+                if (p.description.isNotBlank()) Text(p.description, color = t.inkMuted, fontSize = 12.sp)
+            }
+        }
+    }
+    if (preset == PERSONALITY_CUSTOM) {
+        OutlinedTextField(
+            value = custom,
+            onValueChange = { custom = it.take(PERSONALITY_MAX_CHARS) },
+            placeholder = { Text("For example: talk to me like a patient coach") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 3,
+        )
+    }
+    val changed = preset != s.preset || custom != s.custom
+    Button(
+        enabled = changed,
+        onClick = {
+            scope.launch {
+                note = try {
+                    (connection.request(Request.PersonalitySet(preset, custom)) as? Reply.PersonalityShown)?.let {
+                        shown = it
+                        preset = it.preset
+                        custom = it.custom
+                    }
+                    "Saved. Thrall talks to you this way from your next message."
+                } catch (e: Exception) {
+                    why(e)
+                }
+            }
+        },
+    ) { Text("Save") }
+    note?.let { Text(it, color = t.inkMuted, fontSize = 12.sp) }
+}
+
+/** The personality in the person's own words (`personality.set {preset}`). */
+private const val PERSONALITY_CUSTOM = "custom"
+
+/** Longest own-words personality the engine keeps. */
+private const val PERSONALITY_MAX_CHARS = 1_500
 
 /**
  * What the About section needs: this app's version, the computer's (null while not connected),
