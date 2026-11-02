@@ -20,7 +20,12 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        include:
+          # GitHub's Apple-chip Macs are short (jobs cancelled before starting), so the Mac check
+          # runs on its Intel Macs for now. The check keeps its name, which branch protection needs.
+          - os: macos-latest
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner || matrix.os }}
     steps:
       - uses: actions/checkout@v7
       # The desktop app's window and tray need these on Linux.
