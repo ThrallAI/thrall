@@ -68,6 +68,9 @@ export const SIGNIN_PATH = "/v1/signin";
 /** A sign-in link is the web app's address with this, then the code. */
 export const SIGNIN_HASH = "#signin=";
 
+/** What the desktop app's window is called in a person's list of signed-in devices. */
+export const DESKTOP_DEVICE_NAME = "Thrall desktop app";
+
 /** Key holding the theme choice (system, dark or light). */
 export const THEME_KEY = "thrall.theme";
 

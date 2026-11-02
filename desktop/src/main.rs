@@ -437,9 +437,15 @@ async fn run_engine(app: AppHandle) {
                 if let Ok(mut e) = app.state::<Shared>().engine.lock() {
                     *e = Some(conn.sender());
                 }
+                // Signed in with a one-time link: the page itself carries no token.
+                let page = format!("{}{DESKTOP_QUERY}", conn.web_url);
+                let page = match &conn.signin {
+                    Some(code) => thrall_core::discovery::signin_url(&page, code),
+                    None => page,
+                };
                 if let (Some(w), Ok(url)) = (
                     app.get_webview_window(MAIN_WINDOW),
-                    format!("{}{DESKTOP_QUERY}", conn.web_url).parse::<tauri::Url>(),
+                    page.parse::<tauri::Url>(),
                 ) {
                     let already = w.url().is_ok_and(|now| now.origin() == url.origin());
                     if !already {

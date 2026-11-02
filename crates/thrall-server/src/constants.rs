@@ -61,9 +61,6 @@ pub const INDEX_FILE: &str = "index.html";
 /// Where the web app's built files live (their names carry content hashes).
 pub const ASSETS_PREFIX: &str = "assets/";
 
-/// Replaced with the access token when the page is served.
-pub const TOKEN_PLACEHOLDER: &str = "__THRALL_TOKEN__";
-
 /// The arguments hint autocomplete shows for a skill's `/name`.
 pub const SKILL_ARGS_HINT: &str = "[what to do]";
 

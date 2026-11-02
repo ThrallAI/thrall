@@ -384,10 +384,11 @@ local midnight on the 1st.
 
 ## 13c. Signing browsers in
 
-No passwords. The owner makes a one-time sign-in link for a person; the browser that opens it
-becomes theirs. The page is served with the owner's access token, so on the owner's own computer
-this separates people only by convenience; it becomes the way in when the web app is reached from
-other computers (M5).
+No passwords. A browser only gets in through a one-time sign-in link: the page itself carries no
+token, because anything on the computer (other accounts, other programs) can load it. The owner
+makes links for people; the desktop app makes one for its own window each time it connects (a
+window that's already signed in keeps its sign-in); `thrall open` and `thrall engine` make one
+for the owner's browser.
 
 | Request | Reply |
 |---|---|

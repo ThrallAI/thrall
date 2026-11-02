@@ -52,10 +52,18 @@ pub async fn run(paths: &Paths, config: Config, args: EngineArgs) -> anyhow::Res
         version,
     );
     file.write(&paths.engine_file)?;
-    println!(
-        "{APP_NAME} engine {version} is running. Web app: {}",
-        file.web_url
-    );
+    println!("{APP_NAME} engine {version} is running.");
+    // The page carries no token, so the browser link signs you in (once, for a while). An engine
+    // started in the background has nobody to show it to.
+    if !args.idle_exit {
+        match running.shared.signins.create(&hub.state().owner_id) {
+            Some((code, _)) => println!(
+                "Open it in your browser (this link works once; `thrall open` makes a new one):\n  {}",
+                file.signin_url(&code)
+            ),
+            None => println!("Web app: {} (run `thrall open` to sign in)", file.web_url),
+        }
+    }
     println!("Press Ctrl+C to stop it.");
 
     let idle = async {

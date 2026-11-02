@@ -31,6 +31,9 @@ pub const EMPTY_PROMPT_IN_SESSION_HINT: &str =
 /// How `thrall run` introduces itself to the engine.
 pub const HEADLESS_CLIENT_NAME: &str = "Thrall Run";
 
+/// How `thrall open` introduces itself to the engine.
+pub const OPEN_CLIENT_NAME: &str = "Thrall Open";
+
 /// Sets the engine's port when `--port` isn't given (a second, test copy of Thrall uses it).
 pub const PORT_ENV_VAR: &str = "THRALL_PORT";
 

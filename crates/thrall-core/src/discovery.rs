@@ -49,6 +49,11 @@ impl EngineFile {
         serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
     }
 
+    /// The web app's address as a one-time sign-in link for `code`.
+    pub fn signin_url(&self, code: &str) -> String {
+        signin_url(&self.web_url, code)
+    }
+
     /// Remove `path` if it still describes this process (a newer engine may have replaced it).
     pub fn remove_if_mine(path: &Path) {
         if Self::read(path).is_some_and(|f| f.pid == std::process::id()) {
@@ -57,9 +62,27 @@ impl EngineFile {
     }
 }
 
+/// `web_url` (with anything after it, such as `?client=desktop`) as a one-time sign-in link.
+pub fn signin_url(web_url: &str, code: &str) -> String {
+    format!("{web_url}{}{code}", crate::constants::SIGNIN_FRAGMENT)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sign_in_links_carry_the_code_after_the_address() {
+        let file = EngineFile::new("127.0.0.1", 7417, "/v1/ws", "0.1.0");
+        assert_eq!(
+            file.signin_url("ab12"),
+            "http://127.0.0.1:7417/#signin=ab12"
+        );
+        assert_eq!(
+            signin_url("http://127.0.0.1:7417/?client=desktop", "ab12"),
+            "http://127.0.0.1:7417/?client=desktop#signin=ab12"
+        );
+    }
 
     #[test]
     fn round_trips_and_only_its_writer_removes_it() {

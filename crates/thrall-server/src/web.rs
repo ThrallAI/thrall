@@ -1,6 +1,6 @@
-//! The web app, built into the binary. The page gets the access token written into it as it's
-//! served; other web pages can't read it (browsers keep cross-site responses private) and the
-//! Host check in `lib.rs` stops DNS-rebinding pages from posing as this one.
+//! The web app, built into the binary. The page carries no token: anything on the computer can
+//! load it (other accounts, other programs), so a browser signs in with a one-time link instead
+//! ([`crate::signin`]). The Host check in `lib.rs` stops DNS-rebinding pages from posing as this one.
 
 use std::sync::Arc;
 
@@ -12,7 +12,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use rust_embed::RustEmbed;
 
-use crate::constants::{ASSETS_PREFIX, INDEX_FILE, TOKEN_PLACEHOLDER};
+use crate::constants::{ASSETS_PREFIX, INDEX_FILE};
 
 #[derive(RustEmbed)]
 #[folder = "$OUT_DIR/web"]
@@ -29,9 +29,9 @@ struct Web {
 }
 
 /// Routes that serve the web app.
-pub fn router(token: &str) -> Router {
+pub fn router() -> Router {
     let index = Assets::get(INDEX_FILE)
-        .map(|f| String::from_utf8_lossy(&f.data).replace(TOKEN_PLACEHOLDER, token))
+        .map(|f| String::from_utf8_lossy(&f.data).into_owned())
         .unwrap_or_default();
     Router::new()
         .route("/", get(index_page))
