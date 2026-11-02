@@ -35,6 +35,26 @@ welcome.
    (`npm run gen:types` in `web/`) and update the phone's `Protocol.kt`.
 5. New dependencies need a reason and a licence compatible with shipping under MIT (`cargo deny check`).
 
+## How changes get in
+
+- **Branches:** `main` is always releasable and is only changed through pull requests. Work on a
+  branch named for what it does: `feat/…`, `fix/…`, `security/…`, `docs/…`, `ci/…`, `chore/…`.
+- **One kind of change per pull request.** Group related work (a feature and its tests, a set of
+  security fixes, a docs pass) and keep unrelated things apart. A pull request is merged as one
+  squashed commit, titled the way the commit should read.
+- **Commit and pull request titles** follow [Conventional Commits](https://www.conventionalcommits.org/):
+  `type(scope): what changed`, for example `feat(memory): keep an experience log` or
+  `fix(server): stop serving the access token in the page`. Types: `feat`, `fix`, `security`,
+  `docs`, `ci`, `refactor`, `test`, `chore`.
+- **Checks must pass** before merging: formatting, lint and tests on Windows, Linux and macOS, the
+  web and phone apps, licences and advisories, and a scan for anything private (personal email
+  addresses, home folders, private network addresses). Commit with GitHub's no-reply address.
+- **Changelog:** add a line under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) for anything a
+  user would notice (Added, Changed, Fixed, Security).
+- **Versions** follow [Semantic Versioning](https://semver.org/). While Thrall is 0.x, a release
+  with new features bumps the middle number and a fixes-only release bumps the last. A release is
+  a tag `vX.Y.Z` on `main`; CI builds the installers and drafts the release from the changelog.
+
 ## Licence of contributions
 
 Unless you explicitly say otherwise, any contribution you submit for inclusion in Thrall is
