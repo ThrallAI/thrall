@@ -88,6 +88,8 @@ pub async fn run(paths: &Paths, config: Config, args: EngineArgs) -> anyhow::Res
     hub.state().shut_down();
     // The browser is a separate process: close it, or it outlives the engine.
     hub.state().browsers.close_all().await;
+    // So are programs Thrall left running in the background.
+    hub.state().stop_background().await;
     println!("{APP_NAME} engine stopped.");
     Ok(ExitCode::SUCCESS)
 }

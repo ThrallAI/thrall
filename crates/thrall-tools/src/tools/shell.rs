@@ -9,9 +9,9 @@ use thrall_gates::Effect;
 use thrall_protocol::Risk;
 
 use crate::constants::{
-    GIT_READ_ONLY, GIT_RISKY, GIT_TIMEOUT_SECS, GIT_WRITE_FLAGS, NONZERO_EXIT_NOTE,
-    RESULT_MAX_CHARS, SHELL_CHAINING, SHELL_DEFAULT_TIMEOUT_SECS, SHELL_MAX_TIMEOUT_SECS,
-    SHELL_RISKY,
+    BACKGROUND_MAX_PER_PERSON, BACKGROUND_READ_MAX_CHARS, GIT_READ_ONLY, GIT_RISKY,
+    GIT_TIMEOUT_SECS, GIT_WRITE_FLAGS, NONZERO_EXIT_NOTE, RESULT_MAX_CHARS, SHELL_CHAINING,
+    SHELL_DEFAULT_TIMEOUT_SECS, SHELL_MAX_TIMEOUT_SECS, SHELL_RISKY,
 };
 use crate::process::{self, Finished};
 use crate::tool::{Tool, ToolContext, ToolOutput, arg_str, cap, parse_args};
@@ -119,6 +119,10 @@ struct ShellArgs {
     command: String,
     #[serde(default)]
     timeout_secs: Option<u64>,
+    #[serde(default)]
+    wait_for: Option<String>,
+    #[serde(default)]
+    keep_running: bool,
 }
 
 impl Tool for Shell {
@@ -161,7 +165,9 @@ impl Tool for Shell {
             "type": "object",
             "properties": {
                 "command": { "type": "string" },
-                "timeout_secs": { "type": "integer", "description": "Default 120, max 600" }
+                "timeout_secs": { "type": "integer", "description": "Default 120, max 600" },
+                "wait_for": { "type": "string", "description": "Return as soon as a line of output contains this (text, or a regular expression), e.g. 'Listening on' for a server starting. Without keep_running the program is then stopped." },
+                "keep_running": { "type": "boolean", "description": "With wait_for: leave the program running in the background once the line appears (a dev server, a watcher). You get an id for shell_output and shell_stop. Stop it when you're done." }
             },
             "required": ["command"]
         })
@@ -188,6 +194,9 @@ impl Tool for Shell {
                 .unwrap_or(SHELL_DEFAULT_TIMEOUT_SECS)
                 .clamp(1, SHELL_MAX_TIMEOUT_SECS);
             let (program, argv) = shell_command(&a.command);
+            if let Some(pattern) = a.wait_for.as_deref().filter(|p| !p.trim().is_empty()) {
+                return watch(ctx, &a, pattern, secs, program, &argv).await;
+            }
             match process::run(
                 program,
                 &argv,
@@ -200,6 +209,166 @@ impl Tool for Shell {
             {
                 Ok(done) => describe(done, secs, "The command"),
                 Err(e) => ToolOutput::error(format!("couldn't start {program}: {e}")),
+            }
+        })
+    }
+}
+
+/// Text or a regular expression, matched without regard to case.
+fn line_pattern(pattern: &str) -> Option<regex::Regex> {
+    regex::RegexBuilder::new(pattern)
+        .case_insensitive(true)
+        .build()
+        .or_else(|_| {
+            regex::RegexBuilder::new(&regex::escape(pattern))
+                .case_insensitive(true)
+                .build()
+        })
+        .ok()
+}
+
+/// `shell` with `wait_for`: hand back when the line appears.
+async fn watch(
+    ctx: &ToolContext,
+    a: &ShellArgs,
+    pattern: &str,
+    secs: u64,
+    program: &str,
+    argv: &[String],
+) -> ToolOutput {
+    let Some(wait_for) = line_pattern(pattern) else {
+        return ToolOutput::error("wait_for isn't usable text or a regular expression");
+    };
+    if a.keep_running && crate::background::running_for(&ctx.user_id) >= BACKGROUND_MAX_PER_PERSON {
+        return ToolOutput::error(format!(
+            "{BACKGROUND_MAX_PER_PERSON} programs are already running in the background: stop one \
+             with shell_stop first"
+        ));
+    }
+    let keep = a
+        .keep_running
+        .then_some((ctx.user_id.as_str(), a.command.as_str()));
+    match process::run_until(
+        program,
+        argv,
+        &ctx.workspace,
+        Duration::from_secs(secs),
+        &ctx.output,
+        ctx.cancel.clone(),
+        &wait_for,
+        keep,
+    )
+    .await
+    {
+        Ok(process::Watched::Seen(output)) => ToolOutput::ok(
+            format!(
+                "Saw \"{pattern}\", then stopped the command.\n{}",
+                cap(output, RESULT_MAX_CHARS)
+            ),
+            "Saw what it waited for",
+        ),
+        Ok(process::Watched::Kept { output, id }) => ToolOutput::ok(
+            format!(
+                "Saw \"{pattern}\". It keeps running in the background as {id}: read its latest \
+                 output with shell_output, and stop it with shell_stop when you're done.\n{}",
+                cap(output, RESULT_MAX_CHARS)
+            ),
+            format!("Running in the background ({id})"),
+        ),
+        Ok(process::Watched::Ended(done)) if done.timed_out => ToolOutput::error(format!(
+            "\"{pattern}\" didn't appear within {secs}s, so the command was stopped.\n{}",
+            cap(done.output, RESULT_MAX_CHARS)
+        )),
+        Ok(process::Watched::Ended(done)) => {
+            let mut out = describe(done, secs, "The command");
+            out.content = format!("It ended before \"{pattern}\" appeared.\n{}", out.content);
+            out
+        }
+        Err(e) => ToolOutput::error(format!("couldn't start {program}: {e}")),
+    }
+}
+
+/// The latest output of a program left running with `keep_running`.
+pub struct ShellOutput;
+
+impl Tool for ShellOutput {
+    fn name(&self) -> &'static str {
+        "shell_output"
+    }
+    fn description(&self) -> &'static str {
+        "Read the latest output of a program you left running with shell keep_running (its id \
+         looks like bg_1), and whether it's still running."
+    }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": { "id": { "type": "string" } },
+            "required": ["id"]
+        })
+    }
+    fn title(&self, args: &Value) -> String {
+        format!("Reading {}'s output", arg_str(args, "id"))
+    }
+    fn effect(&self, _ctx: &ToolContext, _args: &Value) -> Effect {
+        Effect::Read
+    }
+    fn run<'a>(&'a self, ctx: &'a ToolContext, args: Value) -> BoxFuture<'a, ToolOutput> {
+        Box::pin(async move {
+            let id = arg_str(&args, "id");
+            match crate::background::output(&ctx.user_id, id, BACKGROUND_READ_MAX_CHARS) {
+                None => ToolOutput::error(format!("there's no background program {id}")),
+                Some((command, output, ended)) => {
+                    let state = match ended {
+                        None => "still running".to_owned(),
+                        Some(Some(code)) => format!("ended with exit code {code}"),
+                        Some(None) => "ended".to_owned(),
+                    };
+                    let body = if output.trim().is_empty() {
+                        "(no output yet)".to_owned()
+                    } else {
+                        output
+                    };
+                    ToolOutput::ok(
+                        format!("`{command}` is {state}. Latest output:\n{body}"),
+                        state,
+                    )
+                }
+            }
+        })
+    }
+}
+
+/// Stop a program left running with `keep_running`.
+pub struct ShellStop;
+
+impl Tool for ShellStop {
+    fn name(&self) -> &'static str {
+        "shell_stop"
+    }
+    fn description(&self) -> &'static str {
+        "Stop a program you left running with shell keep_running (and everything it started)."
+    }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": { "id": { "type": "string" } },
+            "required": ["id"]
+        })
+    }
+    fn title(&self, args: &Value) -> String {
+        format!("Stopping {}", arg_str(args, "id"))
+    }
+    // Only ever a program Thrall itself started for this person.
+    fn effect(&self, _ctx: &ToolContext, _args: &Value) -> Effect {
+        Effect::Read
+    }
+    fn run<'a>(&'a self, ctx: &'a ToolContext, args: Value) -> BoxFuture<'a, ToolOutput> {
+        Box::pin(async move {
+            let id = arg_str(&args, "id");
+            if crate::background::stop(&ctx.user_id, id).await {
+                ToolOutput::ok(format!("Stopped {id}."), "Stopped")
+            } else {
+                ToolOutput::error(format!("there's no background program {id}"))
             }
         })
     }
