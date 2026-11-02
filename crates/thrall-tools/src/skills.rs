@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use crate::constants::{
     PROJECT_DIR, SKILL_FILE, SKILL_MAX_CHARS, SKILL_NAME_MAX_CHARS, SKILL_RISK_COMMANDS,
     SKILL_RISK_DELETES, SKILL_RISK_RUNS_DOWNLOADS, SKILL_RISK_SECRETS, SKILL_RISK_SENDS,
-    SKILL_RUN_HELPER, SKILLS_DIR,
+    SKILL_RUN_HELPER, SKILL_SOURCE_FILES, SKILL_SOURCE_MY_WORK, SKILL_SOURCE_USER, SKILLS_DIR,
 };
 
 /// One skill.
@@ -211,8 +211,8 @@ pub fn skill_file(
 /// Where a learned skill's knowledge came from (`skill_propose {learned_from}`).
 pub fn source_rating(source: &str) -> Rating {
     match source.trim().to_ascii_lowercase().as_str() {
-        "user" | "my_work" => Rating::Low,
-        "files" => Rating::Medium,
+        SKILL_SOURCE_USER | SKILL_SOURCE_MY_WORK => Rating::Low,
+        SKILL_SOURCE_FILES => Rating::Medium,
         // The web, a download, an MCP server, or anything unknown.
         _ => Rating::High,
     }

@@ -407,6 +407,35 @@ export type RequestFrame = {
       type: "skill.remove";
     }
   | {
+      /**
+       * The skill's name.
+       */
+      name: string;
+      type: "skill.get";
+    }
+  | {
+      /**
+       * When to use it, one sentence.
+       */
+      description: string;
+      /**
+       * The instructions (Markdown).
+       */
+      instructions: string;
+      /**
+       * The skill's name (it keeps it).
+       */
+      name: string;
+      type: "skill.edit";
+    }
+  | {
+      /**
+       * The skill's name.
+       */
+      name: string;
+      type: "skill.make_safe";
+    }
+  | {
       type: "settings.get";
     }
   | {
@@ -797,6 +826,33 @@ export type ReplyFrame = {
        */
       items: LessonInfo[];
       type: "experience.listed";
+    }
+  | {
+      skill: SkillDetail;
+      type: "skill.shown";
+    }
+  | {
+      /**
+       * When to use it.
+       */
+      description: string;
+      /**
+       * The rewritten instructions.
+       */
+      instructions: string;
+      /**
+       * The skill's name.
+       */
+      name: string;
+      /**
+       * What this version would be rated: `low`, `medium` or `high`.
+       */
+      rating: string;
+      type: "skill.safer";
+      /**
+       * Why, when it isn't low.
+       */
+      why: string[];
     }
   | {
       /**
@@ -1688,6 +1744,35 @@ export interface LessonInfo {
    * The lesson.
    */
   text: string;
+}
+/**
+ * The skill as saved.
+ */
+export interface SkillDetail {
+  /**
+   * When to use it.
+   */
+  description: string;
+  /**
+   * It's turned on.
+   */
+  enabled: boolean;
+  /**
+   * It runs in a helper.
+   */
+  helper: boolean;
+  /**
+   * The instructions (Markdown).
+   */
+  instructions: string;
+  /**
+   * Its name.
+   */
+  name: string;
+  /**
+   * Safety rating of a skill Thrall learned (none for ones written by hand).
+   */
+  rating?: string | null;
 }
 /**
  * A fact Thrall remembers.

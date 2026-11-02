@@ -172,6 +172,9 @@ export const PERSONALITY_CUSTOM = "custom";
 /** Longest own-words personality the engine keeps. */
 export const PERSONALITY_MAX_CHARS = 1500;
 
+/** Longest description a skill may have (the engine's SKILL_DESCRIPTION_MAX_CHARS). */
+export const SKILL_DESCRIPTION_MAX_CHARS = 300;
+
 /** Log detail levels, least to most. */
 export const LOG_LEVELS = ["error", "warn", "info", "debug", "trace"] as const;
 
