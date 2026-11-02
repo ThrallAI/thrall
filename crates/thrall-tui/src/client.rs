@@ -10,7 +10,7 @@ use futures::{SinkExt, StreamExt};
 use thrall_protocol::constants::{PING_INTERVAL_SECS, PROTOCOL_VERSION};
 use thrall_protocol::{
     ClientInfo, ClientKind, EngineInfo, ErrorCode, EventFrame, Reply, Request, RequestFrame,
-    ServerFrame,
+    ServerFrame, UserInfo,
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
@@ -45,6 +45,8 @@ pub struct Connected {
     pub events: mpsc::UnboundedReceiver<EventFrame>,
     /// About the engine (version, model).
     pub engine: EngineInfo,
+    /// Who this connection acts for.
+    pub user: UserInfo,
 }
 
 /// Connect to the engine at `url` as the terminal app and say hello.
@@ -132,13 +134,14 @@ pub async fn connect_as(
             token: token.to_owned(),
         })
         .await?;
-    let Reply::Welcome { engine, .. } = hello else {
+    let Reply::Welcome { engine, user, .. } = hello else {
         anyhow::bail!("Thrall's engine answered hello with something unexpected.");
     };
     Ok(Connected {
         client,
         events,
         engine,
+        user,
     })
 }
 

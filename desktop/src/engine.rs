@@ -41,6 +41,8 @@ pub struct Connection {
     pub incoming: mpsc::UnboundedReceiver<Incoming>,
     /// Where the web app is.
     pub web_url: String,
+    /// A one-time code that signs the window in (the page itself carries no token).
+    pub signin: Option<String>,
     next_id: u64,
 }
 
@@ -139,19 +141,46 @@ pub async fn connect(paths: &Paths) -> anyhow::Result<Connection> {
     );
     sink.send(Message::Text(serde_json::to_string(&hello)?.into()))
         .await?;
-    loop {
+    let me = loop {
         match stream.next().await {
             Some(Ok(Message::Text(text))) => {
-                match serde_json::from_str::<ServerFrame>(text.as_str()) {
-                    Ok(ServerFrame::Reply(r)) if matches!(r.reply, Reply::Welcome { .. }) => break,
-                    Ok(ServerFrame::Reply(r)) => anyhow::bail!("the engine refused: {:?}", r.reply),
-                    _ => {}
+                if let Ok(ServerFrame::Reply(r)) =
+                    serde_json::from_str::<ServerFrame>(text.as_str())
+                {
+                    match r.reply {
+                        Reply::Welcome { user, .. } => break user.id,
+                        other => anyhow::bail!("the engine refused: {other:?}"),
+                    }
                 }
             }
             Some(Ok(_)) => {}
             _ => anyhow::bail!("the engine closed the connection"),
         }
-    }
+    };
+    // The web app's page carries no token, so the window signs in with a one-time link.
+    let ask = RequestFrame::new("d-signin", Request::SigninCreate { person: me });
+    sink.send(Message::Text(serde_json::to_string(&ask)?.into()))
+        .await?;
+    let signin = loop {
+        match stream.next().await {
+            Some(Ok(Message::Text(text))) => {
+                if let Ok(ServerFrame::Reply(r)) =
+                    serde_json::from_str::<ServerFrame>(text.as_str())
+                    && r.re == "d-signin"
+                {
+                    match r.reply {
+                        Reply::SigninCode { code, .. } => break Some(code),
+                        other => {
+                            tracing::warn!(?other, "the engine gave no sign-in link");
+                            break None;
+                        }
+                    }
+                }
+            }
+            Some(Ok(_)) => {}
+            _ => anyhow::bail!("the engine closed the connection"),
+        }
+    };
 
     let (out, mut out_rx) = mpsc::unbounded_channel::<String>();
     let (in_tx, incoming) = mpsc::unbounded_channel::<Incoming>();
@@ -200,6 +229,7 @@ pub async fn connect(paths: &Paths) -> anyhow::Result<Connection> {
         out,
         incoming,
         web_url: file.web_url,
+        signin,
         next_id: 0,
     };
     conn.send(Request::SessionWatchAll {});

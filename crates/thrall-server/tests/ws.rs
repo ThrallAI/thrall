@@ -504,12 +504,12 @@ async fn http_get(ws_url: &str, path: &str, host: Option<&str>) -> String {
 }
 
 #[tokio::test]
-async fn the_page_carries_the_token_and_safe_headers() {
+async fn the_page_has_safe_headers_and_never_the_token() {
     let (url, _hub) = engine(vec![reply("x")]).await;
     let page = http_get(&url, "/", None).await;
     assert!(page.starts_with("HTTP/1.1 200"), "{page}");
-    assert!(page.contains(TOKEN), "the token is written into the page");
-    assert!(!page.contains("__THRALL_TOKEN__"));
+    // Anyone on the computer can load the page, so it must not hand out the owner's token.
+    assert!(!page.contains(TOKEN), "the token must not be in the page");
     let lower = page.to_lowercase();
     assert!(lower.contains("content-security-policy"));
     assert!(lower.contains("x-frame-options: deny"));

@@ -119,7 +119,7 @@ pub async fn start(hub: Arc<Hub>, options: Options) -> Result<Running, ServerErr
         .route(SIGNIN_PATH, post(sign_in))
         .with_state(app);
     if options.serve_web {
-        router = router.merge(web::router(&shared.token));
+        router = router.merge(web::router());
     }
     let router = router.layer(middleware::from_fn(move |req: Request, next: Next| {
         let hosts = hosts.clone();

@@ -67,11 +67,25 @@ impl Paths {
             .map(|d| d.join(WORK_DIR_NAME))
     }
 
-    /// Create the data and log folders if they don't exist yet.
+    /// Create the data and log folders if they don't exist yet. On Linux and macOS the data folder
+    /// is made private to this account every time (it holds the access token, the phone link's
+    /// key and everyone's sessions); Windows already keeps `%APPDATA%` private.
     pub fn ensure_dirs(&self) -> Result<(), CoreError> {
         for dir in [&self.home, &self.logs_dir] {
             std::fs::create_dir_all(dir).map_err(|source| CoreError::Io {
                 path: dir.clone(),
+                source,
+            })?;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                &self.home,
+                std::fs::Permissions::from_mode(crate::constants::DATA_DIR_MODE),
+            )
+            .map_err(|source| CoreError::Io {
+                path: self.home.clone(),
                 source,
             })?;
         }
@@ -82,6 +96,20 @@ impl Paths {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn the_data_folder_is_private_to_this_account() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("thrall-private-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let paths = Paths::resolve(Some(dir.clone())).unwrap();
+        paths.ensure_dirs().unwrap();
+        let mode = std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, crate::constants::DATA_DIR_MODE);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn override_wins() {

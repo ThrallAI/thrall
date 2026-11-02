@@ -1,8 +1,9 @@
-// Signing this browser in as a person. The owner makes a one-time sign-in link (the web app's
-// address with #signin=<code>); opening it trades the code for this browser's own device token,
-// kept in localStorage and shown in hello instead of the page's access token.
+// Signing this browser in as a person. A sign-in link is the web app's address with
+// #signin=<code>: the owner makes one for someone in Settings → People, the desktop app makes one
+// for its own window, and `thrall open` makes one for the browser. Opening it trades the code for
+// this browser's own device token, kept in localStorage and shown in hello.
 
-import { DEVICE_TOKEN_KEY, SIGNIN_HASH, SIGNIN_PATH } from "./constants";
+import { CLIENT_KIND, DESKTOP_DEVICE_NAME, DEVICE_TOKEN_KEY, SIGNIN_HASH, SIGNIN_PATH } from "./constants";
 
 /** This browser's device token, if it was signed in with a link. */
 export function storedToken(): string | null {
@@ -58,11 +59,14 @@ export async function finishSignIn(): Promise<string | null> {
   const code = decodeURIComponent(location.hash.slice(SIGNIN_HASH.length));
   // The code is single-use; keep it out of the address bar and history either way.
   history.replaceState(null, "", location.pathname + location.search);
+  // The desktop app brings a fresh link every time it starts; its window keeps the sign-in it
+  // already has rather than adding a new device each time.
+  if (CLIENT_KIND === "desktop" && storedToken()) return null;
   try {
     const res = await fetch(SIGNIN_PATH, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, name: deviceName() }),
+      body: JSON.stringify({ code, name: CLIENT_KIND === "desktop" ? DESKTOP_DEVICE_NAME : deviceName() }),
     });
     const body = (await res.json().catch(() => ({}))) as { token?: string; error?: string };
     if (!res.ok || !body.token) return body.error ?? "Couldn't sign in. Ask for a new link.";
