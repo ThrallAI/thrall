@@ -376,6 +376,34 @@ pub enum Request {
         /// The skill's name.
         name: String,
     },
+    /// One of the person's own skills in full, to read or edit. Answered by `skill.shown`, or
+    /// `error {invalid}` when there's no such skill of theirs.
+    #[serde(rename = "skill.get")]
+    SkillGet {
+        /// The skill's name.
+        name: String,
+    },
+    /// Change one of the person's own skills. A skill Thrall learned is rated again from what it
+    /// now says (the person wrote it, so only what it does can raise the rating). Answered by
+    /// `skill.shown`, or `error {invalid}` with the reason.
+    #[serde(rename = "skill.edit")]
+    SkillEdit {
+        /// The skill's name (it keeps it).
+        name: String,
+        /// When to use it, one sentence.
+        description: String,
+        /// The instructions (Markdown).
+        instructions: String,
+    },
+    /// Ask the model for a safer version of one of the person's own skills: the same job without
+    /// deleting, sending, handling keys or running downloads on its own (it asks the person
+    /// instead). Nothing is saved: `skill.edit` with the answer keeps it. Answered by
+    /// `skill.safer`, or `error {invalid}` / `error {provider_unavailable}`.
+    #[serde(rename = "skill.make_safe")]
+    SkillMakeSafe {
+        /// The skill's name.
+        name: String,
+    },
     /// The engine's settings, for the settings screen (read only for now). Key values never
     /// leave the engine: only whether each one is set. Answered by `settings.shown`.
     #[serde(rename = "settings.get")]
@@ -620,6 +648,9 @@ impl Request {
             Self::MemoryList {} => "memory.list",
             Self::MemoryForget { .. } => "memory.forget",
             Self::SkillRemove { .. } => "skill.remove",
+            Self::SkillGet { .. } => "skill.get",
+            Self::SkillEdit { .. } => "skill.edit",
+            Self::SkillMakeSafe { .. } => "skill.make_safe",
             Self::SettingsGet {} => "settings.get",
             Self::SettingsSet { .. } => "settings.set",
             Self::PhoneList {} => "phone.list",
@@ -856,6 +887,26 @@ pub enum Reply {
     ExperienceListed {
         /// Newest first.
         items: Vec<LessonInfo>,
+    },
+    /// Answer to `skill.get` and `skill.edit`.
+    #[serde(rename = "skill.shown")]
+    SkillShown {
+        /// The skill as saved.
+        skill: SkillDetail,
+    },
+    /// Answer to `skill.make_safe`: a safer version, not saved.
+    #[serde(rename = "skill.safer")]
+    SkillSafer {
+        /// The skill's name.
+        name: String,
+        /// When to use it.
+        description: String,
+        /// The rewritten instructions.
+        instructions: String,
+        /// What this version would be rated: `low`, `medium` or `high`.
+        rating: String,
+        /// Why, when it isn't low.
+        why: Vec<String>,
     },
     /// Answer to `memory.list`.
     #[serde(rename = "memory.listed")]
@@ -1178,6 +1229,24 @@ pub struct SkillInfo {
     pub enabled: bool,
     /// Safety rating of a skill Thrall learned: `low`, `medium` or `high` (none for ones
     /// written by hand).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rating: Option<String>,
+}
+
+/// One of the person's own skills in full.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SkillDetail {
+    /// Its name.
+    pub name: String,
+    /// When to use it.
+    pub description: String,
+    /// The instructions (Markdown).
+    pub instructions: String,
+    /// It runs in a helper.
+    pub helper: bool,
+    /// It's turned on.
+    pub enabled: bool,
+    /// Safety rating of a skill Thrall learned (none for ones written by hand).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating: Option<String>,
 }

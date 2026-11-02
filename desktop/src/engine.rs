@@ -16,7 +16,8 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::constants::{
-    ENGINE_EXE, ENGINE_EXE_ENV, ENGINE_POLL, ENGINE_START_TIMEOUT, PING_INTERVAL, TITLE_LOOKUP,
+    ENGINE_EXE, ENGINE_EXE_ENV, ENGINE_POLL, ENGINE_START_TIMEOUT, PING_INTERVAL, QUIT_MESSAGE,
+    QUIT_PHONES_ID, TITLE_LOOKUP,
 };
 
 /// Thrall's data folder (honours THRALL_HOME, like every other part of Thrall).
@@ -32,6 +33,8 @@ pub enum Incoming {
     Event(Box<EventFrame>),
     /// Sessions known when the connection opened (for their titles).
     Sessions(Vec<SessionInfo>),
+    /// How many phones are connected right now (asked for by Quit).
+    PhonesConnected(usize),
 }
 
 /// A live connection: send requests with `send`; events arrive on `incoming`.
@@ -65,6 +68,23 @@ impl Connection {
 /// A frame asking the engine to stop.
 pub fn stop_frame() -> String {
     serde_json::to_string(&RequestFrame::new("d-stop", Request::EngineStop {})).unwrap_or_default()
+}
+
+/// A frame asking which phones are paired (Quit counts the connected ones).
+pub fn phones_frame() -> String {
+    serde_json::to_string(&RequestFrame::new(QUIT_PHONES_ID, Request::PhoneList {}))
+        .unwrap_or_default()
+}
+
+/// The Quit dialog's text, naming the phones that stopping the engine would disconnect.
+pub fn quit_message(phones: usize) -> String {
+    match phones {
+        0 => QUIT_MESSAGE.to_owned(),
+        1 => format!("{QUIT_MESSAGE}\n\n1 phone is connected now; stopping Thrall disconnects it."),
+        n => format!(
+            "{QUIT_MESSAGE}\n\n{n} phones are connected now; stopping Thrall disconnects them."
+        ),
+    }
 }
 
 /// Connect to the running engine, starting one if there isn't one.
@@ -214,6 +234,9 @@ pub async fn connect(paths: &Paths) -> anyhow::Result<Connection> {
                         items.push(page);
                         in_tx.send(Incoming::Sessions(items))
                     }
+                    Reply::PhoneListed { items, .. } if r.re == QUIT_PHONES_ID => in_tx.send(
+                        Incoming::PhonesConnected(items.iter().filter(|p| p.connected).count()),
+                    ),
                     _ => Ok(()),
                 },
                 // An event this version doesn't know: ignore it.
@@ -239,4 +262,18 @@ pub async fn connect(paths: &Paths) -> anyhow::Result<Connection> {
     });
     conn.send(Request::HomeGet {});
     Ok(conn)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_quit_message_names_connected_phones() {
+        assert_eq!(quit_message(0), QUIT_MESSAGE);
+        assert!(
+            quit_message(1).ends_with("1 phone is connected now; stopping Thrall disconnects it.")
+        );
+        assert!(quit_message(3).contains("3 phones are connected now"));
+    }
 }

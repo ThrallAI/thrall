@@ -762,6 +762,20 @@ pub const LESSON_MAX_CHARS: usize = 300;
 pub const EXPERIENCE_INTRO: &str = "Lessons from earlier work with this person (follow them; they \
 can be wrong or out of date, so trust what you see now when it says otherwise):";
 
+/// Most tokens the model writes for a safer version of a skill (Settings → Learning).
+pub const SKILL_SAFER_MAX_TOKENS: u32 = 4_000;
+
+/// Rewrites a skill so it can't do anything risky on its own.
+pub const SKILL_SAFER_PROMPT: &str = "You rewrite an assistant's skill (step-by-step instructions it \
+follows) so it is safe to run on its own. Keep the same job and every detail that matters. Change \
+only the risky parts: never delete, overwrite or move files without asking the user first; never \
+send, post or publish anything without the user confirming the exact text; never read, copy, paste \
+or store passwords, keys or tokens (tell the user to enter them themselves); never download and run \
+code or scripts (show the command and let the user decide). Where a step is risky, replace it with \
+asking the user or showing them what to do. Don't add anything new. Answer with JSON only: \
+{\"description\": \"one sentence: when to use it\", \"instructions\": \"the rewritten Markdown \
+steps\"}.";
+
 /// Most facts saved from one compaction.
 pub const FACTS_MAX: usize = 5;
 

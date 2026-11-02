@@ -98,6 +98,10 @@ pub const QUIT_KEEP: &str = "Quit, keep Thrall running";
 pub const QUIT_CANCEL: &str = "Cancel";
 pub const QUIT_MESSAGE: &str = "Thrall's engine runs your sessions and scheduled jobs. Stop it as \
 well? If you stop it, the terminal and web app disconnect until Thrall starts again.";
+/// How long Quit waits for the engine to say which phones are connected before asking anyway.
+pub const QUIT_PHONES_WAIT: Duration = Duration::from_millis(1500);
+/// Request id of Quit's look at the connected phones.
+pub const QUIT_PHONES_ID: &str = "d-quit-phones";
 
 /// Colours for the tray mark (design system, dark values; they read on light taskbars too).
 pub const ACCENT: [u8; 3] = [0x8b, 0x6c, 0xff];

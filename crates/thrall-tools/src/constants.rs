@@ -73,6 +73,12 @@ pub const SKILL_RUN_HELPER: &str = "helper";
 pub const SKILL_NAME_MAX_CHARS: usize = 48;
 /// Longest description a proposed skill may have.
 pub const SKILL_DESCRIPTION_MAX_CHARS: usize = 300;
+/// `learned_from` for a skill the person taught (or wrote themselves).
+pub const SKILL_SOURCE_USER: &str = "user";
+/// `learned_from` for a skill Thrall worked out in its own work.
+pub const SKILL_SOURCE_MY_WORK: &str = "my_work";
+/// `learned_from` for a skill made from the person's files.
+pub const SKILL_SOURCE_FILES: &str = "files";
 
 /// Helper types folder name (in the data folder and in a project's `.thrall`).
 pub const AGENTS_DIR: &str = "agents";
@@ -213,6 +219,10 @@ pub const BROWSER_WINDOW_HEIGHT: u32 = 900;
 
 /// Longest wait for a page to load or answer, in seconds.
 pub const BROWSER_TIMEOUT_SECS: u64 = 30;
+
+/// Longest Chrome may take to start, in seconds. The library's own 20 isn't enough on a slow or
+/// busy PC (or several starting at once), the first start after an update especially.
+pub const BROWSER_LAUNCH_SECS: u64 = 60;
 
 /// Longest one browser action (click, fill, read, back, screenshot) may take in all, in seconds:
 /// a page that stops answering fails the step instead of holding the turn.

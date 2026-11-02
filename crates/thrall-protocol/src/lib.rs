@@ -16,7 +16,8 @@ pub use requests::{
     AppRelease, ClientInfo, ClientKind, CommandItem, DeviceInfo, EngineInfo, FactInfo, FolderEntry,
     GroupInfo, HelperTypeInfo, KeyStatus, LessonInfo, Limits, ModeLimit, PersonInfo,
     PersonalityPreset, PhoneInfo, RemoteInfo, Reply, ReplyFrame, Request, RequestFrame,
-    RewindAction, RewindFile, SessionInfo, SessionState, SettingValue, SkillInfo, UserInfo,
+    RewindAction, RewindFile, SessionInfo, SessionState, SettingValue, SkillDetail, SkillInfo,
+    UserInfo,
 };
 
 /// Whether this build can talk to a peer speaking protocol major `version`.

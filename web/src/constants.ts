@@ -172,6 +172,9 @@ export const PERSONALITY_CUSTOM = "custom";
 /** Longest own-words personality the engine keeps. */
 export const PERSONALITY_MAX_CHARS = 1500;
 
+/** Longest description a skill may have (the engine's SKILL_DESCRIPTION_MAX_CHARS). */
+export const SKILL_DESCRIPTION_MAX_CHARS = 300;
+
 /** Most helpers that may work at once (the engine's MAX_HELPERS_AT_ONCE). */
 export const MAX_HELPERS_AT_ONCE = 8;
 

@@ -2359,3 +2359,55 @@ select.th-input {
   resize: vertical;
   min-height: 96px;
 }
+
+/* ---------- Settings → Learning: editing a skill ---------- */
+.th-skill-edit {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  min-width: 0;
+}
+.th-skill-edit h5 {
+  margin: 0;
+  font-size: 14px;
+}
+.th-skill-text {
+  width: 100%;
+  resize: vertical;
+  min-height: 200px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.th-skill-compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.th-skill-compare > div {
+  display: grid;
+  gap: var(--space-1);
+  align-content: start;
+  min-width: 0;
+}
+.th-skill-compare pre {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  white-space: pre-wrap;
+  font-size: 13px;
+}
+.th-skill-why {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+@media (max-width: 640px) {
+  .th-skill-compare {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
