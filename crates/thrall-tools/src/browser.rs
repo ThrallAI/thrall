@@ -16,10 +16,10 @@ use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures::StreamExt;
 
 use crate::constants::{
-    BROWSER_ACTION_SECS, BROWSER_DIALOG_MAX_CHARS, BROWSER_OPEN_SECS, BROWSER_POLL_MS,
-    BROWSER_PRINT_SECS, BROWSER_PROFILE_DIR, BROWSER_SETTLE_MS, BROWSER_TIMEOUT_SECS,
-    BROWSER_WINDOW_HEIGHT, BROWSER_WINDOW_WIDTH, CSS_PX_PER_IN, LINUX_BROWSERS, MAC_BROWSERS,
-    PDF_MIN_SCALE, PDF_PREVIEW_QUALITY, PDF_SCALE_STEP,
+    BROWSER_ACTION_SECS, BROWSER_DIALOG_MAX_CHARS, BROWSER_LAUNCH_SECS, BROWSER_OPEN_SECS,
+    BROWSER_POLL_MS, BROWSER_PRINT_SECS, BROWSER_PROFILE_DIR, BROWSER_SETTLE_MS,
+    BROWSER_TIMEOUT_SECS, BROWSER_WINDOW_HEIGHT, BROWSER_WINDOW_WIDTH, CSS_PX_PER_IN,
+    LINUX_BROWSERS, MAC_BROWSERS, PDF_MIN_SCALE, PDF_PREVIEW_QUALITY, PDF_SCALE_STEP,
 };
 
 struct Running {
@@ -201,7 +201,8 @@ impl Browsers {
             .user_data_dir(profile.clone())
             .window_size(BROWSER_WINDOW_WIDTH, BROWSER_WINDOW_HEIGHT)
             .viewport(None)
-            .request_timeout(Duration::from_secs(BROWSER_TIMEOUT_SECS));
+            .request_timeout(Duration::from_secs(BROWSER_TIMEOUT_SECS))
+            .launch_timeout(Duration::from_secs(BROWSER_LAUNCH_SECS));
         config = if visible {
             config.with_head()
         } else {
