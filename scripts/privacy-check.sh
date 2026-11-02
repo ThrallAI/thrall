@@ -53,7 +53,7 @@ if [ $# -ge 1 ]; then
   bad=$(git log --no-merges --format='%h %ae %ce' "$1..HEAD" |
     awk '{ for (i = 2; i <= 3; i++) { a = tolower($i); if (a !~ /@users\.noreply\.github\.com$/ && a != "noreply@github.com" && a != "thrallai@protonmail.com") { print; next } } }')
   [ -n "$bad" ] && say "commits by an address that isn't a GitHub no-reply one:"$'\n'"$bad"
-  coauth=$(git log --format='%h %B' "$1..HEAD" | grep -i 'co-authored-by' || true)
+  coauth=$(git log --no-merges --format='%h %B' "$1..HEAD" | grep -i 'co-authored-by' || true)
   [ -n "$coauth" ] && say "commit messages carry co-author lines:"$'\n'"$coauth"
 fi
 
