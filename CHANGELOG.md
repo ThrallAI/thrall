@@ -32,6 +32,10 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 - The browser gets a minute to start instead of 20 seconds, so it no longer fails on a slow or
   busy computer.
 - Errors from a local model server or a direct supplier name that supplier, not OpenRouter.
+- A command that deletes files says "Deletes files" at the start of its permission card, even when
+  the delete is chained onto something harmless; other risky commands say "Risky".
+- Learning a skill says "Learning the … skill" instead of "Proposing": only high-risk skills wait
+  for your OK.
 
 ### Security
 

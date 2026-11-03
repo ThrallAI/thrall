@@ -11,7 +11,8 @@ use thrall_protocol::Risk;
 use crate::constants::{
     BACKGROUND_MAX_PER_PERSON, BACKGROUND_READ_MAX_CHARS, GIT_READ_ONLY, GIT_RISKY,
     GIT_TIMEOUT_SECS, GIT_WRITE_FLAGS, NONZERO_EXIT_NOTE, RESULT_MAX_CHARS, SHELL_CHAINING,
-    SHELL_DEFAULT_TIMEOUT_SECS, SHELL_MAX_TIMEOUT_SECS, SHELL_RISKY,
+    SHELL_DEFAULT_TIMEOUT_SECS, SHELL_DELETERS, SHELL_DELETES_NOTE, SHELL_MAX_TIMEOUT_SECS,
+    SHELL_RISKY, SHELL_RISKY_NOTE,
 };
 use crate::process::{self, Finished};
 use crate::tool::{Tool, ToolContext, ToolOutput, arg_str, cap, parse_args};
@@ -59,6 +60,27 @@ fn shell_risk(command: &str) -> Risk {
     } else {
         Risk::Medium
     }
+}
+
+/// Whether any program in the command deletes files (`rm`, `Remove-Item`, `del`…), wherever it
+/// sits in a chain or pipe.
+fn shell_deletes(command: &str) -> bool {
+    command
+        .to_lowercase()
+        .split(|c: char| c.is_whitespace() || SHELL_CHAINING.contains(&c) || c == '(' || c == '{')
+        .any(|word| SHELL_DELETERS.contains(&word))
+}
+
+/// The permission card's line: what the command does to files first, when it deletes or is risky.
+fn shell_summary(command: &str) -> String {
+    let note = if shell_deletes(command) {
+        SHELL_DELETES_NOTE
+    } else if shell_risk(command) == Risk::High {
+        SHELL_RISKY_NOTE
+    } else {
+        ""
+    };
+    format!("{note}Run `{command}`")
 }
 
 /// What an "always" for this command covers: its program (`shell:cargo`). Commands that chain or
@@ -178,7 +200,7 @@ impl Tool for Shell {
     fn effect(&self, _ctx: &ToolContext, args: &Value) -> Effect {
         let command = arg_str(args, "command");
         Effect::Run {
-            summary: format!("Run `{command}`"),
+            summary: shell_summary(command),
             risk: shell_risk(command),
             grant: shell_grant(command),
         }
@@ -505,6 +527,24 @@ mod tests {
         assert_eq!(shell_risk("rm -rf target"), Risk::High);
         assert_eq!(shell_risk("cargo build"), Risk::Medium);
         assert_eq!(shell_grant("rm -rf target"), None);
+    }
+
+    #[test]
+    fn a_delete_chained_onto_something_harmless_is_named_first() {
+        let card =
+            shell_summary("Remove-Item old.py -ErrorAction SilentlyContinue; py -m pytest -q");
+        assert!(
+            card.starts_with("Deletes files: Run `Remove-Item"),
+            "{card}"
+        );
+        assert!(shell_summary("cargo test && rm notes.txt").starts_with("Deletes files: "));
+        assert!(shell_summary("git reset --hard").starts_with("Risky: "));
+        assert_eq!(shell_summary("cargo build"), "Run `cargo build`");
+        // Words that only contain a deleter's name don't count.
+        assert_eq!(
+            shell_summary("py format_rd.py --del-old"),
+            "Run `py format_rd.py --del-old`"
+        );
     }
 
     fn finished(code: Option<i32>, timed_out: bool) -> Finished {
