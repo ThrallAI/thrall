@@ -329,6 +329,13 @@ pub const CHECKING_NOTICE: &str = "Thrall is checking its work before finishing.
 pub const EMPTY_REPLY_NUDGE: &str = "Your last reply was empty. Tell the user, briefly and \
      plainly, what you did, what came of it, and anything still to do or that went wrong.";
 
+/// Sent instead of EMPTY_REPLY_NUDGE when the empty reply was cut off at its length limit (spent
+/// thinking, or on a call the supplier dropped): asking the same way again only runs out again.
+pub const CUT_OFF_NUDGE: &str = "Your last reply was cut off at the length limit before it \
+     said or did anything, so nothing in it was used. Do the same work in smaller steps: split \
+     it into several smaller files, one write_file call each, or write a short first version of a \
+     big file and grow it with edit_file. Keep what you say short.";
+
 /// Shown when the model still says nothing: never end a turn with a blank.
 pub const EMPTY_REPLY_NOTICE: &str = "Thrall finished without a reply. The steps above show what \
      it did; ask it again, or try another model if this keeps happening.";

@@ -33,14 +33,14 @@ use thrall_tools::Cancel;
 
 use crate::checks::{self, Track};
 use crate::constants::{
-    CHECK_PREFIX, CHECKING_NOTICE, COMPACTED_NOTICE, CUT_OFF_NOTICE, DELTA_FLUSH_INTERVAL,
-    DESCRIBED_MARK, EMPTY_REPLY_NOTICE, EMPTY_REPLY_NUDGE, EPISODE_SOURCE_MAX_CHARS, FINISH_LENGTH,
-    HAND_OFF, HOME_NOTE, LOW_CREDIT_NOTICE, LOW_CREDIT_USD, MAX_MODEL_CALLS_PER_TURN,
-    PICTURE_FAILED_MARK, PICTURE_MAX_BYTES, PICTURES_PER_REQUEST, PLAN_QUESTION_MAX_CHARS,
-    SCANNED_PDF_MAX_BYTES, SESSION_TITLE_MAX_CHARS, SKIPPED_INTERRUPTED, SYSTEM_PROMPT,
-    TITLE_MAX_TOKENS, TITLE_MAX_WORDS, TITLE_PROMPT, TITLE_SOURCE_MAX_CHARS, TRANSCRIBE_MAX_TOKENS,
-    TRANSCRIBE_PROMPT, TRANSCRIPT_MAX_CHARS, VISION_MAX_TOKENS, VISION_MODEL_HINT, VISION_PROMPT,
-    VISION_TOOL, role, turn_status,
+    CHECK_PREFIX, CHECKING_NOTICE, COMPACTED_NOTICE, CUT_OFF_NOTICE, CUT_OFF_NUDGE,
+    DELTA_FLUSH_INTERVAL, DESCRIBED_MARK, EMPTY_REPLY_NOTICE, EMPTY_REPLY_NUDGE,
+    EPISODE_SOURCE_MAX_CHARS, FINISH_LENGTH, HAND_OFF, HOME_NOTE, LOW_CREDIT_NOTICE,
+    LOW_CREDIT_USD, MAX_MODEL_CALLS_PER_TURN, PICTURE_FAILED_MARK, PICTURE_MAX_BYTES,
+    PICTURES_PER_REQUEST, PLAN_QUESTION_MAX_CHARS, SCANNED_PDF_MAX_BYTES, SESSION_TITLE_MAX_CHARS,
+    SKIPPED_INTERRUPTED, SYSTEM_PROMPT, TITLE_MAX_TOKENS, TITLE_MAX_WORDS, TITLE_PROMPT,
+    TITLE_SOURCE_MAX_CHARS, TRANSCRIBE_MAX_TOKENS, TRANSCRIBE_PROMPT, TRANSCRIPT_MAX_CHARS,
+    VISION_MAX_TOKENS, VISION_MODEL_HINT, VISION_PROMPT, VISION_TOOL, role, turn_status,
 };
 use crate::error::AgentError;
 use crate::hooks;
@@ -813,14 +813,20 @@ async fn run_turn(
                     .await?;
                 break;
             }
-            // Finished without a word: ask once for a summary, then say so plainly.
+            // Finished without a word: ask once for a summary (or, when the reply ran out of room,
+            // for smaller steps), then say so plainly.
             if !asked_for_reply {
                 asked_for_reply = true;
+                let nudge = if outcome.cut_off {
+                    CUT_OFF_NUDGE
+                } else {
+                    EMPTY_REPLY_NUDGE
+                };
                 emitter
                     .save_message(
                         role::USER,
                         StoredContent {
-                            text: format!("{CHECK_PREFIX} {EMPTY_REPLY_NUDGE}"),
+                            text: format!("{CHECK_PREFIX} {nudge}"),
                             tool_calls: Vec::new(),
                             tool_call_id: None,
                             files: Vec::new(),
