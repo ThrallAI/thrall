@@ -31,12 +31,14 @@ jobs:
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             bundles: appimage,deb
+          # GitHub's Apple-chip Macs are short (jobs cancelled before starting), so both Mac
+          # installers are built on its Intel Macs for now; the Apple-chip one is cross-compiled.
           - name: macOS (Apple silicon)
-            os: macos-latest
+            os: macos-15-intel
             target: aarch64-apple-darwin
             bundles: dmg
           - name: macOS (Intel)
-            os: macos-latest
+            os: macos-15-intel
             target: x86_64-apple-darwin
             bundles: dmg
     runs-on: ${{ matrix.os }}
