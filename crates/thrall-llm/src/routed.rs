@@ -340,6 +340,7 @@ mod tests {
             messages: vec![ChatMessage::new(ChatRole::User, "hi")],
             max_tokens: 10,
             tools: Vec::new(),
+            thinking: None,
         };
         r.stream(request).next().await.unwrap()
     }
@@ -460,6 +461,7 @@ mod tests {
             messages: vec![ChatMessage::new(ChatRole::User, "hi")],
             max_tokens: 10,
             tools: Vec::new(),
+            thinking: None,
         };
         let events: Vec<_> = r
             .stream(request("direct/anthropic/sonnet-4-5"))

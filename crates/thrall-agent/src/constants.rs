@@ -336,6 +336,10 @@ pub const CUT_OFF_NUDGE: &str = "Your last reply was cut off at the length limit
      it into several smaller files, one write_file call each, or write a short first version of a \
      big file and grow it with edit_file. Keep what you say short.";
 
+/// How hard a model that thinks may think for the rest of a turn after a reply was cut off before
+/// saying anything: its thinking had used the whole length limit. "low" leaves it about a fifth.
+pub const CUT_OFF_THINKING: &str = "low";
+
 /// Shown when the model still says nothing: never end a turn with a blank.
 pub const EMPTY_REPLY_NOTICE: &str = "Thrall finished without a reply. The steps above show what \
      it did; ask it again, or try another model if this keeps happening.";

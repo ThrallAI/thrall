@@ -354,6 +354,7 @@ pub async fn make_skill_safe(state: &AppState, name: &str) -> Result<Reply, (Err
         ],
         max_tokens: SKILL_SAFER_MAX_TOKENS,
         tools: Vec::new(),
+        thinking: None,
     };
     let mut answer = String::new();
     let mut usage = Usage::default();

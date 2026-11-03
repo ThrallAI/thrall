@@ -82,6 +82,7 @@ async fn a_standard_api_gets_its_own_fields_not_openrouters() {
             messages: vec![ChatMessage::new(ChatRole::User, "hello")],
             max_tokens: 16,
             tools: Vec::new(),
+            thinking: Some("low"),
         })
         .collect()
         .await;
@@ -94,11 +95,38 @@ async fn a_standard_api_gets_its_own_fields_not_openrouters() {
     assert!(sent.contains("\"max_completion_tokens\":16"), "{sent}");
     assert!(sent.contains("\"include_usage\":true"), "{sent}");
     assert!(
-        !sent.contains("\"max_tokens\"") && !sent.contains("\"include\":true"),
+        !sent.contains("\"max_tokens\"")
+            && !sent.contains("\"include\":true")
+            && !sent.contains("\"reasoning\""),
         "{sent}"
     );
     // An unknown model's pictures and prices aren't guessed.
     assert_eq!(openai.accepts_images("gpt-5").await, None);
+}
+
+#[tokio::test]
+async fn openrouter_is_told_how_hard_to_think_only_when_asked() {
+    let stream = "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\ndata: [DONE]\n\n";
+    let ok = || reply(200, "text/event-stream", stream.as_bytes());
+    let (base, seen) = serve(vec![ok(), ok()]).await;
+    let openrouter = OpenRouter::new("sk-test".into(), &base).unwrap();
+    for thinking in [None, Some("low")] {
+        let request = ChatRequest {
+            model: "deepseek/deepseek-v4.1-flash".into(),
+            messages: vec![ChatMessage::new(ChatRole::User, "hello")],
+            max_tokens: 16,
+            tools: Vec::new(),
+            thinking,
+        };
+        let _: Vec<_> = openrouter.stream(request).collect().await;
+    }
+    let seen = seen.lock().unwrap();
+    assert!(!seen[0].contains("\"reasoning\""), "{}", seen[0]);
+    assert!(
+        seen[1].contains("\"reasoning\":{\"effort\":\"low\"}"),
+        "{}",
+        seen[1]
+    );
 }
 
 #[tokio::test]

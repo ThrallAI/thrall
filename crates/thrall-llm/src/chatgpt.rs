@@ -744,6 +744,7 @@ mod tests {
                 description: "Read".into(),
                 parameters: json!({"type": "object"}),
             }],
+            thinking: None,
         };
         let b = body(&request, "gpt-5.3-codex");
         assert_eq!(b["instructions"], "Be brief");

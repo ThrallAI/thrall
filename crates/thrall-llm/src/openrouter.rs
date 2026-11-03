@@ -326,6 +326,9 @@ impl LlmProvider for OpenRouter {
         });
         body[self.standard.unwrap_or("max_tokens")] = json!(request.max_tokens);
         self.ask_for_usage(&mut body, true);
+        if let (None, Some(effort)) = (self.standard, request.thinking) {
+            body["reasoning"] = json!({ "effort": effort });
+        }
         if !request.tools.is_empty() {
             body["tools"] = wire_tools(&request.tools);
         }
