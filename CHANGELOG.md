@@ -7,50 +7,9 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ## [Unreleased]
 
-### Added
+## [0.2.0] - 2026-11-03
 
-- Settings → Learning: open any of your skills to change when it's used and what it says. A
-  skill Thrall learned is rated again when you save it, and a medium or high-rated one can be
-  made safe: Thrall writes a version that asks before deleting, sending, handling keys or running
-  downloads, shown beside yours with its rating, and yours stays until you pick the safer one.
-- Helpers work side by side: when Thrall asks for several in one reply they run at once (3 by
-  default, up to 8), each with its steps under its own row. Built-in helper types (Researcher,
-  Coder, Reviewer, Planner; only the Coder changes files) and your own in the data folder's
-  `agents/`. Each helper stops at its spending limit ($1 by default). Settings → Permissions & safety → Helpers.
-- Settings → Providers: pick a supplier and model for each job (chat, reading pictures, making
-  pictures, speaking, transcribing, memory search), with a Test for each supplier. Use OpenAI,
-  Anthropic and Google directly with your own key (`direct/<supplier>/<model>`, `thrall key set
-  <supplier>`), and ElevenLabs voices. Their cost is worked out from OpenRouter's prices, so
-  spending limits keep counting.
-- Programs on your own computer, free and with nothing leaving it: whisper.cpp transcribes
-  (`program/whisper`), Piper reads aloud (`program/piper`) and a Stable Diffusion web UI makes
-  pictures (`program/sd-webui`). "Found on this PC" in Settings → Providers shows what's
-  installed and what's missing; Thrall never downloads or installs them itself.
-- A new project gets its own folder inside the working folder, even a one-file script.
-- The terminal catches up with the desktop's settings screens: `/settings` shows every setting
-  and changes one (`/settings agent.verify true`), `/skills` and `/skill <name>` show skills
-  (with `safe` for a safer version and `remove` to delete one), `/lessons` lists and forgets what
-  Thrall learned from corrections, and `/group <name>` puts a session in a group. Each helper's
-  steps are numbered, so helpers working side by side can be told apart.
-
-### Fixed
-
-- The browser gets a minute to start instead of 20 seconds, so it no longer fails on a slow or
-  busy computer.
-- Errors from a local model server or a direct supplier name that supplier, not OpenRouter.
-- A command that deletes files says "Deletes files" at the start of its permission card, even when
-  the delete is chained onto something harmless; other risky commands say "Risky".
-- Learning a skill says "Learning the … skill" instead of "Proposing": only high-risk skills wait
-  for your OK.
-
-### Security
-
-- Updated async-executor to 1.14.1: 1.14.0 was withdrawn by its maintainers for a
-  use-after-free.
-
-## [0.2.0] - 2026-11-02
-
-Thrall learns, asks, and gets a personality.
+Thrall learns, asks, gets a personality, and works with the supplier you pick.
 
 ### Added
 
@@ -64,8 +23,32 @@ Thrall learns, asks, and gets a personality.
   rating; low and medium are kept on their own, high-rated ones always ask first. It also keeps
   lessons from what went wrong or what you corrected, and saves the lasting facts you state when
   a long chat is compacted. Everything learned can be viewed and forgotten.
+- Settings → Learning: open any of your skills to change when it's used and what it says. A
+  skill Thrall learned is rated again when you save it, and a medium or high-rated one can be
+  made safe: Thrall writes a version that asks before deleting, sending, handling keys or running
+  downloads, shown beside yours with its rating, and yours stays until you pick the safer one.
+- Helpers work side by side: when Thrall asks for several in one reply they run at once (3 by
+  default, up to 8), each with its steps under its own row. Built-in helper types (Researcher,
+  Coder, Reviewer, Planner; only the Coder changes files) and your own in the data folder's
+  `agents/`. Each helper stops at its spending limit ($1 by default). Settings → Permissions &
+  safety → Helpers.
+- Settings → Providers: pick a supplier and model for each job (chat, reading pictures, making
+  pictures, speaking, transcribing, memory search), with a Test for each supplier. Use OpenAI,
+  Anthropic and Google directly with your own key (`direct/<supplier>/<model>`, `thrall key set
+  <supplier>`), and ElevenLabs voices. Their cost is worked out from OpenRouter's prices, so
+  spending limits keep counting.
+- Programs on your own computer, free and with nothing leaving it: whisper.cpp transcribes
+  (`program/whisper`), Piper reads aloud (`program/piper`) and a Stable Diffusion web UI makes
+  pictures (`program/sd-webui`). "Found on this PC" in Settings → Providers shows what's
+  installed and what's missing; Thrall never downloads or installs them itself.
 - Local models: `local/<model>` runs a model from Ollama or LM Studio on your own computer or
   network, free and with no key (Settings → Models → "Local model server").
+- A new project gets its own folder inside the working folder, even a one-file script.
+- The terminal catches up with the desktop's settings screens: `/settings` shows every setting
+  and changes one (`/settings agent.verify true`), `/skills` and `/skill <name>` show skills
+  (with `safe` for a safer version and `remove` to delete one), `/lessons` lists and forgets what
+  Thrall learned from corrections, and `/group <name>` puts a session in a group. Each helper's
+  steps are numbered, so helpers working side by side can be told apart.
 - The shell can wait for a line of output (such as "server ready") and leave a program running
   in the background, with tools to read its output and stop it.
 - `thrall open` opens the web app already signed in.
@@ -73,6 +56,17 @@ Thrall learns, asks, and gets a personality.
 ### Changed
 
 - Quitting the desktop app says how many phones stopping Thrall would disconnect.
+
+### Fixed
+
+- Two tests that failed now and then on Windows.
+- The browser gets a minute to start instead of 20 seconds, so it no longer fails on a slow or
+  busy computer.
+- Errors from a local model server or a direct supplier name that supplier, not OpenRouter.
+- A command that deletes files says "Deletes files" at the start of its permission card, even when
+  the delete is chained onto something harmless; other risky commands say "Risky".
+- Learning a skill says "Learning the … skill" instead of "Proposing": only high-risk skills wait
+  for your OK.
 
 ### Security
 
@@ -82,10 +76,8 @@ Thrall learns, asks, and gets a personality.
 - SECURITY.md now says plainly what Thrall protects and what it can't.
 - Updated pulldown-cmark (RUSTSEC-2026-0433) and calamine (now on the fixed zip 9); the zip 8
   advisory RUSTSEC-2026-0429 is in archive extraction, which Thrall's Office libraries never use.
-
-### Fixed
-
-- Two tests that failed now and then on Windows.
+- Updated async-executor to 1.14.1: 1.14.0 was withdrawn by its maintainers for a
+  use-after-free.
 
 ## [0.1.0] - 2026-10-31
 
