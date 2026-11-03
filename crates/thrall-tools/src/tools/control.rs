@@ -425,7 +425,7 @@ impl Tool for ProposeSkill {
         })
     }
     fn title(&self, args: &Value) -> String {
-        format!("Proposing the {} skill", arg_str(args, "name"))
+        format!("Learning the {} skill", arg_str(args, "name"))
     }
     fn precheck(&self, ctx: &ToolContext, args: &Value) -> Option<String> {
         Self::prepare(ctx, args).err()

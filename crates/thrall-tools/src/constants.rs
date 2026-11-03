@@ -168,6 +168,14 @@ pub const SHELL_RISKY: &[&str] = &[
     "dd if=",
 ];
 
+/// Programs that delete files (lower-case, matched as whole words). A command using one says so at
+/// the start of its permission card, so a delete chained onto something harmless isn't missed.
+pub const SHELL_DELETERS: &[&str] = &["rm", "rmdir", "remove-item", "ri", "del", "erase", "rd"];
+
+/// What starts the permission card of a command that deletes files, or of another risky one.
+pub const SHELL_DELETES_NOTE: &str = "Deletes files: ";
+pub const SHELL_RISKY_NOTE: &str = "Risky: ";
+
 /// Characters that chain or pipe commands; such commands can't be covered by "always".
 pub const SHELL_CHAINING: &[char] = &[';', '&', '|', '`', '$', '>', '<', '\n'];
 
