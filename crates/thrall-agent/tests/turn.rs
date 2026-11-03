@@ -3041,6 +3041,34 @@ async fn an_empty_reply_is_sent_back_once_for_a_summary() {
 }
 
 #[tokio::test]
+async fn a_reply_cut_off_at_its_length_limit_is_asked_for_smaller_steps() {
+    let cut_off: Script = vec![Ok(StreamEvent::Finished(Some("length".into()))), usage()];
+    let (state, provider) = setup(vec![
+        cut_off,
+        reply(&["Wrote the app in three files."]),
+        reply(&["Recipe scaler"]),
+    ])
+    .await;
+    let s = session::create(&state, None).await.unwrap();
+    let (summary, _) = run(&state, &s.id, "build the recipe scaler").await;
+    assert_eq!(summary.reply, "Wrote the app in three files.");
+    let seen = provider.seen.lock().unwrap();
+    let asked = &seen[1].messages;
+    assert!(
+        asked
+            .iter()
+            .any(|m| m.content.contains("cut off at the length limit")),
+        "the model is told why"
+    );
+    assert!(
+        !asked
+            .iter()
+            .any(|m| m.content.contains("Your last reply was empty")),
+        "not the summary request"
+    );
+}
+
+#[tokio::test]
 async fn an_empty_reply_on_nearly_no_credit_says_to_top_up_without_asking_again() {
     // OpenRouter cuts replies to what the credit can pay for: they come back empty.
     let (state, provider) = setup(vec![reply(&[]), reply(&["Never asked for"])]).await;

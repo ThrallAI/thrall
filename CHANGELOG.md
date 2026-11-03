@@ -7,6 +7,13 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ## [Unreleased]
 
+### Fixed
+
+- A reply cut off at its length limit before saying anything is no longer asked the same way
+  again (which ran out again): Thrall tells the model it was cut off and to work in smaller
+  steps. A new install lets a reply run to 16,384 tokens instead of 8,192 (Settings → Models, or
+  `/settings provider.max_tokens <number>`).
+
 ## [0.2.0] - 2026-11-03
 
 Thrall learns, asks, gets a personality, and works with the supplier you pick.

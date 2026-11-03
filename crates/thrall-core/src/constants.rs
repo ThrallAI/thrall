@@ -150,8 +150,10 @@ pub const DEFAULT_EMBEDDING_MODEL: &str = "openai/text-embedding-3-small";
 /// Default context size before older messages are summarised (tokens).
 pub const DEFAULT_CONTEXT_LIMIT_TOKENS: usize = 100_000;
 
-/// Default cap on tokens the model may write in one reply.
-pub const DEFAULT_MAX_TOKENS: u32 = 8192;
+/// Default cap on tokens the model may write in one reply. Writing a whole file in one step
+/// needs more than 8k; most current models allow 16k, and some suppliers refuse a cap above
+/// what the model allows.
+pub const DEFAULT_MAX_TOKENS: u32 = 16_384;
 
 /// Default log level.
 pub const DEFAULT_LOG_LEVEL: &str = "info";
