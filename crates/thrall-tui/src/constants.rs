@@ -84,9 +84,38 @@ pub const CLIENT_COMMANDS: &[(&str, &str)] = &[
     ("edit", "Replace your last message: /edit <new message>"),
     ("rewind", "Go back to before a message: /rewind lists them"),
     ("forget", "Forget a fact Thrall remembered: /forget <id>"),
+    (
+        "settings",
+        "See every setting, or change one: /settings <name> <value>",
+    ),
+    ("skills", "The skills Thrall can use"),
+    ("skill", "One skill in full: /skill <name> [safe | remove]"),
+    (
+        "lessons",
+        "What Thrall learned from corrections: /lessons [forget <id>]",
+    ),
+    ("group", "Put this session in a group: /group <name> | none"),
     ("expand", "Show or hide step details (Ctrl+O)"),
     ("quit", "Leave Thrall"),
 ];
+
+/// Items of a list setting `/settings` shows before "… and N more".
+pub const SETTINGS_ARRAY_SHOWN: usize = 6;
+
+/// `/skill <name> safe`: ask for a safer version.
+pub const SKILL_SAFE: &str = "safe";
+
+/// `/skill <name> keep-safe`: save the safer version just shown.
+pub const SKILL_SAVE_SAFE: &str = "keep-safe";
+
+/// `/skill <name> remove`: delete one of the person's own skills (after `yes`).
+pub const SKILL_REMOVE: &str = "remove";
+
+/// Typed after a command that deletes something, to go ahead.
+pub const CONFIRM_WORD: &str = "yes";
+
+/// `/group none`: take the session out of its group.
+pub const GROUP_NONE: &str = "none";
 
 /// How many recent messages `/rewind` lists.
 pub const REWIND_LIST_MAX: usize = 10;

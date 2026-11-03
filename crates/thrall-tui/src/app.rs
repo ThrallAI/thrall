@@ -18,7 +18,7 @@ use thrall_gates::Mode;
 use thrall_protocol::constants::CHECK_IN_AGENT;
 use thrall_protocol::{
     CommandItem, Diff, Event, NoticeLevel, PermissionChoice, Risk, Role, SessionInfo as Session,
-    TaskItem, TaskStatus,
+    SkillDetail, TaskItem, TaskStatus,
 };
 
 use crate::constants::{
@@ -150,6 +150,10 @@ pub struct App {
     /// The session's turns: id, where its entries start, and the message that started it, so a
     /// retry, edit or rewind can take turns back.
     pub turns: Vec<(String, usize, String)>,
+    /// A safer version of a skill `/skill <name> safe` showed, kept until it's saved.
+    pub safer: Option<SkillDetail>,
+    /// Helpers' step ids in the order they started, so each helper's steps share a number.
+    helpers: Vec<String>,
 }
 
 fn new_input() -> TextArea<'static> {
@@ -190,6 +194,8 @@ impl App {
             ascii,
             card_shown_at: Instant::now(),
             turns: Vec::new(),
+            safer: None,
+            helpers: Vec::new(),
         }
     }
 
@@ -205,6 +211,18 @@ impl App {
         self.scroll_up = 0;
         self.last_total = 0;
         self.turns.clear();
+        self.helpers.clear();
+    }
+
+    /// Which helper of this session a step belongs to, counting from 1 in the order they started.
+    fn helper_number(&mut self, helper: String) -> usize {
+        match self.helpers.iter().position(|h| *h == helper) {
+            Some(i) => i + 1,
+            None => {
+                self.helpers.push(helper);
+                self.helpers.len()
+            }
+        }
     }
 
     /// Show a line of information.
@@ -312,19 +330,22 @@ impl App {
                 title,
                 helper,
                 ..
-            } => self.transcript.push(Kind::Step {
-                id: step,
-                // A helper's steps are marked as its own (helpers can work side by side).
-                title: if helper.is_some() {
-                    format!("{HELPER_STEP_MARK}{title}")
-                } else {
-                    title
-                },
-                status: None,
-                summary: String::new(),
-                output: String::new(),
-                diff: None,
-            }),
+            } => {
+                // A helper's steps are marked as its own, numbered by helper, since several can
+                // work side by side and their steps interleave.
+                let title = match helper {
+                    Some(h) => format!("{HELPER_STEP_MARK}{} · {title}", self.helper_number(h)),
+                    None => title,
+                };
+                self.transcript.push(Kind::Step {
+                    id: step,
+                    title,
+                    status: None,
+                    summary: String::new(),
+                    output: String::new(),
+                    diff: None,
+                });
+            }
             Event::StepOutput { step, text } => {
                 self.transcript.update(
                     |k| matches!(k, Kind::Step { id, .. } if *id == step),
@@ -1216,6 +1237,44 @@ mod tests {
 
     fn pause_for_card() {
         std::thread::sleep(CARD_SETTLE + std::time::Duration::from_millis(50));
+    }
+
+    #[test]
+    fn each_helpers_steps_share_a_number() {
+        let mut app = App::new("m".into(), false);
+        for (step, helper) in [("s1", "h_a"), ("s2", "h_b"), ("s3", "h_a")] {
+            app.on_event(Event::StepStarted {
+                turn: "t".into(),
+                step: step.into(),
+                tool: "read_file".into(),
+                title: "Reading".into(),
+                helper: Some(helper.into()),
+            });
+        }
+        let title_of = |app: &mut App, want: &str| {
+            let mut found = String::new();
+            app.transcript.update(
+                |k| matches!(k, Kind::Step { id, .. } if id == want),
+                |k| {
+                    if let Kind::Step { title, .. } = k {
+                        found = title.clone();
+                    }
+                },
+            );
+            found
+        };
+        assert_eq!(
+            title_of(&mut app, "s1"),
+            format!("{HELPER_STEP_MARK}1 · Reading")
+        );
+        assert_eq!(
+            title_of(&mut app, "s2"),
+            format!("{HELPER_STEP_MARK}2 · Reading")
+        );
+        assert_eq!(
+            title_of(&mut app, "s3"),
+            format!("{HELPER_STEP_MARK}1 · Reading")
+        );
     }
 
     #[test]

@@ -26,6 +26,12 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
   (`program/whisper`), Piper reads aloud (`program/piper`) and a Stable Diffusion web UI makes
   pictures (`program/sd-webui`). "Found on this PC" in Settings → Providers shows what's
   installed and what's missing; Thrall never downloads or installs them itself.
+- A new project gets its own folder inside the working folder, even a one-file script.
+- The terminal catches up with the desktop's settings screens: `/settings` shows every setting
+  and changes one (`/settings agent.verify true`), `/skills` and `/skill <name>` show skills
+  (with `safe` for a safer version and `remove` to delete one), `/lessons` lists and forgets what
+  Thrall learned from corrections, and `/group <name>` puts a session in a group. Each helper's
+  steps are numbered, so helpers working side by side can be told apart.
 
 ### Fixed
 
@@ -41,6 +47,7 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 - Updated async-executor to 1.14.1: 1.14.0 was withdrawn by its maintainers for a
   use-after-free.
+
 ## [0.2.0] - 2026-11-02
 
 Thrall learns, asks, and gets a personality.
