@@ -79,6 +79,7 @@ fn request() -> ChatRequest {
         messages: vec![ChatMessage::new(ChatRole::User, "hello")],
         max_tokens: 16,
         tools: Vec::new(),
+        thinking: None,
     }
 }
 

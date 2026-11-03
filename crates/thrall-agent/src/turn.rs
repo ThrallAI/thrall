@@ -34,7 +34,7 @@ use thrall_tools::Cancel;
 use crate::checks::{self, Track};
 use crate::constants::{
     CHECK_PREFIX, CHECKING_NOTICE, COMPACTED_NOTICE, CUT_OFF_NOTICE, CUT_OFF_NUDGE,
-    DELTA_FLUSH_INTERVAL, DESCRIBED_MARK, EMPTY_REPLY_NOTICE, EMPTY_REPLY_NUDGE,
+    CUT_OFF_THINKING, DELTA_FLUSH_INTERVAL, DESCRIBED_MARK, EMPTY_REPLY_NOTICE, EMPTY_REPLY_NUDGE,
     EPISODE_SOURCE_MAX_CHARS, FINISH_LENGTH, HAND_OFF, HOME_NOTE, LOW_CREDIT_NOTICE,
     LOW_CREDIT_USD, MAX_MODEL_CALLS_PER_TURN, PICTURE_FAILED_MARK, PICTURE_MAX_BYTES,
     PICTURES_PER_REQUEST, PLAN_QUESTION_MAX_CHARS, SCANNED_PDF_MAX_BYTES, SESSION_TITLE_MAX_CHARS,
@@ -468,6 +468,7 @@ impl<'a> Emitter<'a> {
             messages: vec![message],
             max_tokens,
             tools: Vec::new(),
+            thinking: None,
         };
         let mut described = String::new();
         let mut usage = Usage::default();
@@ -676,6 +677,8 @@ async fn run_turn(
     let mut interrupted = false;
     // An empty final reply is sent back once for a summary.
     let mut asked_for_reply = false;
+    // Set once a reply is cut off before saying anything: the model then thinks less.
+    let mut thinking = None;
     let mut track = Track::default();
     track.look_only = split.is_some();
     let mut calls = 0;
@@ -743,6 +746,7 @@ async fn run_turn(
             messages,
             max_tokens: state.config.provider.max_tokens,
             tools: tools.clone(),
+            thinking,
         };
         let outcome = stream_call(&emitter, state, &turn_id, request, &cancel).await?;
         if let Some(scale) = estimated.and_then(|e| {
@@ -818,6 +822,7 @@ async fn run_turn(
             if !asked_for_reply {
                 asked_for_reply = true;
                 let nudge = if outcome.cut_off {
+                    thinking = Some(CUT_OFF_THINKING);
                     CUT_OFF_NUDGE
                 } else {
                     EMPTY_REPLY_NUDGE
@@ -1560,6 +1565,7 @@ async fn name_session(
         )],
         max_tokens: TITLE_MAX_TOKENS,
         tools: Vec::new(),
+        thinking: None,
     };
     let mut text = String::new();
     let mut usage = Usage::default();

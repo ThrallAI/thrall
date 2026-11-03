@@ -125,6 +125,10 @@ pub struct ChatRequest {
     pub max_tokens: u32,
     /// Tools the model may call (empty = none).
     pub tools: Vec<ToolSpec>,
+    /// How hard a model that thinks before replying should think ("low", "medium", "high"), or
+    /// `None` to leave it to the model. Its thinking counts toward `max_tokens`. Only OpenRouter
+    /// is sent it; it also turns thinking on for a model that can think but doesn't by default.
+    pub thinking: Option<&'static str>,
 }
 
 /// A piece of a tool call as it streams in. Pieces with the same `index` belong to one call: the

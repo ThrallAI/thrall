@@ -200,6 +200,7 @@ async fn listen_once(
         messages: vec![message],
         max_tokens: TRANSCRIPT_MAX_TOKENS,
         tools: Vec::new(),
+        thinking: None,
     };
     let mut text = String::new();
     let mut usage = Usage::default();

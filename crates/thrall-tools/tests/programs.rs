@@ -94,6 +94,7 @@ async fn programs_refuse_what_they_cant_do() {
             messages: vec![ChatMessage::new(ChatRole::User, "hi")],
             max_tokens: 10,
             tools: Vec::new(),
+            thinking: None,
         })
         .next()
         .await

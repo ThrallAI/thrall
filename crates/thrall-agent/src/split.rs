@@ -204,6 +204,7 @@ pub(crate) async fn ask(
         ],
         max_tokens: SPLIT_ASK_MAX_TOKENS,
         tools: Vec::new(),
+        thinking: None,
     };
     let mut answer = String::new();
     let mut usage = Usage::default();

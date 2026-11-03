@@ -130,6 +130,7 @@ async fn summarise(
         ],
         max_tokens: COMPACT_SUMMARY_MAX_TOKENS,
         tools: Vec::new(),
+        thinking: None,
     };
     let mut summary = String::new();
     let mut usage = Usage::default();
@@ -240,6 +241,7 @@ async fn remember_facts(
         ],
         max_tokens: FACTS_MAX_TOKENS,
         tools: Vec::new(),
+        thinking: None,
     };
     let mut answer = String::new();
     let mut usage = Usage::default();

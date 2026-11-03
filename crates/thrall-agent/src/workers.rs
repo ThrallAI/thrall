@@ -269,6 +269,7 @@ pub(crate) async fn run_helper(
             messages: messages.clone(),
             max_tokens: state.config.provider.max_tokens,
             tools: tools.clone(),
+            thinking: None,
         };
         let mut text = String::new();
         let mut calls = ToolCallAssembler::default();

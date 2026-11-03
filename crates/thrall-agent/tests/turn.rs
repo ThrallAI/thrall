@@ -3066,6 +3066,15 @@ async fn a_reply_cut_off_at_its_length_limit_is_asked_for_smaller_steps() {
             .any(|m| m.content.contains("Your last reply was empty")),
         "not the summary request"
     );
+    assert_eq!(
+        seen[0].thinking, None,
+        "the model thinks as it likes at first"
+    );
+    assert_eq!(
+        seen[1].thinking,
+        Some("low"),
+        "then less, so it has room to reply"
+    );
 }
 
 #[tokio::test]

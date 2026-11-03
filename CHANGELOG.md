@@ -12,7 +12,10 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 - A reply cut off at its length limit before saying anything is no longer asked the same way
   again (which ran out again): Thrall tells the model it was cut off and to work in smaller
   steps. A new install lets a reply run to 16,384 tokens instead of 8,192 (Settings → Models, or
-  `/settings provider.max_tokens <number>`).
+  `/settings provider.max_tokens <number>` in the terminal).
+- A model that thinks before replying (such as DeepSeek) could spend the whole length limit
+  thinking and come back with nothing, again and again. Once that happens, Thrall asks it to think
+  less for the rest of the task, so it has room to act (OpenRouter only).
 
 ## [0.2.0] - 2026-11-03
 

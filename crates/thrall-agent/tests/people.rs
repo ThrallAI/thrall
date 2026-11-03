@@ -183,6 +183,7 @@ async fn a_person_uses_their_own_key_model_and_limit() {
         messages: vec![ChatMessage::new(ChatRole::User, "hi")],
         max_tokens: 10,
         tools: Vec::new(),
+        thinking: None,
     });
     assert!(matches!(
         direct.next().await,
@@ -247,6 +248,7 @@ async fn a_person_uses_their_own_key_model_and_limit() {
         messages: vec![ChatMessage::new(ChatRole::User, "hi")],
         max_tokens: 10,
         tools: Vec::new(),
+        thinking: None,
     });
     assert!(matches!(
         direct.next().await,
