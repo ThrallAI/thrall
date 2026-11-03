@@ -8,6 +8,7 @@ pub mod client;
 pub mod constants;
 pub mod markdown;
 pub mod plain;
+pub mod screens;
 pub mod theme;
 pub mod transcript;
 
@@ -554,6 +555,9 @@ async fn run_command(client: &Client, app: &mut App, name: &str, args: &str) -> 
     }
     if name == "rewind" {
         return rewind(client, app, args).await;
+    }
+    if screens::run(client, app, name, args).await? {
+        return Ok(());
     }
     if name == "forget" {
         let fact = args.trim();
