@@ -7,6 +7,10 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-04
+
+Fixes for long jobs that stopped with an empty, cut-off reply, and the Intel Mac installer is back.
+
 ### Fixed
 
 - A reply cut off at its length limit before saying anything is no longer asked the same way
@@ -16,6 +20,7 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 - A model that thinks before replying (such as DeepSeek) could spend the whole length limit
   thinking and come back with nothing, again and again. Once that happens, Thrall asks it to think
   less for the rest of the task, so it has room to act (OpenRouter only).
+- Both Mac installers are built again (0.2.0 came without the Intel one).
 
 ## [0.2.0] - 2026-11-03
 
@@ -110,6 +115,7 @@ The first public preview.
 - First-run key setup in the desktop app, a welcome screen and a one-minute tour.
 - Installers built by CI for every release, with `SHA256SUMS.txt`.
 
-[Unreleased]: https://github.com/ThrallAI/thrall/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/ThrallAI/thrall/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/ThrallAI/thrall/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ThrallAI/thrall/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ThrallAI/thrall/releases/tag/v0.1.0

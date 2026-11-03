@@ -175,7 +175,7 @@ export class Engine {
       this.send({
         type: "hello",
         protocols: [PROTOCOL_VERSION],
-        client: { kind: CLIENT_KIND, name: CLIENT_NAME, version: "0.2.0" },
+        client: { kind: CLIENT_KIND, name: CLIENT_NAME, version: "0.2.1" },
         token: this.where.token,
       })
         .then((reply) => {
