@@ -7253,6 +7253,7 @@ dependencies = [
  "anstream",
  "anyhow",
  "clap",
+ "embed-resource",
  "reqwest",
  "rpassword",
  "serde_json",
