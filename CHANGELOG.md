@@ -16,6 +16,10 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
   one last time.
 - Settings → Thrall's folders shows the working folder and the data folder, each with
   an Open button.
+- `thrall remove-everything` removes Thrall's data folder, its keys and starting at sign-in, for
+  when you're done with Thrall. It asks you to type `remove everything` first, only runs with
+  Thrall stopped, and keeps your working folder. The README says how to update, uninstall and
+  remove everything.
 - The welcome screen shows where Thrall puts what it makes for you, with Open and Change.
 
 ### Changed
@@ -27,6 +31,10 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
   so projects and build folders aren't uploaded and locked mid-build. A `Documents\Thrall` that's
   already there stays in use.
 - "New folders go in" is now "Thrall's working folder", and Home uses it too.
+- Uninstalling on Windows also stops Thrall starting at sign-in. Installing a new version over an
+  old one keeps it on.
+- The welcome screen says plainly that Thrall works as you: it can change and delete your files
+  and run commands, and asks first unless you choose otherwise.
 
 ### Fixed
 

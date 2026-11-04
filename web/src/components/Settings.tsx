@@ -823,6 +823,12 @@ export function Settings({
                   Open
                 </button>
               </Row>
+              <Row
+                label="Remove everything"
+                hint="Quit Thrall (Quit and stop Thrall), then run this in a terminal. It deletes the data folder, Thrall's keys and starting at sign-in, and keeps the working folder"
+              >
+                <Value v="thrall remove-everything" mono />
+              </Row>
             </Group>
           ) : null}
           <Group

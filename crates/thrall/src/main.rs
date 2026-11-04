@@ -9,6 +9,7 @@ mod engine;
 mod key;
 mod logging;
 mod open;
+mod remove;
 mod run;
 mod serve;
 mod sessions;
@@ -91,6 +92,7 @@ async fn dispatch(cli: Cli) -> anyhow::Result<ExitCode> {
         Some(Command::Key(KeyCommand::Status)) => key::status(&config),
         Some(Command::Sessions { limit }) => sessions::list(&paths, limit).await,
         Some(Command::Open) => open::run(&paths, &config).await,
+        Some(Command::RemoveEverything) => remove::run(&paths, &config).await,
         Some(Command::Paths) => {
             println!("{} {}", constants::APP_NAME, env!("CARGO_PKG_VERSION"));
             println!("Data folder: {}", paths.home.display());

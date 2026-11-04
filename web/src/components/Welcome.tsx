@@ -70,7 +70,10 @@ export function Welcome({
         <h3 id="welcome-title">Welcome to Thrall{name ? `, ${name}` : ""}</h3>
         <ul>
           <li>Thrall is an AI agent that works on this computer: your files, commands and the web.</li>
-          <li>It asks before it changes anything, unless you choose a mode that doesn't.</li>
+          <li>
+            Thrall works as you: it can open, change and delete your files and run commands, and it asks first
+            unless you choose otherwise.
+          </li>
           <li>It thinks with your own AI key; your sessions stay on this computer.</li>
         </ul>
         {startup?.available ? (
