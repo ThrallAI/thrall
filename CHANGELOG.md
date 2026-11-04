@@ -9,6 +9,11 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ### Added
 
+- Updates in one click: the desktop app looks for a new version when it starts and every few
+  hours, says so once, and installs it when you click Update (Settings → Check for updates, or
+  the tray menu). No admin prompt, and Thrall restarts by itself. Updates are signed: one that
+  isn't signed with Thrall's key is refused. From 0.2.2 on; 0.2.1 and older are updated by hand
+  one last time.
 - Settings → Thrall's folders shows the working folder and the data folder, each with
   an Open button.
 - The welcome screen shows where Thrall puts what it makes for you, with Open and Change.

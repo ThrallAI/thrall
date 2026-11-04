@@ -98,6 +98,8 @@ pub async fn start(hub: Arc<Hub>, options: Options) -> Result<Running, ServerErr
             stop: tokio::sync::Notify::new(),
             remote: Arc::new(remote),
             signins: signin::SignIns::default(),
+            update_asked: tokio::sync::watch::Sender::new(0),
+            desktops: std::sync::atomic::AtomicUsize::new(0),
         }),
         origins: Arc::new(origins),
     };

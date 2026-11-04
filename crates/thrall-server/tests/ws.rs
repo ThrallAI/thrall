@@ -644,6 +644,28 @@ async fn engine_stop_is_acknowledged() {
 }
 
 #[tokio::test]
+async fn update_now_reaches_the_desktop_app() {
+    let (url, _hub) = engine(vec![]).await;
+    let mut web = Client::connect(&url, ClientKind::Web).await;
+    assert!(
+        matches!(
+            web.request(Request::UpdateInstall {}).await,
+            Reply::Error {
+                code: ErrorCode::Invalid,
+                ..
+            }
+        ),
+        "no desktop app to install it"
+    );
+    let mut desktop = Client::connect(&url, ClientKind::Desktop).await;
+    assert_eq!(web.request(Request::UpdateInstall {}).await, Reply::Ack {});
+    let seen = desktop
+        .events_until(|e| matches!(e, Event::UpdateRequested {}))
+        .await;
+    assert!(matches!(seen.last(), Some(Event::UpdateRequested {})));
+}
+
+#[tokio::test]
 async fn home_is_built_in_reused_and_kept_out_of_the_list() {
     let (url, hub) = engine(vec![reply("Hello from Home")]).await;
     let mut c = Client::connect(&url, ClientKind::Web).await;

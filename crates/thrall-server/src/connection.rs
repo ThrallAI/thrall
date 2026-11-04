@@ -46,6 +46,10 @@ pub struct Shared {
     pub remote: Arc<crate::remote::Remote>,
     /// Sign-in links and signed-in browsers.
     pub signins: crate::signin::SignIns,
+    /// Bumped by `update.install`; the owner's desktop app hears it and installs the update.
+    pub update_asked: tokio::sync::watch::Sender<u64>,
+    /// The owner's desktop apps connected now (`update.install` needs one).
+    pub desktops: AtomicUsize,
 }
 
 /// Counts a connection for as long as it lives.
@@ -127,6 +131,10 @@ where
     };
     let mut bus = shared.hub.subscribe();
     let mut signed_out = shared.signins.signed_out.subscribe();
+    let owners_desktop = kind == ClientKind::Desktop
+        && conn.person.role == thrall_core::constants::person_role::OWNER;
+    let _desktop = owners_desktop.then(|| Counted::new(&shared.desktops));
+    let mut update_asked = shared.update_asked.subscribe();
     let mut heard = Instant::now();
     let mut check = tokio::time::interval(SILENCE_CHECK);
     loop {
@@ -150,6 +158,14 @@ where
                 }
                 Err(RecvError::Closed) => break,
             },
+            Ok(()) = update_asked.changed(), if owners_desktop => {
+                vec![ServerFrame::Event(EventFrame::new(
+                    "",
+                    None,
+                    now_ms(),
+                    Event::UpdateRequested {},
+                ))]
+            }
             _ = signed_out.changed() => {
                 if !conn.still_signed_in().await {
                     tracing::info!(client = kind.as_str(), "browser signed out; closing");
@@ -686,6 +702,18 @@ impl Connection {
                 }
                 Request::StartupGet {} | Request::StartupSet { .. } => {
                     vec![startup(id, &request)]
+                }
+                Request::UpdateInstall {} => {
+                    if self.shared.desktops.load(Ordering::SeqCst) == 0 {
+                        vec![error(
+                            id,
+                            ErrorCode::Invalid,
+                            "Updates install through Thrall's desktop app, and it isn't running.",
+                        )]
+                    } else {
+                        self.shared.update_asked.send_modify(|n| *n += 1);
+                        vec![reply(id, Reply::Ack {})]
+                    }
                 }
                 Request::FoldersGet {} => vec![reply(id, crate::folders::shown(&hub.state()))],
                 Request::FolderOpen { folder } => {
@@ -1437,6 +1465,7 @@ fn owner_only(request: &Request) -> bool {
         | Request::StartupSet { .. }
         | Request::FoldersGet {}
         | Request::FolderOpen { .. }
+        | Request::UpdateInstall {}
         | Request::EngineStop {}
         | Request::PhoneList {}
         | Request::PhonePair { .. }

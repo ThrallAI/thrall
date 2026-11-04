@@ -90,7 +90,31 @@ pub const DETACHED_FLAGS: u32 = 0x0000_0008 | 0x0000_0200;
 /// Menu item ids.
 pub const MENU_OPEN: &str = "open";
 pub const MENU_AUTOSTART: &str = "autostart";
+pub const MENU_UPDATE: &str = "update";
 pub const MENU_QUIT: &str = "quit";
+
+/// Updates: the first look after the app starts, then how often after that.
+pub const UPDATE_FIRST_LOOK: Duration = Duration::from_secs(120);
+pub const UPDATE_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+/// How long an update waits for the engine to stop before installing anyway.
+pub const UPDATE_ENGINE_STOP_WAIT: Duration = Duration::from_secs(20);
+/// The tray's update item, before and after a newer version is found ({version}).
+pub const UPDATE_CHECK_LABEL: &str = "Check for updates";
+pub const UPDATE_READY_LABEL: &str = "Update to Thrall {version}";
+/// Said once per new version ({version}).
+pub const UPDATE_READY_TITLE: &str = "Thrall {version} is ready";
+pub const UPDATE_READY_BODY: &str = "Click Update in Settings or the tray menu to install it. \
+Thrall restarts by itself.";
+pub const UPDATE_NONE: &str = "You have the newest version of Thrall.";
+pub const UPDATE_FROM_SOURCE: &str = "This copy of Thrall was built from source, so it doesn't \
+update itself.";
+pub const UPDATE_FAILED_TITLE: &str = "Thrall couldn't update";
+/// Asked when Thrall is in the middle of something.
+pub const UPDATE_TITLE: &str = "Update Thrall";
+pub const UPDATE_BUSY: &str = "Thrall is working on something right now. Update anyway? What \
+it's doing stops, and Thrall restarts in about a minute.";
+pub const UPDATE_NOW: &str = "Update now";
+pub const UPDATE_LATER: &str = "Later";
 
 /// Quit dialog buttons.
 pub const QUIT_STOP: &str = "Quit and stop Thrall";

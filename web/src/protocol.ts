@@ -220,6 +220,9 @@ export type RequestFrame = {
       type: "startup.set";
     }
   | {
+      type: "update.install";
+    }
+  | {
       type: "folders.get";
     }
   | {
@@ -1501,6 +1504,9 @@ export type EventFrame = {
        */
       text: string;
       type: "notice";
+    }
+  | {
+      type: "update.requested";
     }
   | {
       /**

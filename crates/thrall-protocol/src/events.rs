@@ -290,6 +290,10 @@ pub enum Event {
         /// Plain-language text.
         text: String,
     },
+    /// The owner asked for the newest version (`update.install`): the desktop app installs it.
+    /// Sent only to the owner's desktop app, with an empty `session`.
+    #[serde(rename = "update.requested")]
+    UpdateRequested {},
     /// Something failed.
     #[serde(rename = "error")]
     Error {
@@ -329,6 +333,7 @@ impl Event {
             Self::Status { .. } => "status",
             Self::MemorySaved { .. } => "memory.saved",
             Self::Notice { .. } => "notice",
+            Self::UpdateRequested {} => "update.requested",
             Self::Error { .. } => "error",
         }
     }
