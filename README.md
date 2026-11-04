@@ -97,10 +97,35 @@ address. (A built-in way to reach home is planned.)
 | | Windows | Linux | macOS |
 |---|---|---|---|
 | Settings, sessions, logs | `%APPDATA%\Thrall` | `~/.local/share/Thrall` | `~/Library/Application Support/Thrall` |
-| Sessions with no folder picked | `Documents\Thrall` | `~/Documents/Thrall` | `~/Documents/Thrall` |
+| Home and new folders (the working folder) | `Documents\Thrall` (`%USERPROFILE%\Thrall` when OneDrive syncs Documents) | `~/Documents/Thrall` | `~/Documents/Thrall` |
 | Your keys | Windows Credential Manager | Secret Service (GNOME Keyring, KWallet…) | Keychain |
 
-Set `THRALL_HOME` to keep everything in another folder.
+Set `THRALL_HOME` to keep everything in another folder. Settings → Thrall's folders opens them.
+
+## Updating and removing Thrall
+
+**Updating.** From 0.2.2, the desktop app tells you when a new version is out, and **Update** (in
+Settings → Check for updates, or the tray menu) installs it: no admin prompt, and Thrall restarts by
+itself. Updates are signed, and one that isn't signed with Thrall's key is refused. Copies older
+than 0.2.2 update by installing the new version over them. The `.deb` updates through your package
+manager.
+
+**Uninstalling** (Windows: Settings → Apps → Thrall; Linux: your package manager or delete the
+AppImage; macOS: drag Thrall to the Bin) removes the app and, on Windows, starting Thrall at
+sign-in. It **keeps** your data folder, your keys and your working folder, so reinstalling picks up
+where you left off.
+
+**Removing everything.** To take away your data and keys too, quit Thrall first (tray → Quit Thrall
+→ Quit and stop Thrall), then run this and type `remove everything` when it asks:
+
+```powershell
+& "$env:LOCALAPPDATA\Thrall\thrall.exe" remove-everything
+```
+
+On Linux and macOS it's `thrall remove-everything`. It deletes the data folder (settings,
+sessions, memory, logs), Thrall's keys and starting at sign-in, and keeps your working folder and
+the files in it. On Linux and macOS, remove Thrall's keys in your keychain app (listed under
+"Thrall"). Then uninstall the app as above.
 
 ## Troubleshooting
 

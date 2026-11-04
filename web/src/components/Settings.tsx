@@ -15,6 +15,7 @@ import {
   SETTINGS_SECTIONS,
   SIGN_IN_POLL_MS,
   SIGN_IN_WATCH_MS,
+  CLIENT_KIND,
   RELEASES_PAGE,
   STARTUP_LABEL,
   type SettingsSection,
@@ -251,11 +252,26 @@ export function Settings({
 }) {
   const [tour, setTour] = useState(tourOn);
   const [update, setUpdate] = useState<string | null>(null);
+  // A newer version found by Check for updates; the desktop app installs it in one click.
+  const [newer, setNewer] = useState<string | null>(null);
   const checkUpdate = () => {
     setUpdate("Checking…");
     newerRelease(version)
-      .then((newer) => setUpdate(newer ? `Version ${newer} is out. Download it from:` : "You have the newest version."))
+      .then((found) => {
+        setNewer(found);
+        if (!found) setUpdate("You have the newest version.");
+        else if (CLIENT_KIND === "desktop") setUpdate(`Version ${found} is out.`);
+        else setUpdate(`Version ${found} is out. Download it from:`);
+      })
       .catch(() => setUpdate("Couldn't reach GitHub to check. Try again later."));
+  };
+  // The desktop app downloads and installs it, then Thrall restarts by itself.
+  const installUpdate = () => {
+    setNewer(null);
+    setUpdate("Downloading the update. Thrall installs it and restarts by itself in a minute or two.");
+    engine
+      ?.request({ type: "update.install" })
+      .catch((e: unknown) => setUpdate(e instanceof Error ? e.message : String(e)));
   };
   const [section, setSection] = useState<SettingsSection>("general");
   const [shown, setShown] = useState<Shown | null>(null);
@@ -672,7 +688,14 @@ export function Settings({
             </Row>
             {update ? (
               <p className="th-set-status" role="status">
-                {update} {update.startsWith("Version") ? <code className="th-set-mono">{RELEASES_PAGE}</code> : null}
+                {update}{" "}
+                {newer && CLIENT_KIND === "desktop" ? (
+                  <button type="button" className="th-btn th-btn-primary" onClick={installUpdate}>
+                    Update now
+                  </button>
+                ) : update.endsWith("from:") ? (
+                  <code className="th-set-mono">{RELEASES_PAGE}</code>
+                ) : null}
               </p>
             ) : null}
           </Group>
@@ -799,6 +822,12 @@ export function Settings({
                 <button type="button" className="th-btn" onClick={() => openFolder("data")}>
                   Open
                 </button>
+              </Row>
+              <Row
+                label="Remove everything"
+                hint="Quit Thrall (Quit and stop Thrall), then run this in a terminal. It deletes the data folder, Thrall's keys and starting at sign-in, and keeps the working folder"
+              >
+                <Value v="thrall remove-everything" mono />
               </Row>
             </Group>
           ) : null}

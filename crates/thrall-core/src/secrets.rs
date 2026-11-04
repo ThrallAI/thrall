@@ -63,6 +63,39 @@ pub fn delete_named(name: &str) -> Result<bool, CoreError> {
     }
 }
 
+/// The names of every key Thrall has stored, when this system can list them (Windows Credential
+/// Manager can; elsewhere `None`, and the keychain app lists them under "Thrall").
+pub fn stored_names() -> Option<Vec<String>> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let out = std::process::Command::new(crate::constants::CREDENTIAL_LIST_EXE)
+        .arg("/list")
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| names_in_listing(&String::from_utf8_lossy(&out.stdout)))
+}
+
+/// Thrall's key names in `cmdkey /list` output: targets ending `.Thrall` exactly (other programs'
+/// entries, like the GitHub CLI's `gh:github.com:…`, are left alone).
+fn names_in_listing(listing: &str) -> Vec<String> {
+    let suffix = format!(".{KEYCHAIN_SERVICE}");
+    listing
+        .lines()
+        .filter_map(|line| {
+            line.trim()
+                .strip_prefix("Target:")?
+                .trim()
+                .strip_prefix(crate::constants::CREDENTIAL_TARGET_PREFIX)?
+                .strip_suffix(&suffix)
+                .filter(|name| valid_name(name))
+                .map(str::to_owned)
+        })
+        .collect()
+}
+
 /// The stored key for a provider, if there is one.
 pub fn get_key(provider: ProviderKind) -> Result<Option<String>, CoreError> {
     get_named(provider.as_str())
@@ -182,6 +215,20 @@ pub fn preview(key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_thralls_own_entries_are_listed() {
+        let listing = "Currently stored credentials:\n\n    \
+            Target: LegacyGeneric:target=gh:github.com:someone\n    Type: Generic\n    \
+            Target: LegacyGeneric:target=openrouter.Thrall\n    \
+            Target: LegacyGeneric:target=mcp-notion-1.Thrall\n    \
+            Target: LegacyGeneric:target=Some App.Thrall\n    \
+            Target: Domain:target=fal.Thrall\n";
+        assert_eq!(
+            names_in_listing(listing),
+            vec!["openrouter", "mcp-notion-1"]
+        );
+    }
 
     #[test]
     fn preview_hides_the_middle() {

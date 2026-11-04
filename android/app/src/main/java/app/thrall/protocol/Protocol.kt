@@ -656,6 +656,8 @@ object ProtocolTypes {
         "provider.test", "local.find",
         // Thrall's folders open in the computer's file manager, from its Settings.
         "folders.get", "folder.open",
+        // Updates install through the computer's desktop app, from its Settings or tray.
+        "update.install",
     )
     val repliesUsed = setOf(
         "welcome", "pong", "ack", "error", "session.opened", "session.listed", "home.shown", "folder.listed",
@@ -671,5 +673,5 @@ object ProtocolTypes {
         "question.resolved", "session.updated",
         "status", "notice", "error", "agent.completed",
     )
-    val eventsLater = setOf("tasks.updated", "agent.started", "memory.saved")
+    val eventsLater = setOf("tasks.updated", "agent.started", "memory.saved", "update.requested")
 }

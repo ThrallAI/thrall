@@ -10,16 +10,17 @@
 mod constants;
 mod engine;
 mod mark;
+mod update;
 mod watch;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::time::Instant;
 
 use chrono::Timelike;
 use thrall_core::Config;
-use thrall_protocol::Request;
+use thrall_protocol::{Event, Request};
 
 use tauri::image::Image;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
@@ -34,10 +35,10 @@ use tokio::sync::mpsc;
 
 use crate::constants::{
     DEFAULT_LOG_LEVEL, DESKTOP_QUERY, DONE_HOLD, HIDDEN_ARG, LOG_FILE_PREFIX, LOG_LEVEL_ENV,
-    MAIN_WINDOW, MENU_AUTOSTART, MENU_OPEN, MENU_QUIT, NOTE_TAP, NOTES_REMEMBERED, OPEN_SESSION_JS,
-    QUIT_CANCEL, QUIT_KEEP, QUIT_PHONES_WAIT, QUIT_STOP, RECONNECT_DELAY, SETUP_RECHECK,
-    SHORTCUT_RECHECK, SHORTCUT_TAKEN, SHORTCUT_TAKEN_TITLE, SHOW_SETUP_JS, TITLE_LOOKUP,
-    TRAY_FRAME, TRAY_ID, TRAY_PX,
+    MAIN_WINDOW, MENU_AUTOSTART, MENU_OPEN, MENU_QUIT, MENU_UPDATE, NOTE_TAP, NOTES_REMEMBERED,
+    OPEN_SESSION_JS, QUIT_CANCEL, QUIT_KEEP, QUIT_PHONES_WAIT, QUIT_STOP, RECONNECT_DELAY,
+    SETUP_RECHECK, SHORTCUT_RECHECK, SHORTCUT_TAKEN, SHORTCUT_TAKEN_TITLE, SHOW_SETUP_JS,
+    TITLE_LOOKUP, TRAY_FRAME, TRAY_ID, TRAY_PX, UPDATE_CHECK_LABEL,
 };
 use crate::engine::Incoming;
 use crate::mark::Activity;
@@ -62,6 +63,12 @@ struct Shared {
     key_saved: tokio::sync::Notify,
     /// Quit waiting to hear how many phones are connected.
     quit_phones: Mutex<Option<tokio::sync::oneshot::Sender<usize>>>,
+    /// The tray's update item (it names a newer version once one is found).
+    update_item: Mutex<Option<MenuItem<tauri::Wry>>>,
+    /// The newer version on offer, once found.
+    update_offered: Mutex<Option<String>>,
+    /// An update is downloading or installing: the engine isn't started again meanwhile.
+    updating: AtomicBool,
 }
 
 /// Whether the AI key Thrall needs is there (in the environment or the system keychain).
@@ -204,6 +211,7 @@ fn main() {
         }))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             // The shortcut itself comes from the settings (follow_shortcut).
             tauri_plugin_global_shortcut::Builder::new()
@@ -232,6 +240,7 @@ fn main() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(run_engine(handle.clone()));
             tauri::async_runtime::spawn(follow_shortcut(handle.clone()));
+            tauri::async_runtime::spawn(update::watch(handle.clone()));
             tauri::async_runtime::spawn(animate_tray(handle));
             Ok(())
         })
@@ -292,12 +301,17 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     if let Ok(mut item) = app.state::<Shared>().autostart_item.lock() {
         *item = Some(autostart.clone());
     }
+    let update = MenuItem::with_id(app, MENU_UPDATE, UPDATE_CHECK_LABEL, true, None::<&str>)?;
+    if let Ok(mut item) = app.state::<Shared>().update_item.lock() {
+        *item = Some(update.clone());
+    }
     let menu = Menu::with_items(
         app,
         &[
             &open,
             &PredefinedMenuItem::separator(app)?,
             &autostart,
+            &update,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, MENU_QUIT, "Quit Thrall…", true, None::<&str>)?,
         ],
@@ -317,6 +331,9 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                     tracing::warn!(%e, "couldn't change starting with Windows");
                 }
                 refresh_autostart(app);
+            }
+            MENU_UPDATE => {
+                tauri::async_runtime::spawn(update::tray_clicked(app.clone()));
             }
             MENU_QUIT => start_quit(app),
             _ => {}
@@ -469,6 +486,11 @@ async fn run_engine(app: AppHandle) {
         }
     }
     loop {
+        // The installer is about to replace the engine: don't start it again.
+        if app.state::<Shared>().updating.load(Ordering::SeqCst) {
+            tokio::time::sleep(RECONNECT_DELAY).await;
+            continue;
+        }
         match engine::connect_or_start(&paths).await {
             Ok(mut conn) => {
                 if let Ok(mut e) = app.state::<Shared>().engine.lock() {
@@ -500,6 +522,13 @@ async fn run_engine(app: AppHandle) {
                         if let Some(tx) = wait {
                             let _ = tx.send(n);
                         }
+                        continue;
+                    }
+                    // The owner pressed Update in Settings.
+                    if let Incoming::Event(frame) = &msg
+                        && matches!(frame.event, Event::UpdateRequested {})
+                    {
+                        tauri::async_runtime::spawn(update::install(app.clone()));
                         continue;
                     }
                     let (note, unknown) = match app.state::<Shared>().watch.lock() {

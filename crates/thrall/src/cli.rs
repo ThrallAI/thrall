@@ -52,6 +52,9 @@ pub enum Command {
     Paths,
     /// Open Thrall in your browser, signed in (starts the engine if it isn't running).
     Open,
+    /// Remove Thrall's data folder, keys and start-at-sign-in (asks first; your working folder
+    /// stays). Uninstall the app itself afterwards.
+    RemoveEverything,
     /// Run the engine that the web app, desktop app and terminal connect to.
     #[command(alias = "serve")]
     Engine(EngineArgs),

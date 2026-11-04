@@ -72,6 +72,12 @@ pub const KEYCHAIN_REF_PREFIX: &str = "keychain:";
 /// Service name used for every entry Thrall keeps in the OS keychain.
 pub const KEYCHAIN_SERVICE: &str = "Thrall";
 
+/// Windows' program that lists Credential Manager entries (`/list`), for `stored_names`.
+pub const CREDENTIAL_LIST_EXE: &str = "cmdkey";
+
+/// How Credential Manager names one of Thrall's keys: `LegacyGeneric:target=<name>.Thrall`.
+pub const CREDENTIAL_TARGET_PREFIX: &str = "LegacyGeneric:target=";
+
 /// Most characters kept in one keychain entry for a long secret (Windows allows 1,280 UTF-16
 /// characters per entry; a sign-in's tokens can be longer, so they're split across entries).
 pub const LONG_SECRET_CHUNK_CHARS: usize = 1_000;

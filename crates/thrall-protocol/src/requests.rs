@@ -216,6 +216,11 @@ pub enum Request {
         /// Start at sign-in.
         on: bool,
     },
+    /// Install the newest version of Thrall: the desktop app on the engine's computer checks,
+    /// downloads and installs it, and Thrall restarts. Answered by `ack` once the desktop app has
+    /// been asked (or `error {invalid}` when it isn't running).
+    #[serde(rename = "update.install")]
+    UpdateInstall {},
     /// Where Thrall keeps its things on the engine's computer. Answered by `folders.shown`.
     #[serde(rename = "folders.get")]
     FoldersGet {},
@@ -650,6 +655,7 @@ impl Request {
             Self::HeartbeatRun {} => "heartbeat.run",
             Self::StartupGet {} => "startup.get",
             Self::StartupSet { .. } => "startup.set",
+            Self::UpdateInstall {} => "update.install",
             Self::FoldersGet {} => "folders.get",
             Self::FolderOpen { .. } => "folder.open",
             Self::PersonalityGet {} => "personality.get",

@@ -512,6 +512,8 @@ impl App {
             }),
             // A check-in's message is already here.
             Event::AgentCompleted { agent, .. } if agent == CHECK_IN_AGENT => {}
+            // Only the desktop app installs updates.
+            Event::UpdateRequested {} => {}
             Event::AgentCompleted {
                 title,
                 status,

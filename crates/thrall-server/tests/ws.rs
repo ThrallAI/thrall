@@ -565,6 +565,8 @@ async fn the_page_has_safe_headers_and_never_the_token() {
     assert!(!page.contains(TOKEN), "the token must not be in the page");
     let lower = page.to_lowercase();
     assert!(lower.contains("content-security-policy"));
+    // Connections go back to the engine, and to GitHub's API only for Check for updates.
+    assert!(lower.contains("connect-src 'self' https://api.github.com;"));
     assert!(lower.contains("x-frame-options: deny"));
     // Paths that aren't files are the app's one page too.
     assert!(
@@ -641,6 +643,28 @@ async fn engine_stop_is_acknowledged() {
     let (url, _hub) = engine(vec![reply("x")]).await;
     let mut c = Client::connect(&url, ClientKind::Desktop).await;
     assert_eq!(c.request(Request::EngineStop {}).await, Reply::Ack {});
+}
+
+#[tokio::test]
+async fn update_now_reaches_the_desktop_app() {
+    let (url, _hub) = engine(vec![]).await;
+    let mut web = Client::connect(&url, ClientKind::Web).await;
+    assert!(
+        matches!(
+            web.request(Request::UpdateInstall {}).await,
+            Reply::Error {
+                code: ErrorCode::Invalid,
+                ..
+            }
+        ),
+        "no desktop app to install it"
+    );
+    let mut desktop = Client::connect(&url, ClientKind::Desktop).await;
+    assert_eq!(web.request(Request::UpdateInstall {}).await, Reply::Ack {});
+    let seen = desktop
+        .events_until(|e| matches!(e, Event::UpdateRequested {}))
+        .await;
+    assert!(matches!(seen.last(), Some(Event::UpdateRequested {})));
 }
 
 #[tokio::test]

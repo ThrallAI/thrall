@@ -721,6 +721,7 @@ async fn a_member_cant_reach_the_owners_sessions_files_or_settings() {
         Request::StartupGet {},
         Request::StartupSet { on: false },
         Request::FoldersGet {},
+        Request::UpdateInstall {},
         Request::FolderOpen {
             folder: thrall_protocol::ThrallFolder::Data,
         },

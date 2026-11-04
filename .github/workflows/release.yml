@@ -3,6 +3,10 @@ name: Release
 # Builds the installers on each system and attaches them, with checksums, to a draft release for
 # the tag. Nothing is published until the release is reviewed and published by hand. The phone
 # app is attached by hand too: its signing key never leaves the owner's computer.
+#
+# Updates: each system's update file is signed with Thrall's update key (the repository's
+# TAURI_SIGNING_PRIVATE_KEY secrets), and latest.json lists them. Installed copies read
+# latest.json from the newest published release and refuse a file whose signature doesn't match.
 
 on:
   push:
@@ -36,11 +40,11 @@ jobs:
           - name: macOS (Apple silicon)
             os: macos-15-intel
             target: aarch64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
           - name: macOS (Intel)
             os: macos-15-intel
             target: x86_64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -72,6 +76,9 @@ jobs:
           cp "target/${{ matrix.target }}/release/thrall$ext" "desktop/binaries/thrall-${{ matrix.target }}$ext"
       - name: Desktop app and installer
         working-directory: desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           npm ci
           npx tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config tauri.bundle.json
@@ -80,7 +87,13 @@ jobs:
         run: |
           mkdir -p out
           bundle="target/${{ matrix.target }}/release/bundle"
-          find "$bundle" -maxdepth 2 -type f \( -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.dmg' \) -exec cp {} out/ \;
+          find "$bundle" -maxdepth 2 -type f \( -name '*.exe' -o -name '*.exe.sig' -o -name '*.AppImage' -o -name '*.AppImage.sig' -o -name '*.deb' -o -name '*.dmg' \) -exec cp {} out/ \;
+          # The Mac update file has the same name for both chips: name it after its target.
+          for f in "$bundle"/macos/*.app.tar.gz; do
+            [ -e "$f" ] || continue
+            cp "$f" "out/Thrall_${{ matrix.target }}.app.tar.gz"
+            cp "$f.sig" "out/Thrall_${{ matrix.target }}.app.tar.gz.sig"
+          done
           ls -l out
       - uses: actions/upload-artifact@v7
         with:
@@ -112,6 +125,8 @@ jobs:
           ' CHANGELOG.md > notes.md
           if [ ! -s notes.md ]; then echo "CHANGELOG.md has no section for $version"; exit 1; fi
           cat notes.md
+      - name: Update list (latest.json)
+        run: python3 scripts/latest-json.py out "$GITHUB_REF_NAME" notes.md
       # Not a pre-release: the apps' update check only sees full releases.
       - uses: softprops/action-gh-release@v3
         with:
