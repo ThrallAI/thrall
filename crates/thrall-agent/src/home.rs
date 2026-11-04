@@ -2,15 +2,20 @@
 //! It's kept in pages: each page is a session marked with the local day it started, and a fresh
 //! page starts each day or week (`home.fresh_start`). Earlier pages stay readable for
 //! `home.keep_days`, then they're deleted. Home pages never appear in the session list. Home works
-//! in its own folder inside the data folder, away from Thrall's database and settings.
+//! in its own folder in Thrall's working folder (`Documents\Thrall\Home`), where what it makes is
+//! easy to find; before 0.2.2 that folder was inside the data folder, and it's moved on first use.
+
+use std::path::{Path, PathBuf};
 
 use chrono::{Datelike, Local, NaiveDate};
 use thrall_core::config::FreshStart;
-use thrall_core::constants::HOME_DIR;
+use thrall_core::constants::{HOME_DIR, HOME_FOLDER};
 use thrall_core::ids::now_ms;
 use thrall_store::Session;
 
-use crate::constants::{HOME_DATE_FORMAT, HOME_DAY_FORMAT, HOME_TITLE, MS_PER_DAY};
+use crate::constants::{
+    HOME_DATE_FORMAT, HOME_DAY_FORMAT, HOME_NAME_KEEPS, HOME_TITLE, MS_PER_DAY,
+};
 use crate::error::AgentError;
 use crate::session;
 use crate::state::AppState;
@@ -44,13 +49,86 @@ pub fn title(day: NaiveDate, fresh: FreshStart) -> String {
     }
 }
 
+/// A person's name as a folder name: letters, digits, spaces, `-` and `_` only.
+pub fn folder_name(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_alphanumeric() || HOME_NAME_KEEPS.contains(c))
+        .collect::<String>()
+        .trim()
+        .to_owned()
+}
+
+/// Where Home works for whoever `state` acts for: `Home` in Thrall's working folder for the owner,
+/// `Home - <name>` beside it for anyone else. With no working folder, inside the person's data
+/// folder (as before 0.2.2).
+async fn folder(state: &AppState) -> Result<Option<PathBuf>, AgentError> {
+    let Some(work) = &state.work_dir else {
+        return Ok(state.my_dir().map(|d| d.join(HOME_DIR)));
+    };
+    if state.user_id == state.owner_id {
+        return Ok(Some(work.join(HOME_FOLDER)));
+    }
+    let name = state
+        .store
+        .get_person(&state.user_id)
+        .await?
+        .map(|p| folder_name(&p.name))
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| state.user_id.clone());
+    Ok(Some(work.join(format!("{HOME_FOLDER} - {name}"))))
+}
+
+/// Move Home's old folder in the data folder to `to`, and point the `pages` that worked there at
+/// it. Whether it moved: it stays (and those pages keep working there) when `to` is already
+/// there, a page is busy, or the move fails (another drive, a file open).
+async fn move_old_folder(
+    state: &AppState,
+    pages: &[Session],
+    to: &Path,
+) -> Result<bool, AgentError> {
+    let Some(old) = state.my_dir().map(|d| d.join(HOME_DIR)) else {
+        return Ok(false);
+    };
+    if old == to || !old.is_dir() || to.exists() || pages.iter().any(|p| state.is_running(&p.id)) {
+        return Ok(false);
+    }
+    if let Some(parent) = to.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        tracing::warn!(%e, "couldn't make the folder for Home's files");
+        return Ok(false);
+    }
+    if let Err(e) = std::fs::rename(&old, to) {
+        tracing::warn!(%e, "couldn't move Home's folder out of the data folder");
+        return Ok(false);
+    }
+    let (old, to) = (old.display().to_string(), to.display().to_string());
+    for page in pages
+        .iter()
+        .filter(|p| p.workspace.as_deref() == Some(old.as_str()))
+    {
+        state
+            .store
+            .set_session_workspace(&state.user_id, &page.id, &to)
+            .await?;
+    }
+    tracing::info!(to, "moved Home's folder out of the data folder");
+    Ok(true)
+}
+
 /// The page to use now, starting a fresh one when the last has had its day (one at a time, so
 /// only one fresh page starts).
 pub async fn current(state: &AppState) -> Result<Session, AgentError> {
     let _one_at_a_time = state.home_lock.lock().await;
     let fresh = state.config.home.fresh_start;
     let today = today();
-    let pages = state.store.home_sessions(&state.user_id).await?;
+    let dir = folder(state).await?;
+    let mut pages = state.store.home_sessions(&state.user_id).await?;
+    if let Some(dir) = &dir
+        && move_old_folder(state, &pages, dir).await?
+    {
+        pages = state.store.home_sessions(&state.user_id).await?;
+    }
     if let Some(page) = pages.first()
         && page
             .home_day
@@ -73,8 +151,7 @@ pub async fn current(state: &AppState) -> Result<Session, AgentError> {
     let page = match pages.first().filter(|_| unused) {
         Some(unused) => unused.clone(),
         None => {
-            let workspace = state.my_dir().map(|d| {
-                let dir = d.join(HOME_DIR);
+            let workspace = dir.map(|dir| {
                 if let Err(e) = std::fs::create_dir_all(&dir) {
                     tracing::warn!(%e, "couldn't make Home's folder");
                 }

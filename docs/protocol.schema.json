@@ -1844,6 +1844,31 @@
           ]
         },
         {
+          "description": "Answer to `folders.get`.",
+          "type": "object",
+          "properties": {
+            "data": {
+              "description": "The data folder: settings, the database, logs (`%APPDATA%\\Thrall` on Windows).",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "folders.shown"
+            },
+            "work": {
+              "description": "Thrall's working folder, where Home and new folders go (`Documents\\Thrall`), if this\ncomputer has one.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        {
           "description": "Answer to `command.list`.",
           "type": "object",
           "properties": {
@@ -3097,6 +3122,37 @@
           "required": [
             "type",
             "on"
+          ]
+        },
+        {
+          "description": "Where Thrall keeps its things on the engine's computer. Answered by `folders.shown`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "folders.get"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Open one of Thrall's folders in the file manager on the engine's computer (the working\nfolder is made first if it isn't there yet). Answered by `ack`.",
+          "type": "object",
+          "properties": {
+            "folder": {
+              "description": "Which folder.",
+              "$ref": "#/$defs/ThrallFolder"
+            },
+            "type": {
+              "type": "string",
+              "const": "folder.open"
+            }
+          },
+          "required": [
+            "type",
+            "folder"
           ]
         },
         {
@@ -4491,6 +4547,21 @@
           "description": "Finished.",
           "type": "string",
           "const": "done"
+        }
+      ]
+    },
+    "ThrallFolder": {
+      "description": "One of Thrall's folders.",
+      "oneOf": [
+        {
+          "description": "The data folder: settings, the database, logs.",
+          "type": "string",
+          "const": "data"
+        },
+        {
+          "description": "The working folder: Home and new folders.",
+          "type": "string",
+          "const": "work"
         }
       ]
     },

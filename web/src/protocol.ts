@@ -220,6 +220,16 @@ export type RequestFrame = {
       type: "startup.set";
     }
   | {
+      type: "folders.get";
+    }
+  | {
+      /**
+       * Which folder.
+       */
+      folder: "data" | "work";
+      type: "folder.open";
+    }
+  | {
       type: "personality.get";
     }
   | {
@@ -779,6 +789,18 @@ export type ReplyFrame = {
        */
       on: boolean;
       type: "startup.shown";
+    }
+  | {
+      /**
+       * The data folder: settings, the database, logs (`%APPDATA%\Thrall` on Windows).
+       */
+      data: string;
+      type: "folders.shown";
+      /**
+       * Thrall's working folder, where Home and new folders go (`Documents\Thrall`), if this
+       * computer has one.
+       */
+      work?: string | null;
     }
   | {
       /**

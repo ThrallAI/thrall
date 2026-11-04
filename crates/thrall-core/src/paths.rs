@@ -4,7 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::constants::{
-    APP_DIR_NAME, CONFIG_FILE, DB_FILE, ENGINE_FILE, LOGS_DIR, TOKEN_FILE, WORK_DIR_NAME,
+    APP_DIR_NAME, CONFIG_FILE, DB_FILE, ENGINE_FILE, LOGS_DIR, SYNCED_FOLDER_VARS, TOKEN_FILE,
+    WORK_DIR_NAME,
 };
 use crate::error::CoreError;
 
@@ -59,12 +60,29 @@ impl Paths {
     }
 
     /// `Documents\Thrall`: a folder of its own for sessions started without one picked (from the
-    /// phone, say). Not created here.
+    /// phone, say) and for Home. When OneDrive syncs Documents it's `<home folder>\Thrall`
+    /// instead, unless `Documents\Thrall` is already there. Not created here.
     pub fn default_work_folder() -> Option<PathBuf> {
-        directories::UserDirs::new()
-            .and_then(|d| d.document_dir().map(Path::to_path_buf))
-            .or_else(Self::user_home)
-            .map(|d| d.join(WORK_DIR_NAME))
+        let documents =
+            directories::UserDirs::new().and_then(|d| d.document_dir().map(Path::to_path_buf));
+        let synced: Vec<PathBuf> = SYNCED_FOLDER_VARS
+            .iter()
+            .filter_map(std::env::var_os)
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .collect();
+        pick_work_folder(documents.as_deref(), Self::user_home().as_deref(), &synced)
+    }
+
+    /// Thrall's working folder: the `folders.new_in` setting (`set`) when there is one, else
+    /// [`Paths::default_work_folder`]. Not created here.
+    pub fn work_folder(set: &str) -> Option<PathBuf> {
+        let set = set.trim();
+        if set.is_empty() {
+            Self::default_work_folder()
+        } else {
+            Some(PathBuf::from(set))
+        }
     }
 
     /// Create the data and log folders if they don't exist yet. On Linux and macOS the data folder
@@ -90,6 +108,26 @@ impl Paths {
             })?;
         }
         Ok(())
+    }
+}
+
+/// `Documents\Thrall`, or `<home>\Thrall` when Documents is inside one of the `synced` folders and
+/// `Documents\Thrall` isn't there yet (an existing one keeps being used: sessions already work in
+/// it). Without a Documents folder, `<home>\Thrall`.
+fn pick_work_folder(
+    documents: Option<&Path>,
+    home: Option<&Path>,
+    synced: &[PathBuf],
+) -> Option<PathBuf> {
+    let in_home = home.map(|h| h.join(WORK_DIR_NAME));
+    let Some(documents) = documents else {
+        return in_home;
+    };
+    let in_documents = documents.join(WORK_DIR_NAME);
+    let is_synced = synced.iter().any(|s| documents.starts_with(s));
+    match in_home {
+        Some(in_home) if is_synced && !in_documents.is_dir() => Some(in_home),
+        _ => Some(in_documents),
     }
 }
 
@@ -130,5 +168,48 @@ mod tests {
         for p in [&paths.config_file, &paths.db_file, &paths.logs_dir] {
             assert!(p.starts_with("h"));
         }
+    }
+
+    #[test]
+    fn the_working_folder_stays_out_of_onedrive() {
+        let home = Path::new("h");
+        let synced = [PathBuf::from("h").join("OneDrive")];
+        let documents = home.join("OneDrive").join("Documents");
+        assert_eq!(
+            pick_work_folder(Some(&documents), Some(home), &synced),
+            Some(home.join(WORK_DIR_NAME)),
+            "synced Documents: the home folder instead"
+        );
+        let plain = home.join("Documents");
+        assert_eq!(
+            pick_work_folder(Some(&plain), Some(home), &synced),
+            Some(plain.join(WORK_DIR_NAME))
+        );
+        assert_eq!(
+            pick_work_folder(None, Some(home), &synced),
+            Some(home.join(WORK_DIR_NAME))
+        );
+    }
+
+    #[test]
+    fn an_existing_folder_in_synced_documents_is_kept() {
+        let dir = std::env::temp_dir().join(format!("thrall-synced-{}", std::process::id()));
+        let documents = dir.join("OneDrive").join("Documents");
+        std::fs::create_dir_all(documents.join(WORK_DIR_NAME)).unwrap();
+        let synced = [dir.join("OneDrive")];
+        assert_eq!(
+            pick_work_folder(Some(&documents), Some(&dir), &synced),
+            Some(documents.join(WORK_DIR_NAME))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_set_working_folder_wins() {
+        assert_eq!(
+            Paths::work_folder("  /projects  "),
+            Some(PathBuf::from("/projects"))
+        );
+        assert_eq!(Paths::work_folder(""), Paths::default_work_folder());
     }
 }

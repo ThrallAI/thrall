@@ -95,5 +95,6 @@ pub async fn build(paths: &Paths, config: Config) -> anyhow::Result<Option<AppSt
     )));
     state.load_terms().await?;
     state.data_dir = Some(paths.home.clone());
+    state.work_dir = Paths::work_folder(&state.config.folders.new_in);
     Ok(Some(state))
 }

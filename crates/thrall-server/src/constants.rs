@@ -207,3 +207,12 @@ pub const MONTHLY_LIMIT_MAX_USD: f64 = 100_000.0;
 
 /// Millionths of a dollar in a dollar (limits are stored as whole millionths).
 pub const MICROS_PER_DOLLAR: f64 = 1_000_000.0;
+
+/// The program that opens a folder in the file manager on this system.
+pub const FILE_MANAGER: &str = if cfg!(windows) {
+    "explorer"
+} else if cfg!(target_os = "macos") {
+    "open"
+} else {
+    "xdg-open"
+};

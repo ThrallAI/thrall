@@ -7,6 +7,22 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ## [Unreleased]
 
+### Added
+
+- Settings → Thrall's folders shows the working folder and the data folder, each with
+  an Open button.
+- The welcome screen shows where Thrall puts what it makes for you, with Open and Change.
+
+### Changed
+
+- Home works in `Documents\Thrall\Home` (anyone else in the household gets `Home - <name>`),
+  where what it makes is easy to find, instead of a hidden folder inside the data folder. Home's
+  files move there the first time Home opens.
+- When OneDrive syncs Documents, Thrall's working folder is `Thrall` in your user folder instead,
+  so projects and build folders aren't uploaded and locked mid-build. A `Documents\Thrall` that's
+  already there stays in use.
+- "New folders go in" is now "Thrall's working folder", and Home uses it too.
+
 ## [0.2.1] - 2026-11-04
 
 Fixes for long jobs that stopped with an empty, cut-off reply, and the Intel Mac installer is back.

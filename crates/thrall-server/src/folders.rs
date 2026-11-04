@@ -7,12 +7,12 @@ use std::path::{Path, PathBuf};
 
 use thrall_agent::{AgentError, AppState};
 use thrall_core::paths::Paths;
-use thrall_protocol::FolderEntry;
 use thrall_protocol::constants::FILE_CHUNK_BYTES;
+use thrall_protocol::{FolderEntry, Reply, ThrallFolder};
 use thrall_tools::paths::{display, inside, resolve};
 
 use crate::constants::{
-    FIND_DEPTH, FIND_SCAN, FIND_SKIP, FOLDER_LIST_MAX, FOLDER_NAME_BAD_CHARS,
+    FILE_MANAGER, FIND_DEPTH, FIND_SCAN, FIND_SKIP, FOLDER_LIST_MAX, FOLDER_NAME_BAD_CHARS,
     FOLDER_NAME_MAX_CHARS, PLACES_MAX, PLACES_SCAN, RESERVED_NAMES,
 };
 
@@ -29,12 +29,7 @@ pub struct Places {
 
 /// Where new folders go: the `folders.new_in` setting, else Thrall's default.
 fn new_in(state: &AppState) -> Option<PathBuf> {
-    let set = state.config.folders.new_in.trim();
-    if set.is_empty() {
-        Paths::default_work_folder()
-    } else {
-        Some(PathBuf::from(set))
-    }
+    Paths::work_folder(&state.config.folders.new_in)
 }
 
 /// The folders a new session could work in.
@@ -58,6 +53,35 @@ pub async fn places(state: &AppState) -> Result<Places, AgentError> {
         default: Paths::default_work_folder().map(shown),
         new_in: new_in(state).map(shown),
     })
+}
+
+/// `folders.shown`: the data folder and the working folder.
+pub fn shown(state: &AppState) -> Reply {
+    let shown = |p: &Path| p.display().to_string();
+    Reply::FoldersShown {
+        data: state.data_dir.as_deref().map(shown).unwrap_or_default(),
+        work: state.work_dir.as_deref().map(shown),
+    }
+}
+
+/// Open one of Thrall's folders in the file manager on this computer, making the working folder
+/// first if it isn't there yet.
+pub fn open(state: &AppState, folder: ThrallFolder) -> Result<(), String> {
+    let path = match folder {
+        ThrallFolder::Data => state.data_dir.as_deref(),
+        ThrallFolder::Work => state.work_dir.as_deref(),
+    }
+    .ok_or_else(|| "This engine has no such folder.".to_owned())?;
+    if folder == ThrallFolder::Work {
+        std::fs::create_dir_all(path)
+            .map_err(|e| format!("Couldn't make `{}`: {e}", path.display()))?;
+    }
+    // Not waited for: the file manager keeps running (and Explorer's exit code means nothing).
+    std::process::Command::new(FILE_MANAGER)
+        .arg(path)
+        .spawn()
+        .map(drop)
+        .map_err(|e| format!("Couldn't open `{}`: {e}", path.display()))
 }
 
 /// Why `name` can't be a new folder's name, if it can't.
