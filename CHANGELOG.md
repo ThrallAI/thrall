@@ -14,6 +14,8 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
   rewrites that part before reading, without changing the file.
 - The preview picture of a PDF Thrall makes is as tall as the pages, instead of always eight
   pages tall with blank space at the bottom.
+- On Windows, Thrall's engine (`thrall.exe`) shows its version and name in Task Manager and file
+  properties, like the desktop app. It was blank, which looked like a second, different Thrall.
 
 ## [0.2.2] - 2026-11-04
 
