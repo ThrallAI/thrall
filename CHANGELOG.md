@@ -7,6 +7,10 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-04
+
+Updates in one click from now on, and Home's files where you can find them.
+
 ### Added
 
 - Updates in one click: the desktop app looks for a new version when it starts and every few
@@ -149,7 +153,8 @@ The first public preview.
 - First-run key setup in the desktop app, a welcome screen and a one-minute tour.
 - Installers built by CI for every release, with `SHA256SUMS.txt`.
 
-[Unreleased]: https://github.com/ThrallAI/thrall/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/ThrallAI/thrall/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/ThrallAI/thrall/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/ThrallAI/thrall/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ThrallAI/thrall/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ThrallAI/thrall/releases/tag/v0.1.0
