@@ -204,6 +204,9 @@ pub const DOCUMENT_MAX_BYTES: u64 = 50 * 1024 * 1024;
 /// A PDF averaging fewer characters of text per page than this is treated as scanned (pictures of
 /// pages), so the picture reader transcribes it.
 pub const SCANNED_PDF_CHARS_PER_PAGE: usize = 200;
+/// Longest run of glyphs in one PDF font-width range that's rewritten as a plain list before the
+/// text is read (a font with a longer one is read as it is).
+pub const PDF_WIDTH_RANGE_MAX: i64 = 4096;
 
 /// Where a PDF stamp's text sits: points below the top edge (baseline), in the outer margin.
 pub const STAMP_TOP_MARGIN: f32 = 15.0;

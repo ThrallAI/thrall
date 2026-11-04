@@ -518,13 +518,16 @@ impl Browsers {
         let _ = page.close().await;
         result
     }
-    /// A picture of `html` laid out for print, pages one under the other, `width_in` wide and at
-    /// most `max_height_in` tall, scaled by `scale`: so a PDF can be checked by eye.
+    /// A picture of `html` laid out for print, pages one under the other, `width_in` wide, as
+    /// tall as the content and at most `max_height_in`, scaled by `scale`: so a PDF can be checked
+    /// by eye. It's laid out in a window one page (`page_height_in`) tall, as when printing: a
+    /// taller window would make the page at least that tall, and the picture mostly blank.
     pub async fn print_preview(
         &self,
         data_dir: Option<&Path>,
         html: &str,
         width_in: f64,
+        page_height_in: f64,
         max_height_in: f64,
         scale: f64,
     ) -> Result<Vec<u8>, String> {
@@ -546,7 +549,7 @@ impl Browsers {
         let result = limited(BROWSER_PRINT_SECS, async {
             page.execute(SetDeviceMetricsOverrideParams::new(
                 width as i64,
-                (max_height_in * CSS_PX_PER_IN) as i64,
+                (page_height_in.min(max_height_in) * CSS_PX_PER_IN) as i64,
                 1.0,
                 false,
             ))

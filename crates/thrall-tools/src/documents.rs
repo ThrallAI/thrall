@@ -6,7 +6,9 @@ use std::path::Path;
 
 use quick_xml::events::Event;
 
-use crate::constants::{SCANNED_PDF_CHARS_PER_PAGE, SHEET_MAX_ROWS, SLIDES_MAX};
+use crate::constants::{
+    PDF_WIDTH_RANGE_MAX, SCANNED_PDF_CHARS_PER_PAGE, SHEET_MAX_ROWS, SLIDES_MAX,
+};
 
 /// What kind of document a file is, from its extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,8 +90,101 @@ fn plural(n: usize, one: &str) -> String {
     }
 }
 
+/// A font's `W` (widths) array with every range (`first last width`) written out as a plain
+/// list (`first [width width …]`), or `None` when it has no ranges or isn't laid out as expected.
+/// pdf-extract 0.12 misreads ranges: their glyphs fall back to the default width, so it sees gaps
+/// that aren't there and splits words ("P romptly"). Chrome writes ranges in every PDF it prints.
+fn widths_as_lists(w: &[lopdf::Object]) -> Option<Vec<lopdf::Object>> {
+    use lopdf::Object;
+    let mut out = Vec::with_capacity(w.len());
+    let mut ranges = false;
+    let mut i = 0;
+    while i < w.len() {
+        let first = w[i].as_i64().ok()?;
+        match w.get(i + 1)? {
+            Object::Array(list) => {
+                out.push(Object::Integer(first));
+                out.push(Object::Array(list.clone()));
+                i += 2;
+            }
+            last => {
+                let last = last.as_i64().ok()?;
+                let width = w.get(i + 2)?;
+                width.as_float().ok()?;
+                if last < first || last - first >= PDF_WIDTH_RANGE_MAX {
+                    return None;
+                }
+                let count = usize::try_from(last - first + 1).ok()?;
+                out.push(Object::Integer(first));
+                out.push(Object::Array(vec![width.clone(); count]));
+                ranges = true;
+                i += 3;
+            }
+        }
+    }
+    ranges.then_some(out)
+}
+
+/// The PDF with its fonts' width ranges written as plain lists (see [`widths_as_lists`]), as
+/// bytes to read the text from. `None` when nothing needs changing or it can't be done (the file
+/// is then read as it is). The file itself is never changed.
+fn with_plain_widths(path: &Path) -> Option<Vec<u8>> {
+    use lopdf::Object;
+    let mut doc = lopdf::Document::load(path).ok()?;
+    if doc.is_encrypted() {
+        return None;
+    }
+    // Where each font's widths live: in the font itself, or in an object of their own.
+    let mut inline = Vec::new();
+    let mut separate = Vec::new();
+    for (id, obj) in &doc.objects {
+        let Ok(font) = obj.as_dict() else { continue };
+        let cid = matches!(
+            font.get(b"Subtype").and_then(Object::as_name),
+            Ok(b"CIDFontType0" | b"CIDFontType2")
+        );
+        let Some(w) = cid.then(|| font.get(b"W").ok()).flatten() else {
+            continue;
+        };
+        match w {
+            Object::Array(list) => {
+                if let Some(plain) = widths_as_lists(list) {
+                    inline.push((*id, plain));
+                }
+            }
+            Object::Reference(target) => {
+                if let Some(plain) = doc
+                    .get_object(*target)
+                    .and_then(Object::as_array)
+                    .ok()
+                    .and_then(|list| widths_as_lists(list))
+                {
+                    separate.push((*target, plain));
+                }
+            }
+            _ => {}
+        }
+    }
+    if inline.is_empty() && separate.is_empty() {
+        return None;
+    }
+    for (id, plain) in inline {
+        if let Some(font) = doc.objects.get_mut(&id).and_then(|o| o.as_dict_mut().ok()) {
+            font.set("W", Object::Array(plain));
+        }
+    }
+    for (id, plain) in separate {
+        doc.objects.insert(id, Object::Array(plain));
+    }
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).ok()?;
+    Some(bytes)
+}
+
 fn pdf(path: &Path) -> Result<(String, String, bool), String> {
-    let pages = pdf_extract::extract_text_by_pages(path)
+    let pages = with_plain_widths(path)
+        .and_then(|bytes| pdf_extract::extract_text_from_mem_by_pages(&bytes).ok())
+        .map_or_else(|| pdf_extract::extract_text_by_pages(path), Ok)
         .map_err(|e| format!("couldn't read the PDF: {e}"))?;
     let mut out = String::new();
     for (i, page) in pages.iter().enumerate() {
@@ -258,6 +353,29 @@ mod tests {
         assert_eq!(Kind::of(Path::new("deck.pptx")), Some(Kind::Slides));
         assert_eq!(Kind::of(Path::new("budget.xls")), Some(Kind::Spreadsheet));
         assert_eq!(Kind::of(Path::new("notes.txt")), None);
+    }
+
+    #[test]
+    fn width_ranges_become_plain_lists() {
+        use lopdf::Object::{Array, Integer, Real};
+        // As Chrome writes them: a list, then a range (glyphs 46 to 51 all 667 wide).
+        let w = vec![
+            Integer(37),
+            Array(vec![Real(667.0), Real(722.0)]),
+            Integer(46),
+            Integer(51),
+            Real(667.0),
+        ];
+        let plain = widths_as_lists(&w).unwrap();
+        assert_eq!(plain.len(), 4);
+        assert_eq!(plain[0], Integer(37));
+        assert_eq!(plain[2], Integer(46));
+        assert_eq!(plain[3], Array(vec![Real(667.0); 6]));
+        // Only lists already: nothing to change. Anything odd: left alone.
+        assert!(widths_as_lists(&w[..2]).is_none());
+        assert!(widths_as_lists(&[Integer(5), Integer(1), Real(500.0)]).is_none());
+        assert!(widths_as_lists(&[Integer(1), Integer(2)]).is_none());
+        assert!(widths_as_lists(&[Integer(0), Integer(1_000_000), Real(500.0)]).is_none());
     }
 
     #[test]
