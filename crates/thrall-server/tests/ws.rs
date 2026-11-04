@@ -565,6 +565,8 @@ async fn the_page_has_safe_headers_and_never_the_token() {
     assert!(!page.contains(TOKEN), "the token must not be in the page");
     let lower = page.to_lowercase();
     assert!(lower.contains("content-security-policy"));
+    // Connections go back to the engine, and to GitHub's API only for Check for updates.
+    assert!(lower.contains("connect-src 'self' https://api.github.com;"));
     assert!(lower.contains("x-frame-options: deny"));
     // Paths that aren't files are the app's one page too.
     assert!(

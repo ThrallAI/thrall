@@ -18,9 +18,11 @@ use crate::constants::{ASSETS_PREFIX, INDEX_FILE};
 #[folder = "$OUT_DIR/web"]
 struct Assets;
 
-/// Security headers on every page: no framing, no sniffing, connections only back to the engine.
+/// Security headers on every page: no framing, no sniffing, connections only back to the engine
+/// and to GitHub's API (Settings → Check for updates asks it for the newest release).
 const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
-                   img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self'; \
+                   img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; \
+                   connect-src 'self' https://api.github.com; \
                    frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 
 #[derive(Clone)]
