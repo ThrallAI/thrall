@@ -984,6 +984,7 @@ impl Tool for MakePdf {
                     ctx.data_dir.as_deref(),
                     &embedded.html,
                     wide,
+                    setup.height_in,
                     setup.height_in * PDF_PREVIEW_MAX_PAGES,
                     PDF_PREVIEW_SCALE,
                 )

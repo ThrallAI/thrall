@@ -7,6 +7,14 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ## [Unreleased]
 
+### Fixed
+
+- Text read from PDFs no longer comes out with stray gaps ("P romptly", "P P E"). The PDF
+  reader misread how wide some letters are in the way Chrome and others save fonts; Thrall now
+  rewrites that part before reading, without changing the file.
+- The preview picture of a PDF Thrall makes is as tall as the pages, instead of always eight
+  pages tall with blank space at the bottom.
+
 ## [0.2.2] - 2026-11-04
 
 Updates in one click from now on, and Home's files where you can find them.

@@ -382,12 +382,18 @@ async fn pictures_print_one_per_page_turned_to_fit_with_a_preview() {
         .await
         .unwrap();
     let preview = browsers
-        .print_preview(Some(&data), &done.html, 11.7, 11.7 * 3.0, 0.5)
+        .print_preview(Some(&data), &done.html, 11.7, 11.7, 11.7 * 8.0, 0.5)
         .await
         .unwrap();
     browsers.close_all().await;
     assert_eq!(pages, 3, "one picture per page, no spill-over pages");
     assert!(preview.starts_with(&[0xFF, 0xD8]), "the preview is a JPEG");
+    // As tall as the three pages, not the eight it was allowed (at 96 px an inch, half size).
+    let tall = f64::from(u32::try_from(imagesize::blob_size(&preview).unwrap().height).unwrap());
+    assert!(
+        tall < 11.7 * 4.0 * 96.0 * 0.5,
+        "the preview is {tall} px tall"
+    );
     let doc = lopdf::Document::load_mem(&pdf).unwrap();
     let sizes: Vec<(f32, f32)> = doc
         .get_pages()
