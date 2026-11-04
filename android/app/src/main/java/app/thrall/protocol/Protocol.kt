@@ -654,6 +654,8 @@ object ProtocolTypes {
         "skill.get", "skill.edit", "skill.make_safe",
         // Suppliers are set up and tested on the computer's Settings → Providers.
         "provider.test", "local.find",
+        // Thrall's folders open in the computer's file manager, from its Settings.
+        "folders.get", "folder.open",
     )
     val repliesUsed = setOf(
         "welcome", "pong", "ack", "error", "session.opened", "session.listed", "home.shown", "folder.listed",
@@ -661,7 +663,7 @@ object ProtocolTypes {
         "folder.created", "app.latest", "group.listed", "heartbeat.shown", "checkpoint.shown", "turn.rewound",
         "memory.listed", "settings.shown", "people.listed", "personality.shown",
     )
-    val repliesLater = setOf("experience.listed", "skill.shown", "skill.safer", "audio.transcribed", "phone.listed", "phone.pairing", "signin.code", "device.listed", "startup.shown", "provider.tested", "local.found")
+    val repliesLater = setOf("experience.listed", "skill.shown", "skill.safer", "audio.transcribed", "phone.listed", "phone.pairing", "signin.code", "device.listed", "startup.shown", "provider.tested", "local.found", "folders.shown")
     val eventsUsed = setOf(
         "turn.started", "turn.completed", "turn.retracted", "message.started", "message.delta",
         "reasoning.delta", "message.completed", "step.started", "step.output", "step.completed",
