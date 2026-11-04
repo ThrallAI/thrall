@@ -2901,6 +2901,44 @@ async fn home_starts_a_fresh_page_each_day_and_prunes_old_ones() {
 }
 
 #[tokio::test]
+async fn home_moves_out_of_the_data_folder_into_the_working_folder() {
+    let (mut state, _) = setup(vec![]).await;
+    let dir = std::path::PathBuf::from(workspace("home-moves"));
+    let data = dir.join("data");
+    state.data_dir = Some(data.clone());
+    // Before 0.2.2: Home works inside the data folder.
+    let page = thrall_agent::home::current(&state).await.unwrap();
+    let old = data.join("home");
+    assert_eq!(
+        page.workspace.as_deref(),
+        Some(old.display().to_string().as_str())
+    );
+    std::fs::write(old.join("meal-plan.md"), "oats").unwrap();
+
+    // With a working folder, the folder moves there and the page follows it.
+    let work = dir.join("work");
+    state.work_dir = Some(work.clone());
+    let moved = thrall_agent::home::current(&state).await.unwrap();
+    let new = work.join("Home");
+    assert_eq!(moved.id, page.id, "the same page");
+    assert_eq!(
+        moved.workspace.as_deref(),
+        Some(new.display().to_string().as_str())
+    );
+    assert_eq!(
+        std::fs::read_to_string(new.join("meal-plan.md")).unwrap(),
+        "oats"
+    );
+    assert!(!old.exists(), "nothing left behind in the data folder");
+}
+
+#[test]
+fn a_home_folder_name_keeps_only_plain_characters() {
+    assert_eq!(thrall_agent::home::folder_name(" Tiff: <mum> "), "Tiff mum");
+    assert_eq!(thrall_agent::home::folder_name("../.."), "");
+}
+
+#[tokio::test]
 async fn thrall_reads_another_session_from_home() {
     let (mut state, provider) = setup(vec![
         reply(&["The thumbnail should be red."]),

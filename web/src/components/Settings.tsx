@@ -531,6 +531,19 @@ export function Settings({
       .then(setStartup)
       .catch(() => setStartup(null));
   }, [engine]);
+  // Thrall's folders: the owner's alone, like starting with Windows.
+  const [thrallFolders, setFolders] = useState<ReplyOf<"folders.shown"> | null>(null);
+  useEffect(() => {
+    engine
+      ?.request<"folders.shown">({ type: "folders.get" })
+      .then(setFolders)
+      .catch(() => setFolders(null));
+  }, [engine]);
+  const openFolder = (folder: "data" | "work") => {
+    engine
+      ?.request({ type: "folder.open", folder })
+      .catch((e: unknown) => setStatus({ text: e instanceof Error ? e.message : String(e), warn: true }));
+  };
   const saveStartup = (on: boolean) => {
     engine
       ?.request<"startup.shown">({ type: "startup.set", on })
@@ -764,13 +777,31 @@ export function Settings({
               <Field k="desktop.shortcut" v={desktop.shortcut} label="Show or hide shortcut" onSave={save} mono allowEmpty />
             </Row>
             <Row
-              label="New folders go in"
-              hint="Where “New folder” makes one (the phone app) unless you pick another place. A full path. Empty: Thrall's own folder, Documents\Thrall"
+              label="Thrall's working folder"
+              hint="Where Home works and “New folder” makes one (the phone app) unless you pick another place. A full path. Empty: Documents\Thrall, or Thrall in your user folder when OneDrive syncs Documents"
             >
-              <Field k="folders.new_in" v={folders.new_in} label="New folders go in" onSave={save} mono allowEmpty />
+              <Field k="folders.new_in" v={folders.new_in} label="Thrall's working folder" onSave={save} mono allowEmpty />
             </Row>
             <Planned label="Closing the window" hint="Keep running in the tray, or quit" />
           </Group>
+          {thrallFolders ? (
+            <Group title="Thrall's folders" note="Where Thrall keeps things on this computer.">
+              {thrallFolders.work ? (
+                <Row label="Working folder" hint="Home's files and new folders">
+                  <Value v={thrallFolders.work} mono />
+                  <button type="button" className="th-btn" onClick={() => openFolder("work")}>
+                    Open
+                  </button>
+                </Row>
+              ) : null}
+              <Row label="Data folder" hint="Settings, sessions, memory and logs. Leave its files to Thrall">
+                <Value v={thrallFolders.data} mono />
+                <button type="button" className="th-btn" onClick={() => openFolder("data")}>
+                  Open
+                </button>
+              </Row>
+            </Group>
+          ) : null}
           <Group
             title="Notifications"
             note="Pop-ups from the desktop app. Clicking one opens the session (or Home) it's about."

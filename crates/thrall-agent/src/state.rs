@@ -81,6 +81,9 @@ pub struct AppState {
     /// Thrall's data folder, if there is one. Things that are a person's own (THRALL.md, skills,
     /// uploads, Home's folder, the browser's profile) are in `my_dir`.
     pub data_dir: Option<PathBuf>,
+    /// Thrall's working folder (`folders.new_in`, else `Documents\Thrall`), where Home's folder
+    /// is. `None`: Home works in the data folder, as before 0.2.2.
+    pub work_dir: Option<PathBuf>,
     /// The MCP servers this person may use (started on first use): all of them for the owner,
     /// only those shared with everyone for anyone else.
     pub mcp: Arc<thrall_mcp::McpHub>,
@@ -175,6 +178,7 @@ impl AppState {
             http: thrall_tools::http_client()?,
             prompts: Arc::new(Prompts::default()),
             data_dir: None,
+            work_dir: None,
             running: Arc::new(Mutex::new(HashMap::new())),
             reads: Arc::new(Mutex::new(HashMap::new())),
             token_scales: Arc::new(Mutex::new(HashMap::new())),

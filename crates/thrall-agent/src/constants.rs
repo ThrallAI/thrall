@@ -142,6 +142,8 @@ pub const HOME_TITLE: &str = "Home";
 pub const HOME_DATE_FORMAT: &str = "%a %-d %b";
 /// How a Home page's start day is stored.
 pub const HOME_DAY_FORMAT: &str = "%Y-%m-%d";
+/// Characters besides letters and digits a person's name keeps in their Home folder's name.
+pub const HOME_NAME_KEEPS: &[char] = &[' ', '-', '_'];
 /// Milliseconds in a minute.
 pub const MS_PER_MINUTE: i64 = 60_000;
 /// Milliseconds in a day.

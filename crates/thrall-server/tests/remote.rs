@@ -720,6 +720,10 @@ async fn a_member_cant_reach_the_owners_sessions_files_or_settings() {
         Request::HeartbeatGet {},
         Request::StartupGet {},
         Request::StartupSet { on: false },
+        Request::FoldersGet {},
+        Request::FolderOpen {
+            folder: thrall_protocol::ThrallFolder::Data,
+        },
         Request::CommandRun {
             session: Some(sams.clone()),
             name: "model".into(),
@@ -755,6 +759,10 @@ async fn a_member_cant_reach_the_owners_sessions_files_or_settings() {
             available: false,
             ..
         }
+    ));
+    assert!(matches!(
+        ask(&mut owner, "s3", Request::FoldersGet {}).await,
+        Reply::FoldersShown { .. }
     ));
     assert!(matches!(
         ask(&mut owner, "s2", Request::StartupSet { on: true }).await,

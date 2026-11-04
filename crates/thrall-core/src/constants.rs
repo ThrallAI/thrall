@@ -6,6 +6,11 @@ pub const APP_DIR_NAME: &str = "Thrall";
 /// Folder under Documents that new sessions work in when no other folder is picked.
 pub const WORK_DIR_NAME: &str = "Thrall";
 
+/// Environment variables Windows sets to the OneDrive folders it syncs (personal, work or school).
+/// A working folder inside one would sync every project, build folders included, and OneDrive
+/// locks files while it uploads them.
+pub const SYNCED_FOLDER_VARS: [&str; 3] = ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"];
+
 /// Environment variable that moves Thrall's data folder somewhere else.
 pub const HOME_ENV_VAR: &str = "THRALL_HOME";
 
@@ -47,8 +52,12 @@ pub const SIGNIN_FRAGMENT: &str = "#signin=";
 /// Files people attach to messages are kept here, inside the data folder (one folder per file id).
 pub const UPLOADS_DIR: &str = "uploads";
 
-/// Home's working folder, inside the data folder (so Home never works among Thrall's own files).
+/// Where Home worked before 0.2.2, inside the data folder; moved to [`HOME_FOLDER`] on first use.
 pub const HOME_DIR: &str = "home";
+
+/// Home's folder in Thrall's working folder (`Documents\Thrall\Home`), where what Home makes is
+/// easy to find. Anyone but the owner gets `Home - <their name>` beside it.
+pub const HOME_FOLDER: &str = "Home";
 
 /// Written by a running engine (address, process id, version) and removed when it stops; clients
 /// read it to find the engine.

@@ -1185,6 +1185,29 @@ button {
   font-size: 14px;
   color: var(--ink);
 }
+.th-welcome-folder {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 14px;
+  color: var(--ink);
+}
+.th-welcome-folder .th-welcome-row {
+  flex-wrap: wrap;
+}
+.th-welcome-folder code {
+  font: 12px/18px var(--font-mono);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.th-welcome-folder .th-input {
+  flex: 1;
+  min-width: 0;
+}
+.th-welcome-problem {
+  font-size: 12px;
+  color: var(--danger);
+}
 .th-tour {
   position: fixed;
   inset: 0;

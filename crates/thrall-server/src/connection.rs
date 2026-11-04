@@ -687,6 +687,13 @@ impl Connection {
                 Request::StartupGet {} | Request::StartupSet { .. } => {
                     vec![startup(id, &request)]
                 }
+                Request::FoldersGet {} => vec![reply(id, crate::folders::shown(&hub.state()))],
+                Request::FolderOpen { folder } => {
+                    match crate::folders::open(&hub.state(), folder) {
+                        Ok(()) => vec![reply(id, Reply::Ack {})],
+                        Err(why) => vec![error(id, ErrorCode::Invalid, why)],
+                    }
+                }
                 Request::HomeGet {} | Request::HomeClear {} => {
                     if matches!(request, Request::HomeClear {}) {
                         hub.clear_home(&self.person.id).await?;
@@ -1416,8 +1423,8 @@ fn personality_shown(state: &thrall_agent::AppState) -> Reply {
 }
 
 /// Requests only the engine's owner may make: they change Thrall for everyone (settings, Home
-/// check-ins, starting with Windows, phones, people, stopping the engine, the model in use,
-/// Thrall's sign-ins to services).
+/// check-ins, starting with Windows, Thrall's folders, phones, people, stopping the engine, the
+/// model in use, Thrall's sign-ins to services).
 fn owner_only(request: &Request) -> bool {
     match request {
         Request::SettingsSet { .. }
@@ -1428,6 +1435,8 @@ fn owner_only(request: &Request) -> bool {
         | Request::HeartbeatRun {}
         | Request::StartupGet {}
         | Request::StartupSet { .. }
+        | Request::FoldersGet {}
+        | Request::FolderOpen { .. }
         | Request::EngineStop {}
         | Request::PhoneList {}
         | Request::PhonePair { .. }

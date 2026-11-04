@@ -17,7 +17,7 @@ pub use requests::{
     GroupInfo, HelperTypeInfo, KeyStatus, LessonInfo, Limits, LocalFound, ModeLimit, PersonInfo,
     PersonalityPreset, PhoneInfo, RemoteInfo, Reply, ReplyFrame, Request, RequestFrame,
     RewindAction, RewindFile, SessionInfo, SessionState, SettingValue, SkillDetail, SkillInfo,
-    UserInfo,
+    ThrallFolder, UserInfo,
 };
 
 /// Whether this build can talk to a peer speaking protocol major `version`.

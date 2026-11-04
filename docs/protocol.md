@@ -143,6 +143,8 @@ Added in phases 6 and 6b:
 | `heartbeat.run {}` | `ack` | Check in now, whatever the hours (`error {invalid}` without a checklist) |
 | `startup.get {}` | `startup.shown {available, on}` | Owner only. Whether Thrall starts when the person signs in to Windows: the desktop app, in the tray (the same entry as its tray menu). `available` is false off Windows or without the desktop app beside the engine |
 | `startup.set {on}` | `startup.shown` | Owner only. Start at sign-in, or stop (`error {invalid}` where it isn't available) |
+| `folders.get {}` | `folders.shown {data, work}` | Owner only. Where Thrall keeps its things on the engine's computer: the data folder (settings, database, logs) and the working folder (Home and new folders; `null` when there's none) |
+| `folder.open {folder}` | `ack` | Owner only. Open `data` or `work` in the file manager on the engine's computer; the working folder is made first if it isn't there yet |
 
 `turn.started` carries `scheduled: true` when nobody started the turn (a scheduled job or a check-in), so clients don't announce it as the person's own work finishing. The desktop app's pop-ups follow `[notifications]` in `config.toml` (`needs_you`, `done`, `failed`, `background`, `check_ins`, `quiet_hours` when only "needs you" comes through, `only_when_away`), read when each pop-up is due; clicking one calls the web app's `window.thrallOpen(session)`.
 

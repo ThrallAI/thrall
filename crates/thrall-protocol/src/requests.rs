@@ -216,6 +216,16 @@ pub enum Request {
         /// Start at sign-in.
         on: bool,
     },
+    /// Where Thrall keeps its things on the engine's computer. Answered by `folders.shown`.
+    #[serde(rename = "folders.get")]
+    FoldersGet {},
+    /// Open one of Thrall's folders in the file manager on the engine's computer (the working
+    /// folder is made first if it isn't there yet). Answered by `ack`.
+    #[serde(rename = "folder.open")]
+    FolderOpen {
+        /// Which folder.
+        folder: ThrallFolder,
+    },
     /// Your personality: how Thrall talks to you. Answered by personality.shown.
     #[serde(rename = "personality.get")]
     PersonalityGet {},
@@ -640,6 +650,8 @@ impl Request {
             Self::HeartbeatRun {} => "heartbeat.run",
             Self::StartupGet {} => "startup.get",
             Self::StartupSet { .. } => "startup.set",
+            Self::FoldersGet {} => "folders.get",
+            Self::FolderOpen { .. } => "folder.open",
             Self::PersonalityGet {} => "personality.get",
             Self::PersonalitySet { .. } => "personality.set",
             Self::TurnSend { .. } => "turn.send",
@@ -858,6 +870,15 @@ pub enum Reply {
         /// login", "Start when I log in"); empty from an older engine.
         #[serde(default)]
         label: String,
+    },
+    /// Answer to `folders.get`.
+    #[serde(rename = "folders.shown")]
+    FoldersShown {
+        /// The data folder: settings, the database, logs (`%APPDATA%\Thrall` on Windows).
+        data: String,
+        /// Thrall's working folder, where Home and new folders go (`Documents\Thrall`), if this
+        /// computer has one.
+        work: Option<String>,
     },
     /// Answer to `command.list`.
     #[serde(rename = "command.listed")]
@@ -1316,6 +1337,16 @@ pub struct RewindFile {
     /// Someone changed it after Thrall last did (or it's gone): putting it back loses that.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub changed: bool,
+}
+
+/// One of Thrall's folders.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ThrallFolder {
+    /// The data folder: settings, the database, logs.
+    Data,
+    /// The working folder: Home and new folders.
+    Work,
 }
 
 /// What a rewind does to a file.
