@@ -385,6 +385,40 @@ turns work in (the one the engine was started in).
 | `folder.list {session, path}` | `folder.listed {session, path, items: [{name, folder?, size, modified}], more?}`: folders first, then files, each newest first; at most 500 entries (`more` when some were left out). `path` "" is the folder itself |
 | `folder.read {session, path, offset}` | `folder.part {session, path, offset, size, data}`: like `file.part`, up to 512 KiB of base64 from `offset`. A file that isn't at `path` is looked for a few folders down (Thrall often names a file without the folder it made it in): one match is read and its real `path` returned; several is a `not_found` error naming them |
 
+## 13a1. Companion PCs
+
+A companion is a PC at home or at work that joins this Thrall as someone's: the person uses Thrall
+there, and (with the runner, coming next) their work runs on that PC. Only while `remote.pcs` is on
+(off by default) the engine listens on every network this computer is on (`remote.pc_port`, 7420),
+on the same path and with the same encrypted link as phones, and answers companions looking for it.
+
+**Finding Thrall.** A companion broadcasts the bytes `thrall-find-v1` to UDP port 7421; the engine
+answers `{"thrall": 1, "name": "<computer name>", "port": <PC port>}`. Over Tailscale (where
+broadcasts don't reach) the companion is given the computer's name instead.
+
+**Asking to join.** The companion's first binary message is `3`, then
+`Noise_XX_25519_ChaChaPoly_BLAKE2s` message 1 (prologue `thrall-remote-v1`). The engine answers
+with message 2, and the companion's message 3 carries `{"name": "<computer name>"}`. Both sides
+then show the same 6-digit code: the first 4 bytes of the handshake hash, big-endian, mod
+1,000,000, as `483 912`. A man in the middle makes two different handshakes, so the codes wouldn't
+match. The link stays open while the owner decides (up to 10 minutes); the answer is one encrypted
+frame, `{"approved": true, "device": "<id>"}` or `{"approved": false}`, and the link closes. An
+accepted PC then connects like a paired phone (`2`, `Noise_IK`), as the person it was given to.
+A PC that already joined is answered `approved` straight away; a blocked one `false` without the
+owner being asked. At most 5 PCs wait at once; the phone listener never takes requests to join.
+
+Owner only, on this computer (anything else: `unauthorized`):
+
+| Request | Reply |
+|---|---|
+| `pc.requests {}` | `pc.requests {items: [{request, name, code, address, at}], blocked: [{blocked, name, at}], pcs: {enabled, listening, port, name}}` |
+| `pc.accept {request, person, code?}` | `pc.requests`; the PC joins as `person`'s. `code`, when given, must be the one the PC shows (spaces don't matter): else `invalid` |
+| `pc.decline {request, block?}` | `pc.requests`; the PC is told no. With `block` it can't ask again |
+| `pc.unblock {blocked}` | `pc.requests`; that PC may ask again |
+
+`pc.asked {}` (an event with an empty `session`) tells the owner's clients on this computer that
+the list changed. Joined PCs are listed by `phone.list` with `kind: "pc"`, and given to someone else
+or removed with `phone.assign` and `phone.remove`.
 ## 13b. People
 
 Owner only (anyone else gets `unauthorized`). Each answer is the whole list again.

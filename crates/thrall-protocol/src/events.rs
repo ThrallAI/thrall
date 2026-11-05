@@ -294,6 +294,10 @@ pub enum Event {
     /// Sent only to the owner's desktop app, with an empty `session`.
     #[serde(rename = "update.requested")]
     UpdateRequested {},
+    /// The PCs asking to join changed (one asked, or its request ended): ask `pc.requests` for
+    /// the list. Sent only to the owner's clients on this computer, with an empty `session`.
+    #[serde(rename = "pc.asked")]
+    PcAsked {},
     /// Something failed.
     #[serde(rename = "error")]
     Error {
@@ -334,6 +338,7 @@ impl Event {
             Self::MemorySaved { .. } => "memory.saved",
             Self::Notice { .. } => "notice",
             Self::UpdateRequested {} => "update.requested",
+            Self::PcAsked {} => "pc.asked",
             Self::Error { .. } => "error",
         }
     }

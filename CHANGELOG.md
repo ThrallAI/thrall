@@ -7,6 +7,13 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ## [Unreleased]
 
+### Added
+
+- Companion PCs, first part: other PCs at home or at work can find this Thrall and ask to join as
+  someone's (Settings → PCs → Let PCs on this network connect, off by default). A card pops up
+  with the PC's name and a code that its screen shows too: Let in (as whose PC), Decline or
+  Block. Blocked PCs can't ask again until unblocked. Everything between the PCs is encrypted.
+
 ### Fixed
 
 - Text read from PDFs no longer comes out with stray gaps ("P romptly", "P P E"). The PDF

@@ -99,7 +99,7 @@ export function Phones({
     const tick = window.setInterval(() => setNow(Date.now()), 1000);
     const watch = window.setInterval(() => {
       void load()?.then((r) => {
-        const fresh = r?.items.find((p) => !paired.current.has(p.phone));
+        const fresh = r?.items.find((p) => p.kind !== "pc" && !paired.current.has(p.phone));
         if (fresh) {
           setPairing(null);
           const whose = nameOf(fresh.person);
@@ -157,7 +157,7 @@ export function Phones({
   const enabled = remote.enabled === true;
   const address = typeof remote.address === "string" ? remote.address : "";
   const left = pairing ? Math.max(0, Math.round((pairing.expires - now) / 1000)) : 0;
-  const phones = listed?.items ?? [];
+  const phones = (listed?.items ?? []).filter((p) => p.kind !== "pc");
 
   return (
     <>

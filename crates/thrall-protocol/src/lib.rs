@@ -13,11 +13,11 @@ pub use events::{
     QuestionItem, Risk, Role, StepStatus, TaskItem, TaskStatus, TurnStatus, Usage,
 };
 pub use requests::{
-    AppRelease, ClientInfo, ClientKind, CommandItem, DeviceInfo, EngineInfo, FactInfo, FolderEntry,
-    GroupInfo, HelperTypeInfo, KeyStatus, LessonInfo, Limits, LocalFound, ModeLimit, PersonInfo,
-    PersonalityPreset, PhoneInfo, RemoteInfo, Reply, ReplyFrame, Request, RequestFrame,
-    RewindAction, RewindFile, SessionInfo, SessionState, SettingValue, SkillDetail, SkillInfo,
-    ThrallFolder, UserInfo,
+    AppRelease, BlockedPcInfo, ClientInfo, ClientKind, CommandItem, DeviceInfo, EngineInfo,
+    FactInfo, FolderEntry, GroupInfo, HelperTypeInfo, KeyStatus, LessonInfo, Limits, LocalFound,
+    ModeLimit, PcLinkInfo, PcRequestInfo, PersonInfo, PersonalityPreset, PhoneInfo, RemoteInfo,
+    Reply, ReplyFrame, Request, RequestFrame, RewindAction, RewindFile, SessionInfo, SessionState,
+    SettingValue, SkillDetail, SkillInfo, ThrallFolder, UserInfo,
 };
 
 /// Whether this build can talk to a peer speaking protocol major `version`.

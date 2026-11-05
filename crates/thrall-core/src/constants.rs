@@ -277,6 +277,7 @@ pub const EDITABLE_SETTINGS: &[&str] = &[
     "desktop.shortcut",
     "remote.enabled",
     "remote.address",
+    "remote.pcs",
     "folders.new_in",
     "logging.level",
 ];
@@ -328,6 +329,12 @@ pub const STARTUP_LABEL: &str = if cfg!(windows) {
 
 /// Port of the phone listener on 127.0.0.1 unless `[remote] port` says otherwise.
 pub const DEFAULT_REMOTE_PORT: u16 = 7419;
+
+/// Port PCs reach this Thrall on to join as companions unless `[remote] pc_port` says otherwise.
+pub const DEFAULT_PC_PORT: u16 = 7420;
+
+/// UDP port a companion's "where is Thrall?" broadcast goes to; the engine answers from it.
+pub const PC_DISCOVERY_PORT: u16 = 7421;
 
 /// The desktop app's show/hide shortcut unless `[desktop] shortcut` says otherwise. Alt keeps it
 /// clear of game controls (Ctrl+Shift+Space is a common fly/crouch-jump combination);

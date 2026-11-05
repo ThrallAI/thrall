@@ -25,7 +25,7 @@ use std::time::Instant;
 
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket};
-use axum::extract::{State, WebSocketUpgrade};
+use axum::extract::{ConnectInfo, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -38,15 +38,19 @@ use thrall_agent::AppState;
 use thrall_core::constants::id_prefix;
 use thrall_core::ids::{new_id, now_ms};
 use thrall_protocol::constants::{HELLO_TIMEOUT_SECS, MAX_FRAME_BYTES, REMOTE_PATH};
-use thrall_protocol::{PhoneInfo, RemoteInfo, Reply};
+use thrall_protocol::{BlockedPcInfo, PcLinkInfo, PcRequestInfo, PhoneInfo, RemoteInfo, Reply};
 use tokio::sync::watch;
 
 use crate::connection::{Incoming, Peer, Shared, serve_link};
+use thrall_core::constants::PC_DISCOVERY_PORT;
+
 use crate::constants::{
-    LINK_CONNECT, LINK_FAIL_WINDOW, LINK_MAX_FAILS, LINK_PAIR, LINK_PIECE, LOCAL_HOST,
-    NOISE_CONNECT, NOISE_MAX_MESSAGE, NOISE_PAIR, NOISE_PROLOGUE, PAIR_ID_BYTES, PAIR_LIFETIME,
-    PAIR_LINK_PREFIX, PAIR_MAX_OPEN, PAIR_MAX_TRIES, PAIR_SECRET_BYTES, PHONE_FALLBACK_NAME,
-    PHONE_NAME_MAX_CHARS, PHONES_FILE, PIECE_LAST, PIECE_MORE, REMOTE_CHECK, REMOTE_KEY_FILE,
+    ANY_HOST, ASK_CODE_MODULUS, ASK_LIFETIME, ASK_MAX_OPEN, BLOCKED_PCS_FILE, DISCOVER_HELLO,
+    LINK_ASK, LINK_CONNECT, LINK_FAIL_WINDOW, LINK_MAX_FAILS, LINK_PAIR, LINK_PIECE, LOCAL_HOST,
+    MASTER_FALLBACK_NAME, NOISE_ASK, NOISE_CONNECT, NOISE_MAX_MESSAGE, NOISE_PAIR, NOISE_PROLOGUE,
+    PAIR_ID_BYTES, PAIR_LIFETIME, PAIR_LINK_PREFIX, PAIR_MAX_OPEN, PAIR_MAX_TRIES,
+    PAIR_SECRET_BYTES, PC_FALLBACK_NAME, PHONE_FALLBACK_NAME, PHONE_NAME_MAX_CHARS, PHONES_FILE,
+    PIECE_LAST, PIECE_MORE, REMOTE_CHECK, REMOTE_KEY_FILE,
 };
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -74,7 +78,31 @@ fn random<const N: usize>() -> Option<[u8; N]> {
     Some(bytes)
 }
 
-/// A paired phone, as kept in `phones.json`.
+/// What a paired device is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Kind {
+    /// A phone, paired from a QR.
+    #[default]
+    Phone,
+    /// A PC joined as someone's companion (it asked, the owner accepted).
+    Pc,
+}
+
+impl Kind {
+    fn is_phone(&self) -> bool {
+        *self == Kind::Phone
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Kind::Phone => "phone",
+            Kind::Pc => "pc",
+        }
+    }
+}
+
+/// A paired phone (or companion PC), as kept in `phones.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Phone {
     id: String,
@@ -87,6 +115,50 @@ struct Phone {
     /// Whose phone it is (a user id). None: the owner's (phones paired before people existed).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     person: Option<String>,
+    /// A phone or a PC (absent in files from before PCs: a phone).
+    #[serde(default, skip_serializing_if = "Kind::is_phone")]
+    kind: Kind,
+}
+
+/// A PC asking to join, waiting for the owner.
+struct Ask {
+    id: String,
+    /// Its public key, hex.
+    key: String,
+    name: String,
+    code: String,
+    address: String,
+    at: i64,
+    expires: Instant,
+    /// Tells the waiting link what the owner decided (dropped: the request ended).
+    decide: tokio::sync::oneshot::Sender<Verdict>,
+}
+
+/// What the owner decided about a PC asking to join.
+#[derive(Debug, PartialEq, Eq)]
+enum Verdict {
+    /// Let in, as this device.
+    Accepted(String),
+    /// Turned away.
+    Declined,
+}
+
+/// A PC blocked from asking, as kept in `blocked-pcs.json`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Blocked {
+    id: String,
+    /// Its public key, hex.
+    key: String,
+    name: String,
+    at: i64,
+}
+
+/// What came of a PC asking.
+enum Opened {
+    /// It's already joined, as this device.
+    Known(String),
+    /// Waiting for the owner, as this request.
+    Waiting(String, tokio::sync::oneshot::Receiver<Verdict>),
 }
 
 /// A pairing code waiting to be scanned.
@@ -124,6 +196,16 @@ pub struct Remote {
     /// Bumped when a phone is removed or given to someone else, so its open connections check
     /// whether they may stay.
     removed: watch::Sender<u64>,
+    /// PCs asking to join, waiting for the owner.
+    asks: Mutex<Vec<Ask>>,
+    /// PCs blocked from asking.
+    blocked: Mutex<Vec<Blocked>>,
+    /// The PC listener (every network) while it runs.
+    pc_listener: Mutex<Option<Listener>>,
+    /// Answers companions looking for Thrall on the network, while the PC listener runs.
+    finder: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Bumped when the PCs asking change, so the owner's screens ask for the list again.
+    pub(crate) asked: watch::Sender<u64>,
 }
 
 /// Why a handshake was turned away (logged; the phone only sees the connection close).
@@ -135,6 +217,12 @@ enum Refused {
     WrongSecret,
     UnknownPhone,
     BadHandshake,
+    /// A PC asking from the PC listener's port on the phone listener.
+    NotHere,
+    /// A blocked PC asking.
+    Blocked,
+    /// Too many PCs asking at once.
+    Busy,
 }
 
 impl Remote {
@@ -145,6 +233,11 @@ impl Remote {
         let phones = data_dir
             .as_ref()
             .and_then(|d| std::fs::read_to_string(d.join(PHONES_FILE)).ok())
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default();
+        let blocked = data_dir
+            .as_ref()
+            .and_then(|d| std::fs::read_to_string(d.join(BLOCKED_PCS_FILE)).ok())
             .and_then(|text| serde_json::from_str(&text).ok())
             .unwrap_or_default();
         Self {
@@ -158,6 +251,11 @@ impl Remote {
             connected: Mutex::new(HashMap::new()),
             listener: Mutex::new(None),
             removed: watch::channel(0).0,
+            asks: Mutex::new(Vec::new()),
+            blocked: Mutex::new(blocked),
+            pc_listener: Mutex::new(None),
+            finder: Mutex::new(None),
+            asked: watch::channel(0).0,
         }
     }
 
@@ -208,6 +306,7 @@ impl Remote {
                 last_seen: p.last_seen,
                 connected: connected.get(&p.id).is_some_and(|n| *n > 0),
                 person: p.person.clone().unwrap_or_else(|| state.owner_id.clone()),
+                kind: p.kind.as_str().to_owned(),
             })
             .collect();
         items.sort_by_key(|p| std::cmp::Reverse(p.added));
@@ -312,7 +411,7 @@ impl Remote {
     pub fn phone_count(&self, person: &str, owner: &str) -> u32 {
         let n = lock(&self.phones)
             .iter()
-            .filter(|p| p.person.as_deref().unwrap_or(owner) == person)
+            .filter(|p| p.kind == Kind::Phone && p.person.as_deref().unwrap_or(owner) == person)
             .count();
         u32::try_from(n).unwrap_or(u32::MAX)
     }
@@ -424,6 +523,7 @@ impl Remote {
                     added: now_ms(),
                     last_seen: None,
                     person,
+                    kind: Kind::Phone,
                 });
                 id
             }
@@ -455,6 +555,231 @@ impl Remote {
         self.save_phones(&phones);
         Ok((handshake, id, Vec::new()))
     }
+
+    fn save_blocked(&self, blocked: &[Blocked]) {
+        let Some(dir) = &self.data_dir else { return };
+        match serde_json::to_string_pretty(blocked) {
+            Ok(text) => {
+                if let Err(e) = std::fs::write(dir.join(BLOCKED_PCS_FILE), text) {
+                    tracing::warn!(%e, "couldn't save the blocked PCs");
+                }
+            }
+            Err(e) => tracing::warn!(%e, "couldn't save the blocked PCs"),
+        }
+    }
+
+    fn asks_changed(&self) {
+        self.asked.send_modify(|n| *n += 1);
+    }
+
+    /// A PC that finished the handshake asks to join. A joined PC is let straight back in; a
+    /// blocked one, or one too many, is turned away.
+    fn ask_open(
+        &self,
+        key: &str,
+        name: &str,
+        code: &str,
+        address: &str,
+    ) -> Result<Opened, Refused> {
+        if lock(&self.blocked).iter().any(|b| b.key == key) {
+            return Err(Refused::Blocked);
+        }
+        if let Some(p) = lock(&self.phones).iter().find(|p| p.key == key) {
+            return Ok(Opened::Known(p.id.clone()));
+        }
+        let mut asks = lock(&self.asks);
+        asks.retain(|a| a.expires > Instant::now() && !a.decide.is_closed());
+        // The same PC asking again replaces its older request.
+        asks.retain(|a| a.key != key);
+        if asks.len() >= ASK_MAX_OPEN {
+            return Err(Refused::Busy);
+        }
+        let (decide, decided) = tokio::sync::oneshot::channel();
+        let id = new_id(id_prefix::REQUEST);
+        asks.push(Ask {
+            id: id.clone(),
+            key: key.to_owned(),
+            name: name.to_owned(),
+            code: code.to_owned(),
+            address: address.to_owned(),
+            at: now_ms(),
+            expires: Instant::now() + ASK_LIFETIME,
+            decide,
+        });
+        drop(asks);
+        tracing::info!(request = id, name, address, "a PC asked to join");
+        self.asks_changed();
+        Ok(Opened::Waiting(id, decided))
+    }
+
+    /// A request ended without an answer (the PC gave up or it ran out of time).
+    fn ask_ended(&self, request: &str) {
+        let mut asks = lock(&self.asks);
+        let before = asks.len();
+        asks.retain(|a| a.id != request);
+        let changed = asks.len() != before;
+        drop(asks);
+        if changed {
+            self.asks_changed();
+        }
+    }
+
+    /// Every request ends (PCs were switched off).
+    fn asks_cleared(&self) {
+        let had = !std::mem::take(&mut *lock(&self.asks)).is_empty();
+        if had {
+            self.asks_changed();
+        }
+    }
+
+    /// `pc.requests`: who's asking, who's blocked, and the PC listener.
+    pub fn requests(&self, state: &AppState) -> Reply {
+        let mut asks = lock(&self.asks);
+        asks.retain(|a| a.expires > Instant::now() && !a.decide.is_closed());
+        let items = asks
+            .iter()
+            .map(|a| PcRequestInfo {
+                request: a.id.clone(),
+                name: a.name.clone(),
+                code: a.code.clone(),
+                address: a.address.clone(),
+                at: a.at,
+            })
+            .collect();
+        drop(asks);
+        let mut blocked: Vec<BlockedPcInfo> = lock(&self.blocked)
+            .iter()
+            .map(|b| BlockedPcInfo {
+                blocked: b.id.clone(),
+                name: b.name.clone(),
+                at: b.at,
+            })
+            .collect();
+        blocked.sort_by_key(|b| std::cmp::Reverse(b.at));
+        let config = &state.config.remote;
+        let listener = lock(&self.pc_listener);
+        Reply::PcRequests {
+            items,
+            blocked,
+            pcs: PcLinkInfo {
+                enabled: config.pcs,
+                listening: listener.is_some(),
+                port: listener
+                    .as_ref()
+                    .map_or(self.port_override.unwrap_or(config.pc_port), |l| {
+                        l.addr.port()
+                    }),
+                name: computer_name(),
+            },
+        }
+    }
+
+    /// `pc.accept`: let a PC that's asking join as `person`'s (`None`: the owner's). When `code`
+    /// is given it must be the one both screens show.
+    pub fn accept_pc(
+        &self,
+        request: &str,
+        person: Option<String>,
+        code: Option<&str>,
+    ) -> Result<(), String> {
+        let mut asks = lock(&self.asks);
+        let Some(at) = asks.iter().position(|a| a.id == request) else {
+            return Err("That PC isn't asking any more.".to_owned());
+        };
+        if let Some(code) = code
+            && digits(code) != digits(&asks[at].code)
+        {
+            return Err("That isn't the code the PC shows.".to_owned());
+        }
+        let ask = asks.remove(at);
+        drop(asks);
+        let mut phones = lock(&self.phones);
+        let id = new_id(id_prefix::PHONE);
+        phones.push(Phone {
+            id: id.clone(),
+            name: ask.name.clone(),
+            key: ask.key,
+            added: now_ms(),
+            last_seen: None,
+            person,
+            kind: Kind::Pc,
+        });
+        self.save_phones(&phones);
+        drop(phones);
+        tracing::info!(device = id, name = ask.name, "a PC joined");
+        // The PC may have just given up; it joined all the same and connects next time.
+        let _ = ask.decide.send(Verdict::Accepted(id));
+        self.asks_changed();
+        Ok(())
+    }
+
+    /// `pc.decline`: turn a PC that's asking away, and with `block` keep it from asking again.
+    /// False if it isn't asking.
+    pub fn decline_pc(&self, request: &str, block: bool) -> bool {
+        let mut asks = lock(&self.asks);
+        let Some(at) = asks.iter().position(|a| a.id == request) else {
+            return false;
+        };
+        let ask = asks.remove(at);
+        drop(asks);
+        if block {
+            let mut blocked = lock(&self.blocked);
+            blocked.retain(|b| b.key != ask.key);
+            blocked.push(Blocked {
+                id: new_id(id_prefix::PHONE),
+                key: ask.key.clone(),
+                name: ask.name.clone(),
+                at: now_ms(),
+            });
+            self.save_blocked(&blocked);
+        }
+        tracing::info!(request, name = ask.name, block, "a PC was turned away");
+        let _ = ask.decide.send(Verdict::Declined);
+        self.asks_changed();
+        true
+    }
+
+    /// `pc.unblock`: let a blocked PC ask again. False if there's no such PC.
+    pub fn unblock_pc(&self, blocked: &str) -> bool {
+        let mut list = lock(&self.blocked);
+        let before = list.len();
+        list.retain(|b| b.id != blocked);
+        if list.len() == before {
+            return false;
+        }
+        self.save_blocked(&list);
+        true
+    }
+}
+
+/// Only the digits of a code ("483 912" and "483912" are the same code).
+fn digits(code: &str) -> String {
+    code.chars().filter(char::is_ascii_digit).collect()
+}
+
+/// The code both screens show for a PC asking to join, from the finished handshake's hash: a
+/// man in the middle makes two different handshakes, so the screens wouldn't match.
+pub fn ask_code(handshake_hash: &[u8]) -> String {
+    let mut first = [0u8; 4];
+    for (to, from) in first.iter_mut().zip(handshake_hash) {
+        *to = *from;
+    }
+    let n = u32::from_be_bytes(first) % ASK_CODE_MODULUS;
+    format!("{:03} {:03}", n / 1000, n % 1000)
+}
+
+/// This computer's name, as companions looking for Thrall see it.
+pub fn computer_name() -> String {
+    ["COMPUTERNAME", "HOSTNAME"]
+        .iter()
+        .find_map(|v| std::env::var(v).ok().filter(|n| !n.trim().is_empty()))
+        .or_else(|| {
+            std::fs::read_to_string("/etc/hostname")
+                .ok()
+                .map(|n| n.trim().to_owned())
+                .filter(|n| !n.is_empty())
+        })
+        .unwrap_or_else(|| MASTER_FALLBACK_NAME.to_owned())
 }
 
 fn responder(
@@ -514,6 +839,11 @@ fn pair_link(address: &str, public: &[u8], id: &[u8], secret: &[u8]) -> String {
 
 /// A phone's name, cleaned: no control characters, trimmed, capped.
 fn phone_name(raw: &str) -> String {
+    device_name(raw, PHONE_FALLBACK_NAME)
+}
+
+/// A device's name, cleaned: no control characters, trimmed, capped; `fallback` when empty.
+fn device_name(raw: &str, fallback: &str) -> String {
     let name: String = raw
         .chars()
         .filter(|c| !c.is_control())
@@ -521,7 +851,7 @@ fn phone_name(raw: &str) -> String {
         .collect();
     let name = name.trim();
     if name.is_empty() {
-        PHONE_FALLBACK_NAME.to_owned()
+        fallback.to_owned()
     } else {
         name.to_owned()
     }
@@ -578,13 +908,14 @@ pub fn open(
     Ok((marker == PIECE_LAST).then(|| std::mem::take(frame)))
 }
 
-/// Keep the phone listener in step with `[remote] enabled` (and its port) for as long as the
-/// engine runs.
+/// Keep the phone listener in step with `[remote] enabled`, and the PC listener with
+/// `[remote] pcs` (and their ports), for as long as the engine runs.
 pub fn supervise(shared: Arc<Shared>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(REMOTE_CHECK);
-        // The port that last failed to open, so the warning isn't repeated every tick.
+        // The ports that last failed to open, so the warning isn't repeated every tick.
         let mut failed_port = None;
+        let mut failed_pc_port = None;
         loop {
             tick.tick().await;
             let config = shared.hub.state().config.remote.clone();
@@ -594,8 +925,8 @@ pub fn supervise(shared: Arc<Shared>) -> tokio::task::JoinHandle<()> {
             match (config.enabled, running_port) {
                 (true, Some(p)) if p == port => {}
                 (true, _) => {
-                    stop(remote);
-                    match open_listener(shared.clone(), port).await {
+                    stop(&remote.listener);
+                    match open_listener(shared.clone(), LOCAL_HOST, port, false).await {
                         Ok(listener) => {
                             tracing::info!(addr = %listener.addr, "phone link listening");
                             failed_port = None;
@@ -610,19 +941,89 @@ pub fn supervise(shared: Arc<Shared>) -> tokio::task::JoinHandle<()> {
                     }
                 }
                 (false, Some(_)) => {
-                    stop(remote);
+                    stop(&remote.listener);
                     tracing::info!("phone link closed");
                 }
                 (false, None) => failed_port = None,
+            }
+            let pc_port = remote.port_override.unwrap_or(config.pc_port);
+            let running_pc_port = lock(&remote.pc_listener).as_ref().map(|l| l.port);
+            match (config.pcs, running_pc_port) {
+                (true, Some(p)) if p == pc_port => {}
+                (true, _) => {
+                    stop_pcs(remote);
+                    // Tests pick their own ports and stay on this computer.
+                    let host = if remote.port_override.is_some() {
+                        LOCAL_HOST
+                    } else {
+                        ANY_HOST
+                    };
+                    match open_listener(shared.clone(), host, pc_port, true).await {
+                        Ok(listener) => {
+                            tracing::info!(addr = %listener.addr, "PC link listening");
+                            failed_pc_port = None;
+                            if remote.port_override.is_none() {
+                                let port = listener.addr.port();
+                                *lock(&remote.finder) = Some(tokio::spawn(answer_finds(port)));
+                            }
+                            *lock(&remote.pc_listener) = Some(listener);
+                        }
+                        Err(e) => {
+                            if failed_pc_port != Some(pc_port) {
+                                tracing::warn!(%e, port = pc_port, "couldn't open the PC link");
+                                failed_pc_port = Some(pc_port);
+                            }
+                        }
+                    }
+                }
+                (false, Some(_)) => {
+                    stop_pcs(remote);
+                    tracing::info!("PC link closed");
+                }
+                (false, None) => failed_pc_port = None,
             }
         }
     })
 }
 
-fn stop(remote: &Remote) {
-    if let Some(listener) = lock(&remote.listener).take() {
+fn stop(listener: &Mutex<Option<Listener>>) {
+    if let Some(listener) = lock(listener).take() {
         let _ = listener.close.send(true);
         listener.task.abort();
+    }
+}
+
+/// Close the PC listener, stop answering on the network, and end every request.
+fn stop_pcs(remote: &Remote) {
+    stop(&remote.pc_listener);
+    if let Some(finder) = lock(&remote.finder).take() {
+        finder.abort();
+    }
+    remote.asks_cleared();
+}
+
+/// Answer companions looking for Thrall on the network ([`DISCOVER_HELLO`] broadcasts) with this
+/// computer's name and the PC listener's port. Nothing else gets an answer.
+async fn answer_finds(port: u16) {
+    let socket = match tokio::net::UdpSocket::bind((ANY_HOST, PC_DISCOVERY_PORT)).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(%e, "couldn't listen for companions looking for Thrall");
+            return;
+        }
+    };
+    let answer = serde_json::json!({ "thrall": 1, "name": computer_name(), "port": port })
+        .to_string()
+        .into_bytes();
+    let mut buf = [0u8; 64];
+    loop {
+        // Errors (Windows reports an earlier answer that bounced) are passed over.
+        let Ok((n, from)) = socket.recv_from(&mut buf).await else {
+            continue;
+        };
+        if buf.get(..n) == Some(DISCOVER_HELLO) {
+            let _ = socket.send_to(&answer, from).await;
+        }
     }
 }
 
@@ -630,10 +1031,17 @@ fn stop(remote: &Remote) {
 struct LinkApp {
     shared: Arc<Shared>,
     close: watch::Receiver<bool>,
+    /// The PC listener: PCs may ask to join here.
+    pcs: bool,
 }
 
-async fn open_listener(shared: Arc<Shared>, port: u16) -> std::io::Result<Listener> {
-    let socket = tokio::net::TcpListener::bind((LOCAL_HOST, port)).await?;
+async fn open_listener(
+    shared: Arc<Shared>,
+    host: &str,
+    port: u16,
+    pcs: bool,
+) -> std::io::Result<Listener> {
+    let socket = tokio::net::TcpListener::bind((host, port)).await?;
     let addr = socket.local_addr()?;
     let (close, closed) = watch::channel(false);
     let router = Router::new()
@@ -641,9 +1049,11 @@ async fn open_listener(shared: Arc<Shared>, port: u16) -> std::io::Result<Listen
         .with_state(LinkApp {
             shared,
             close: closed,
+            pcs,
         });
     let task = tokio::spawn(async move {
-        if let Err(e) = axum::serve(socket, router).await {
+        let service = router.into_make_service_with_connect_info::<SocketAddr>();
+        if let Err(e) = axum::serve(socket, service).await {
             tracing::error!(%e, "phone link stopped");
         }
     });
@@ -655,23 +1065,46 @@ async fn open_listener(shared: Arc<Shared>, port: u16) -> std::io::Result<Listen
     })
 }
 
-/// Only the phone app connects here: a browser page (it sends `Origin`) is turned away.
-async fn upgrade(State(app): State<LinkApp>, headers: HeaderMap, ws: WebSocketUpgrade) -> Response {
+/// Only the phone app and companions connect here: a browser page (it sends `Origin`) is turned
+/// away.
+async fn upgrade(
+    State(app): State<LinkApp>,
+    ConnectInfo(from): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> Response {
     if headers.contains_key(header::ORIGIN) {
         return (StatusCode::FORBIDDEN, "Not for browsers.").into_response();
     }
     ws.max_message_size(NOISE_MAX_MESSAGE + PAIR_ID_BYTES + 1)
-        .on_upgrade(move |socket| link(socket, app.shared, app.close))
+        .on_upgrade(move |socket| link(socket, app.shared, app.close, app.pcs, from))
 }
 
-/// One phone connection: the handshake, then the protocol over the encrypted link.
-async fn link(socket: WebSocket, shared: Arc<Shared>, close: watch::Receiver<bool>) {
+/// One phone (or PC) connection: the handshake, then the protocol over the encrypted link. On
+/// the PC listener a PC may instead ask to join.
+async fn link(
+    socket: WebSocket,
+    shared: Arc<Shared>,
+    close: watch::Receiver<bool>,
+    pcs: bool,
+    from: SocketAddr,
+) {
     let (mut sink, mut stream) = socket.split();
     let deadline = std::time::Duration::from_secs(HELLO_TIMEOUT_SECS);
     let first = match tokio::time::timeout(deadline, stream.next()).await {
         Ok(Some(Ok(Message::Binary(bytes)))) => bytes,
         _ => return,
     };
+    if let Some((&LINK_ASK, rest)) = first.split_first() {
+        if pcs {
+            ask_to_join(sink, stream, rest, &shared, from, close).await;
+        } else {
+            tracing::warn!(why = ?Refused::NotHere, "turned a phone connection away");
+            shared.remote.failed();
+            let _ = sink.close().await;
+        }
+        return;
+    }
     let (mut handshake, phone, answer) = match shared.remote.accept(&first) {
         Ok(accepted) => accepted,
         Err(why) => {
@@ -701,6 +1134,111 @@ async fn link(socket: WebSocket, shared: Arc<Shared>, close: watch::Receiver<boo
     if let Some(n) = lock(&shared.remote.connected).get_mut(&phone) {
         *n = n.saturating_sub(1);
     }
+}
+
+/// A PC asking to join: the rest of the `Noise_XX` handshake (its first message is `first`),
+/// then it waits, link open, for the owner to accept, decline or block it. The answer is one
+/// encrypted frame, `{"approved": true, "device": "<id>"}` or `{"approved": false}`, and the link
+/// closes; an accepted PC then connects like a paired phone.
+async fn ask_to_join(
+    mut sink: WsSink,
+    mut stream: WsStream,
+    first: &[u8],
+    shared: &Shared,
+    from: SocketAddr,
+    mut close: watch::Receiver<bool>,
+) {
+    let remote = &shared.remote;
+    if remote.paused() {
+        tracing::warn!(why = ?Refused::Paused, "turned a PC away");
+        let _ = sink.close().await;
+        return;
+    }
+    let Ok(mut handshake) = responder(NOISE_ASK, &remote.private, None) else {
+        return;
+    };
+    let mut buf = vec![0u8; NOISE_MAX_MESSAGE];
+    if handshake.read_message(first, &mut buf).is_err() {
+        remote.failed();
+        let _ = sink.close().await;
+        return;
+    }
+    let Ok(n) = handshake.write_message(&[], &mut buf) else {
+        return;
+    };
+    if sink
+        .send(Message::Binary(buf[..n].to_vec().into()))
+        .await
+        .is_err()
+    {
+        return;
+    }
+    let deadline = std::time::Duration::from_secs(HELLO_TIMEOUT_SECS);
+    let third = match tokio::time::timeout(deadline, stream.next()).await {
+        Ok(Some(Ok(Message::Binary(bytes)))) => bytes,
+        _ => return,
+    };
+    let Ok(read) = handshake.read_message(&third, &mut buf) else {
+        remote.failed();
+        let _ = sink.close().await;
+        return;
+    };
+    #[derive(Deserialize, Default)]
+    struct Hello {
+        #[serde(default)]
+        name: String,
+    }
+    let hello: Hello = serde_json::from_slice(&buf[..read]).unwrap_or_default();
+    let name = device_name(&hello.name, PC_FALLBACK_NAME);
+    let Some(key) = handshake.get_remote_static().map(hex) else {
+        return;
+    };
+    let code = ask_code(handshake.get_handshake_hash());
+    let Ok(mut transport) = handshake.into_transport_mode() else {
+        return;
+    };
+    let verdict = match remote.ask_open(&key, &name, &code, &from.ip().to_string()) {
+        Ok(Opened::Known(device)) => Verdict::Accepted(device),
+        Ok(Opened::Waiting(request, mut decided)) => {
+            let expired = tokio::time::sleep(ASK_LIFETIME);
+            tokio::pin!(expired);
+            let verdict = loop {
+                tokio::select! {
+                    v = &mut decided => break v.ok(),
+                    () = &mut expired => break None,
+                    _ = close.changed() => break None,
+                    msg = stream.next() => match msg {
+                        Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break None,
+                        Some(Ok(_)) => {}
+                    },
+                }
+            };
+            remote.ask_ended(&request);
+            match verdict {
+                Some(v) => v,
+                None => {
+                    let _ = sink.close().await;
+                    return;
+                }
+            }
+        }
+        Err(why) => {
+            tracing::warn!(?why, name, "turned a PC away");
+            Verdict::Declined
+        }
+    };
+    let answer = match &verdict {
+        Verdict::Accepted(device) => serde_json::json!({ "approved": true, "device": device }),
+        Verdict::Declined => serde_json::json!({ "approved": false }),
+    };
+    if let Ok(pieces) = seal(&mut transport, answer.to_string().as_bytes()) {
+        for piece in pieces {
+            if sink.send(Message::Binary(piece.into())).await.is_err() {
+                break;
+            }
+        }
+    }
+    let _ = sink.close().await;
 }
 
 type WsSink = futures::stream::SplitSink<WebSocket, Message>;

@@ -27,6 +27,7 @@ const TOKEN: &str = "test-token";
 const PAIR: &str = "Noise_IKpsk1_25519_ChaChaPoly_BLAKE2s";
 const CONNECT: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 const PROLOGUE: &[u8] = b"thrall-remote-v1";
+const ASK: &str = "Noise_XX_25519_ChaChaPoly_BLAKE2s";
 
 struct Silent;
 
@@ -83,6 +84,7 @@ async fn engine_with(name: &str, member_key: Option<&[u8]>) -> String {
     let mut config = Config::default();
     config.remote.enabled = true;
     config.remote.address = "https://pc.example.ts.net".into();
+    config.remote.pcs = true;
     let mut state = AppState::new(config, Arc::new(store), Arc::new(Silent), "u_test".into())
         .unwrap()
         .with_own_keys(Arc::new(MemoryKeys::default()));
@@ -1254,5 +1256,254 @@ async fn a_pairing_code_is_for_one_person_and_phones_can_change_hands() {
             }
         ),
         "got {reply:?}"
+    );
+}
+
+/// The PC listener's port, once it's listening.
+async fn pc_port(desk: &mut Socket) -> u16 {
+    for i in 0..50 {
+        if let Reply::PcRequests { pcs, .. } =
+            ask(desk, &format!("pl{i}"), Request::PcRequests {}).await
+            && pcs.listening
+        {
+            return pcs.port;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("the PC link never started");
+}
+
+/// The PCs asking now, and the blocked ones' names.
+async fn pc_requests(
+    desk: &mut Socket,
+    id: &str,
+) -> (Vec<thrall_protocol::PcRequestInfo>, Vec<String>) {
+    match ask(desk, id, Request::PcRequests {}).await {
+        Reply::PcRequests { items, blocked, .. } => {
+            (items, blocked.into_iter().map(|b| b.name).collect())
+        }
+        other => panic!("expected pc.requests, got {other:?}"),
+    }
+}
+
+/// Wait until a PC is asking; its request.
+async fn first_request(desk: &mut Socket) -> thrall_protocol::PcRequestInfo {
+    for i in 0..50 {
+        if let Some(r) = pc_requests(desk, &format!("w{i}"))
+            .await
+            .0
+            .into_iter()
+            .next()
+        {
+            return r;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("no PC asked");
+}
+
+/// A PC asking to join, link open.
+struct Asking {
+    socket: Socket,
+    transport: TransportState,
+    /// The code it shows.
+    code: String,
+    /// The engine's key, learned in the handshake.
+    engine_key: Vec<u8>,
+}
+
+impl Asking {
+    /// Ask to join on `port`; `None` when the engine turns the handshake away.
+    async fn start(port: u16, keys: &Keypair, name: &str) -> Option<Self> {
+        let url = format!("ws://127.0.0.1:{port}/v1/remote");
+        let (mut socket, _) = tokio_tungstenite::connect_async(url).await.unwrap();
+        let mut hs = Builder::new(ASK.parse().unwrap())
+            .local_private_key(&keys.private)
+            .unwrap()
+            .prologue(PROLOGUE)
+            .unwrap()
+            .build_initiator()
+            .unwrap();
+        let mut message = vec![0u8; 65_535];
+        let n = hs.write_message(&[], &mut message).unwrap();
+        let first = [&[3u8][..], &message[..n]].concat();
+        socket.send(Message::Binary(first.into())).await.unwrap();
+        let second = match tokio::time::timeout(Duration::from_secs(10), socket.next()).await {
+            Ok(Some(Ok(Message::Binary(bytes)))) => bytes,
+            _ => return None,
+        };
+        let mut payload = vec![0u8; 65_535];
+        hs.read_message(&second, &mut payload).unwrap();
+        let hello = serde_json::json!({ "name": name }).to_string();
+        let n = hs.write_message(hello.as_bytes(), &mut message).unwrap();
+        socket
+            .send(Message::Binary(message[..n].to_vec().into()))
+            .await
+            .unwrap();
+        let code = thrall_server::remote::ask_code(hs.get_handshake_hash());
+        let engine_key = hs.get_remote_static().unwrap().to_vec();
+        Some(Self {
+            socket,
+            transport: hs.into_transport_mode().unwrap(),
+            code,
+            engine_key,
+        })
+    }
+
+    /// What the owner decided: the device id if let in, `None` if turned away.
+    async fn verdict(mut self) -> Option<String> {
+        let mut partial = Vec::new();
+        loop {
+            let msg = tokio::time::timeout(Duration::from_secs(10), self.socket.next())
+                .await
+                .expect("no answer within 10 s");
+            match msg {
+                Some(Ok(Message::Binary(bytes))) => {
+                    if let Some(whole) = open(&mut self.transport, &bytes, &mut partial).unwrap() {
+                        let answer: serde_json::Value = serde_json::from_slice(&whole).unwrap();
+                        return (answer["approved"] == true)
+                            .then(|| answer["device"].as_str().unwrap().to_owned());
+                    }
+                }
+                Some(Ok(Message::Close(_))) | None | Some(Err(_)) => {
+                    panic!("closed without an answer")
+                }
+                Some(Ok(_)) => {}
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_pc_asks_to_join_and_the_owner_lets_it_in() {
+    let url = engine("pc-accept").await;
+    let mut desk = desktop(&url).await;
+    let port = pc_port(&mut desk).await;
+    let keys = phone_keys();
+    let asking = Asking::start(port, &keys, "KIDS-PC").await.unwrap();
+
+    // The owner sees it, with the same code the PC shows.
+    let request = first_request(&mut desk).await;
+    assert_eq!(request.name, "KIDS-PC");
+    assert_eq!(request.code, asking.code);
+    assert_eq!(request.code.len(), 7, "three digits, a space, three digits");
+
+    // A typed code must be the PC's.
+    let wrong = if asking.code == "000 000" {
+        "111 111"
+    } else {
+        "000 000"
+    };
+    let reply = ask(
+        &mut desk,
+        "a1",
+        Request::PcAccept {
+            request: request.request.clone(),
+            person: "u_sam".into(),
+            code: Some(wrong.into()),
+        },
+    )
+    .await;
+    assert!(is_error(&reply, ErrorCode::Invalid), "got {reply:?}");
+    let reply = ask(
+        &mut desk,
+        "a2",
+        Request::PcAccept {
+            request: request.request.clone(),
+            person: "u_sam".into(),
+            code: Some(asking.code.replace(' ', "")),
+        },
+    )
+    .await;
+    let Reply::PcRequests { items, .. } = reply else {
+        panic!("expected pc.requests, got {reply:?}");
+    };
+    assert!(items.is_empty(), "still asking: {items:?}");
+    let engine_key = asking.engine_key.clone();
+    let device = asking.verdict().await.expect("let in");
+
+    // It's listed as Sam's PC, and connects as Sam like a paired phone.
+    let Reply::PhoneListed { items, .. } = ask(&mut desk, "l", Request::PhoneList {}).await else {
+        panic!("no list");
+    };
+    let pc = items.iter().find(|p| p.phone == device).unwrap();
+    assert_eq!(
+        (pc.kind.as_str(), pc.person.as_str(), pc.name.as_str()),
+        ("pc", "u_sam", "KIDS-PC")
+    );
+    let mut link = Phone::handshake(port, &keys, &engine_key, None, "")
+        .await
+        .expect("a joined PC connects");
+    assert_eq!(welcomed_as(&mut link, "h").await, "u_sam");
+
+    // Asking again, it's let straight back in.
+    let again = Asking::start(port, &keys, "KIDS-PC").await.unwrap();
+    assert_eq!(again.verdict().await.as_deref(), Some(device.as_str()));
+}
+
+#[tokio::test]
+async fn pcs_can_be_turned_away_blocked_and_unblocked() {
+    let url = engine("pc-block").await;
+    let mut desk = desktop(&url).await;
+    let port = pc_port(&mut desk).await;
+    let keys = phone_keys();
+
+    // Declined: told no, and may ask again.
+    let asking = Asking::start(port, &keys, "STRANGER").await.unwrap();
+    let request = first_request(&mut desk).await;
+    let reply = ask(
+        &mut desk,
+        "d1",
+        Request::PcDecline {
+            request: request.request,
+            block: false,
+        },
+    )
+    .await;
+    assert!(matches!(reply, Reply::PcRequests { .. }), "got {reply:?}");
+    assert_eq!(asking.verdict().await, None);
+
+    // Blocked: told no, then turned away without the owner being asked.
+    let asking = Asking::start(port, &keys, "STRANGER").await.unwrap();
+    let request = first_request(&mut desk).await;
+    ask(
+        &mut desk,
+        "d2",
+        Request::PcDecline {
+            request: request.request,
+            block: true,
+        },
+    )
+    .await;
+    assert_eq!(asking.verdict().await, None);
+    let asking = Asking::start(port, &keys, "STRANGER").await.unwrap();
+    assert_eq!(asking.verdict().await, None);
+    let (items, blocked) = pc_requests(&mut desk, "r1").await;
+    assert!(items.is_empty(), "a blocked PC was listed: {items:?}");
+    assert_eq!(blocked, vec!["STRANGER".to_owned()]);
+
+    // Unblocked: it may ask again.
+    let Reply::PcRequests { blocked, .. } = ask(&mut desk, "r2", Request::PcRequests {}).await
+    else {
+        panic!("no list");
+    };
+    let reply = ask(
+        &mut desk,
+        "u",
+        Request::PcUnblock {
+            blocked: blocked[0].blocked.clone(),
+        },
+    )
+    .await;
+    assert!(matches!(reply, Reply::PcRequests { .. }), "got {reply:?}");
+    let _asking = Asking::start(port, &keys, "STRANGER").await.unwrap();
+    assert_eq!(first_request(&mut desk).await.name, "STRANGER");
+
+    // The phone link never takes requests to join.
+    let phone_port = phone_port(&mut desk).await;
+    assert!(
+        Asking::start(phone_port, &phone_keys(), "SNEAKY")
+            .await
+            .is_none()
     );
 }

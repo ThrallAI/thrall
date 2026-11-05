@@ -18,6 +18,7 @@ import { TranscriptItem } from "./components/TranscriptItem";
 import { FileLoader } from "./components/Attachments";
 import {
   ARCHIVED_SESSIONS,
+  ASK_NOTE_MS,
   CLIENT_COMMANDS,
   CLIENT_KIND,
   CLIENT_LABELS,
@@ -34,7 +35,8 @@ import {
 } from "./constants";
 import { Engine, EngineError, endpoint, type ConnectionState, type Request } from "./engine";
 import { NewFolder } from "./components/NewFolder";
-import type { CommandItem, EngineInfo, EventFrame, GroupInfo, UserInfo } from "./protocol";
+import { PcAsking } from "./components/PCs";
+import type { CommandItem, EngineInfo, EventFrame, GroupInfo, PcRequestInfo, PersonInfo, UserInfo } from "./protocol";
 import { markWelcomed, tourOn, welcomed } from "./onboarding";
 import { Tour } from "./components/Tour";
 import { Welcome } from "./components/Welcome";
@@ -115,6 +117,10 @@ export function App() {
   const [groups, setGroups] = useState<GroupInfo[]>([]);
   const [palette, setPalette] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // PCs asking to join (the owner, on this computer, sees them wherever they are).
+  const [asks, setAsks] = useState<PcRequestInfo[]>([]);
+  const [askPeople, setAskPeople] = useState<PersonInfo[]>([]);
+  const [askNote, setAskNote] = useState<string | null>(null);
   // Who's signed in, and their first steps: the welcome, then (if they want it) the tour.
   const [me, setMe] = useState<UserInfo | null>(null);
   const [welcoming, setWelcoming] = useState(false);
@@ -185,10 +191,35 @@ export function App() {
       .catch(() => undefined);
   }, []);
 
+  const refreshAsks = useCallback(() => {
+    const e = engine.current;
+    if (!e) return;
+    e.request<"pc.requests">({ type: "pc.requests" })
+      .then((r) => {
+        setAsks(r.items);
+        if (r.items.length > 0)
+          e.request<"people.listed">({ type: "people.list" })
+            .then((p) => setAskPeople(p.items))
+            .catch(() => undefined);
+      })
+      // Only the owner on this computer is asked.
+      .catch(() => setAsks([]));
+  }, []);
+
+  useEffect(() => {
+    if (!askNote) return;
+    const t = window.setTimeout(() => setAskNote(null), ASK_NOTE_MS);
+    return () => window.clearTimeout(t);
+  }, [askNote]);
+
   // Connect once; reconnects reopen the current session from the last event seen.
   useEffect(() => {
     const e = new Engine(endpoint(), {
       onEvent(frame) {
+        if (frame.type === "pc.asked") {
+          refreshAsks();
+          return;
+        }
         // Every session's row follows its state (working, needs you, idle), the open one too.
         if (frame.type === "status") {
           setSessions((list) => list.map((s) => (s.session === frame.session ? { ...s, state: frame.state } : s)));
@@ -232,6 +263,7 @@ export function App() {
         }
         if (!viewRef.current.model) dispatch({ type: "patch", patch: { model: engineInfo.model } });
         refreshCommands();
+        refreshAsks();
         e.request({ type: "session.watch_all" }).catch(() => undefined);
         e.request<"group.listed">({ type: "group.list" })
           .then((r) => setGroups(r.items))
@@ -980,6 +1012,23 @@ export function App() {
         />
       ) : null}
       {touring ? <Tour onDone={() => setTouring(false)} /> : null}
+      {(asks.length > 0 && !settingsOpen) || askNote ? (
+        <div className="th-asks" role="status">
+          {settingsOpen
+            ? null
+            : asks.map((r) => (
+                <PcAsking
+                  key={r.request}
+                  engine={engine.current}
+                  request={r}
+                  people={askPeople}
+                  onDone={(left) => setAsks(left.items)}
+                  onStatus={(s) => setAskNote(s.text)}
+                />
+              ))}
+          {askNote ? <p className="th-asks-note">{askNote}</p> : null}
+        </div>
+      ) : null}
       {rewinding && current && engine.current ? (
         <RewindDialog
           engine={engine.current}

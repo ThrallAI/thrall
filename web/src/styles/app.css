@@ -2434,3 +2434,65 @@ select.th-input {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* PCs asking to join: a card per PC, bottom right, wherever the owner is (Settings → PCs too). */
+.th-asks {
+  position: fixed;
+  right: var(--space-4);
+  bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(360px, calc(100vw - 2 * var(--space-4)));
+}
+.th-asks .th-ask {
+  box-shadow: var(--shadow-pop);
+}
+.th-ask {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--ink);
+}
+.th-ask p {
+  margin: 0;
+}
+.th-ask-title {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.th-ask-code {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+.th-ask-code span {
+  font: 600 20px/28px var(--font-mono);
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  margin-left: var(--space-2);
+}
+.th-ask-hint {
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+.th-ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.th-asks-note {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  box-shadow: var(--shadow-pop);
+}

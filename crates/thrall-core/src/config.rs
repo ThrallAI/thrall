@@ -8,10 +8,10 @@ use crate::constants::{
     DEFAULT_CONTEXT_LIMIT_TOKENS, DEFAULT_DESKTOP_SHORTCUT, DEFAULT_EMBEDDING_MODEL,
     DEFAULT_FAL_BASE_URL, DEFAULT_HEARTBEAT_HOURS, DEFAULT_HEARTBEAT_MINUTES,
     DEFAULT_HOME_KEEP_DAYS, DEFAULT_IMAGE_MODEL, DEFAULT_LOCAL_BASE_URL, DEFAULT_LOG_LEVEL,
-    DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_OPENROUTER_BASE_URL, DEFAULT_REMOTE_PORT,
-    DEFAULT_SD_WEBUI_URL, DEFAULT_SPEECH_MODEL, DEFAULT_SPEECH_VOICE, DEFAULT_TRANSCRIBE_MODEL,
-    DEFAULT_VISION_BACKUP_MODEL, DEFAULT_VISION_MODEL, EDITABLE_SETTINGS, HEARTBEAT_MIN_MINUTES,
-    SHORTCUT_MODIFIERS,
+    DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_OPENROUTER_BASE_URL, DEFAULT_PC_PORT,
+    DEFAULT_REMOTE_PORT, DEFAULT_SD_WEBUI_URL, DEFAULT_SPEECH_MODEL, DEFAULT_SPEECH_VOICE,
+    DEFAULT_TRANSCRIBE_MODEL, DEFAULT_VISION_BACKUP_MODEL, DEFAULT_VISION_MODEL, EDITABLE_SETTINGS,
+    HEARTBEAT_MIN_MINUTES, SHORTCUT_MODIFIERS,
 };
 use crate::error::CoreError;
 
@@ -125,6 +125,11 @@ pub struct RemoteConfig {
     pub address: String,
     /// Port of the phone listener on 127.0.0.1 (what the tunnel forwards to).
     pub port: u16,
+    /// PCs on this computer's networks (home or office, or the tailnet) may find this Thrall and
+    /// ask to join as someone's companion; the owner accepts, declines or blocks each one.
+    pub pcs: bool,
+    /// Port of the PC listener, on every network this computer is on.
+    pub pc_port: u16,
 }
 
 impl Default for RemoteConfig {
@@ -133,6 +138,8 @@ impl Default for RemoteConfig {
             enabled: false,
             address: String::new(),
             port: DEFAULT_REMOTE_PORT,
+            pcs: false,
+            pc_port: DEFAULT_PC_PORT,
         }
     }
 }

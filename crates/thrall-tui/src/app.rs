@@ -514,6 +514,8 @@ impl App {
             Event::AgentCompleted { agent, .. } if agent == CHECK_IN_AGENT => {}
             // Only the desktop app installs updates.
             Event::UpdateRequested {} => {}
+            // PCs asking to join are answered in the desktop app's Settings.
+            Event::PcAsked {} => {}
             Event::AgentCompleted {
                 title,
                 status,

@@ -502,6 +502,42 @@ export type RequestFrame = {
       type: "phone.remove";
     }
   | {
+      type: "pc.requests";
+    }
+  | {
+      /**
+       * The code the PC shows, typed by the owner.
+       */
+      code?: string | null;
+      /**
+       * Whose PC it is (a person's id).
+       */
+      person: string;
+      /**
+       * The request's id.
+       */
+      request: string;
+      type: "pc.accept";
+    }
+  | {
+      /**
+       * Block it from asking again.
+       */
+      block?: boolean;
+      /**
+       * The request's id.
+       */
+      request: string;
+      type: "pc.decline";
+    }
+  | {
+      /**
+       * The blocked PC's id.
+       */
+      blocked: string;
+      type: "pc.unblock";
+    }
+  | {
       /**
        * Count each person's spending from this moment (Unix ms), e.g. the start of this month
        * where the asker is; absent: all of it.
@@ -979,6 +1015,18 @@ export type ReplyFrame = {
       items: PhoneInfo[];
       remote: RemoteInfo;
       type: "phone.listed";
+    }
+  | {
+      /**
+       * PCs blocked from asking, newest first.
+       */
+      blocked: BlockedPcInfo[];
+      /**
+       * PCs asking to join now, oldest first.
+       */
+      items: PcRequestInfo[];
+      pcs: PcLinkInfo;
+      type: "pc.requests";
     }
   | {
       /**
@@ -1509,6 +1557,9 @@ export type EventFrame = {
       type: "update.requested";
     }
   | {
+      type: "pc.asked";
+    }
+  | {
       /**
        * Stable code clients switch on.
        */
@@ -1985,6 +2036,10 @@ export interface PhoneInfo {
    */
   connected?: boolean;
   /**
+   * `phone`, or `pc` for a companion PC.
+   */
+  kind?: string;
+  /**
    * When it last connected, Unix ms (absent if never since pairing).
    */
   last_seen?: number | null;
@@ -2019,6 +2074,69 @@ export interface RemoteInfo {
   listening: boolean;
   /**
    * Its port on 127.0.0.1 (what the tunnel forwards to).
+   */
+  port: number;
+}
+/**
+ * A PC blocked from asking to join.
+ */
+export interface BlockedPcInfo {
+  /**
+   * When it was blocked, Unix ms.
+   */
+  at: number;
+  /**
+   * Its id.
+   */
+  blocked: string;
+  /**
+   * The name it gave.
+   */
+  name: string;
+}
+/**
+ * A PC asking to join as someone's companion.
+ */
+export interface PcRequestInfo {
+  /**
+   * Where it's asking from (its network address).
+   */
+  address: string;
+  /**
+   * When it asked, Unix ms.
+   */
+  at: number;
+  /**
+   * The code both screens show: if they match, nobody is in between.
+   */
+  code: string;
+  /**
+   * The name the PC gave (its computer name).
+   */
+  name: string;
+  /**
+   * The request's id.
+   */
+  request: string;
+}
+/**
+ * The PC listener.
+ */
+export interface PcLinkInfo {
+  /**
+   * Switched on in settings (`remote.pcs`).
+   */
+  enabled: boolean;
+  /**
+   * The listener is running.
+   */
+  listening: boolean;
+  /**
+   * This computer's name, as companions see it.
+   */
+  name: string;
+  /**
+   * Its port, on every network this computer is on.
    */
   port: number;
 }

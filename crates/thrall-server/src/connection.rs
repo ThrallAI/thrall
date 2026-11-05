@@ -135,6 +135,10 @@ where
         && conn.person.role == thrall_core::constants::person_role::OWNER;
     let _desktop = owners_desktop.then(|| Counted::new(&shared.desktops));
     let mut update_asked = shared.update_asked.subscribe();
+    // The owner's screens on this computer hear when PCs ask to join.
+    let owner_here =
+        conn.peer == Peer::Local && conn.person.role == thrall_core::constants::person_role::OWNER;
+    let mut pc_asked = shared.remote.asked.subscribe();
     let mut heard = Instant::now();
     let mut check = tokio::time::interval(SILENCE_CHECK);
     loop {
@@ -164,6 +168,14 @@ where
                     None,
                     now_ms(),
                     Event::UpdateRequested {},
+                ))]
+            }
+            Ok(()) = pc_asked.changed(), if owner_here => {
+                vec![ServerFrame::Event(EventFrame::new(
+                    "",
+                    None,
+                    now_ms(),
+                    Event::PcAsked {},
                 ))]
             }
             _ = signed_out.changed() => {
@@ -1017,6 +1029,55 @@ impl Connection {
                         vec![error(id, ErrorCode::NotFound, "There's no such phone.")]
                     }
                 }
+                Request::PcRequests {}
+                | Request::PcAccept { .. }
+                | Request::PcDecline { .. }
+                | Request::PcUnblock { .. }
+                    if self.peer != Peer::Local =>
+                {
+                    vec![error(
+                        id,
+                        ErrorCode::Unauthorized,
+                        "PCs are let in on the computer Thrall runs on.",
+                    )]
+                }
+                Request::PcRequests {} => {
+                    vec![reply(id, self.shared.remote.requests(&self.me()))]
+                }
+                Request::PcAccept {
+                    request,
+                    person,
+                    code,
+                } => {
+                    let owner = self.shared.hub.state().owner_id.clone();
+                    if !self.is_person(&person).await? {
+                        vec![error(id, ErrorCode::NotFound, "There's no such person.")]
+                    } else {
+                        let person = (person != owner).then_some(person);
+                        match self
+                            .shared
+                            .remote
+                            .accept_pc(&request, person, code.as_deref())
+                        {
+                            Ok(()) => vec![reply(id, self.shared.remote.requests(&self.me()))],
+                            Err(why) => vec![error(id, ErrorCode::Invalid, why)],
+                        }
+                    }
+                }
+                Request::PcDecline { request, block } => {
+                    if self.shared.remote.decline_pc(&request, block) {
+                        vec![reply(id, self.shared.remote.requests(&self.me()))]
+                    } else {
+                        vec![error(id, ErrorCode::NotFound, "That PC isn't asking any more.")]
+                    }
+                }
+                Request::PcUnblock { blocked } => {
+                    if self.shared.remote.unblock_pc(&blocked) {
+                        vec![reply(id, self.shared.remote.requests(&self.me()))]
+                    } else {
+                        vec![error(id, ErrorCode::NotFound, "There's no such blocked PC.")]
+                    }
+                }
                 Request::PeopleList { since } => {
                     let mut listed = crate::people::listed(&self.shared, since).await?;
                     // Anyone else sees only themselves: their key, model, limit and spending.
@@ -1471,6 +1532,10 @@ fn owner_only(request: &Request) -> bool {
         | Request::PhonePair { .. }
         | Request::PhoneAssign { .. }
         | Request::PhoneRemove { .. }
+        | Request::PcRequests {}
+        | Request::PcAccept { .. }
+        | Request::PcDecline { .. }
+        | Request::PcUnblock { .. }
         | Request::PeopleAdd { .. }
         | Request::PeopleRename { .. }
         | Request::PeopleRemove { .. }

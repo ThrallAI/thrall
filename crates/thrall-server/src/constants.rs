@@ -80,6 +80,37 @@ pub const LINK_PAIR: u8 = 1;
 /// First byte of a phone's first message: a paired phone connecting.
 pub const LINK_CONNECT: u8 = 2;
 
+/// First byte of a PC's first message: asking to join as someone's companion (PC listener only).
+pub const LINK_ASK: u8 = 3;
+
+/// Noise pattern for a PC asking to join: neither side knows the other's key yet, so the owner
+/// compares (or types) the code both screens show instead.
+pub const NOISE_ASK: &str = "Noise_XX_25519_ChaChaPoly_BLAKE2s";
+
+/// How long a PC's request waits for the owner.
+pub const ASK_LIFETIME: Duration = Duration::from_secs(10 * 60);
+
+/// Requests waiting at once (a new one beyond this is turned away).
+pub const ASK_MAX_OPEN: usize = 5;
+
+/// The code both screens show is this many digits, from the handshake.
+pub const ASK_CODE_MODULUS: u32 = 1_000_000;
+
+/// The PCs blocked from asking, in the data folder.
+pub const BLOCKED_PCS_FILE: &str = "blocked-pcs.json";
+
+/// Name for a PC that didn't give one.
+pub const PC_FALLBACK_NAME: &str = "PC";
+
+/// What companions call this computer when it has no name.
+pub const MASTER_FALLBACK_NAME: &str = "Thrall";
+
+/// The PC listener listens on every network this computer is on (home or office, the tailnet).
+pub const ANY_HOST: &str = "0.0.0.0";
+
+/// What a companion broadcasts to find Thrall on the network; anything else gets no answer.
+pub const DISCOVER_HELLO: &[u8] = b"thrall-find-v1";
+
 /// Bytes in a pairing code's id (sent in the clear, to pick the code).
 pub const PAIR_ID_BYTES: usize = 16;
 

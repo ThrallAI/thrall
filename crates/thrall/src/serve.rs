@@ -74,10 +74,11 @@ pub async fn run(paths: &Paths, config: Config, args: EngineArgs) -> anyhow::Res
         let mut check = tokio::time::interval(IDLE_CHECK);
         loop {
             check.tick().await;
-            // While phones may connect, the engine stays up for them.
+            // While phones or PCs may connect, the engine stays up for them.
             let busy = running.shared.clients.load(Ordering::SeqCst) > 0
                 || hub.state().any_running()
-                || hub.state().config.remote.enabled;
+                || hub.state().config.remote.enabled
+                || hub.state().config.remote.pcs;
             if busy {
                 quiet_since = Instant::now();
             } else if quiet_since.elapsed() >= IDLE_EXIT {

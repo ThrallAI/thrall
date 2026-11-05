@@ -474,6 +474,37 @@ pub enum Request {
         /// The phone's id.
         phone: String,
     },
+    /// PCs asking to join as someone's companion, and the PCs blocked from asking. The owner
+    /// only, not over a link. Answered by `pc.requests`.
+    #[serde(rename = "pc.requests")]
+    PcRequests {},
+    /// Let a PC that's asking join, as `person`'s. `code`, when given, must be the code the PC
+    /// shows (typed instead of compared by eye). Answered by `pc.requests`.
+    #[serde(rename = "pc.accept")]
+    PcAccept {
+        /// The request's id.
+        request: String,
+        /// Whose PC it is (a person's id).
+        person: String,
+        /// The code the PC shows, typed by the owner.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        code: Option<String>,
+    },
+    /// Turn a PC that's asking away; with `block`, it can't ask again. Answered by `pc.requests`.
+    #[serde(rename = "pc.decline")]
+    PcDecline {
+        /// The request's id.
+        request: String,
+        /// Block it from asking again.
+        #[serde(default)]
+        block: bool,
+    },
+    /// Let a blocked PC ask again. Answered by `pc.requests`.
+    #[serde(rename = "pc.unblock")]
+    PcUnblock {
+        /// The blocked PC's id.
+        blocked: String,
+    },
     /// The people who use this Thrall (anyone but the owner: only themselves). Answered by
     /// `people.listed`.
     #[serde(rename = "people.list")]
@@ -690,6 +721,10 @@ impl Request {
             Self::PhonePair { .. } => "phone.pair",
             Self::PhoneAssign { .. } => "phone.assign",
             Self::PhoneRemove { .. } => "phone.remove",
+            Self::PcRequests {} => "pc.requests",
+            Self::PcAccept { .. } => "pc.accept",
+            Self::PcDecline { .. } => "pc.decline",
+            Self::PcUnblock { .. } => "pc.unblock",
             Self::PeopleList { .. } => "people.list",
             Self::PeopleAdd { .. } => "people.add",
             Self::PeopleRename { .. } => "people.rename",
@@ -1018,6 +1053,16 @@ pub enum Reply {
         /// The phone link.
         remote: RemoteInfo,
     },
+    /// Answer to `pc.requests`, `pc.accept`, `pc.decline` and `pc.unblock`.
+    #[serde(rename = "pc.requests")]
+    PcRequests {
+        /// PCs asking to join now, oldest first.
+        items: Vec<PcRequestInfo>,
+        /// PCs blocked from asking, newest first.
+        blocked: Vec<BlockedPcInfo>,
+        /// The PC listener.
+        pcs: PcLinkInfo,
+    },
     /// Answer to `phone.pair`: what the phone scans.
     #[serde(rename = "phone.pairing")]
     PhonePairing {
@@ -1181,6 +1226,52 @@ pub struct PhoneInfo {
     /// Whose phone it is (a person's id).
     #[serde(default)]
     pub person: String,
+    /// `phone`, or `pc` for a companion PC.
+    #[serde(default = "phone_kind")]
+    pub kind: String,
+}
+
+fn phone_kind() -> String {
+    "phone".to_owned()
+}
+
+/// A PC asking to join as someone's companion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PcRequestInfo {
+    /// The request's id.
+    pub request: String,
+    /// The name the PC gave (its computer name).
+    pub name: String,
+    /// The code both screens show: if they match, nobody is in between.
+    pub code: String,
+    /// Where it's asking from (its network address).
+    pub address: String,
+    /// When it asked, Unix ms.
+    pub at: i64,
+}
+
+/// A PC blocked from asking to join.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BlockedPcInfo {
+    /// Its id.
+    pub blocked: String,
+    /// The name it gave.
+    pub name: String,
+    /// When it was blocked, Unix ms.
+    pub at: i64,
+}
+
+/// The PC listener's state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PcLinkInfo {
+    /// Switched on in settings (`remote.pcs`).
+    pub enabled: bool,
+    /// The listener is running.
+    pub listening: bool,
+    /// Its port, on every network this computer is on.
+    pub port: u16,
+    /// This computer's name, as companions see it.
+    pub name: String,
 }
 
 /// A person who uses this Thrall.
