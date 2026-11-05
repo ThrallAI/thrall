@@ -305,6 +305,7 @@ async fn the_make_pdf_tool_lays_out_a_markdown_file() {
         memory: None,
         browser: Default::default(),
         disabled_skills: Vec::new(),
+        pc: None,
     };
     let args = serde_json::json!({"path": "docs/notes.pdf", "source": "notes.md"});
     assert_eq!(MakePdf.precheck(&ctx, &args), None);

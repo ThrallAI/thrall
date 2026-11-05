@@ -99,8 +99,14 @@ async fn run_due_jobs_of(state: &Arc<AppState>) {
         }
     };
     for job in jobs {
-        // Book the next run first, so a slow run can't start twice.
-        let next = next_run(&job.schedule, now).unwrap_or(now + BROKEN_JOB_RETRY_MS);
+        // Book the next run first, so a slow run can't start twice. A one-off is booked for
+        // never, and removed once it has run.
+        let once = thrall_tools::tools::schedule::is_once(&job.schedule);
+        let next = if once {
+            i64::MAX
+        } else {
+            next_run(&job.schedule, now).unwrap_or(now + BROKEN_JOB_RETRY_MS)
+        };
         if let Err(e) = state
             .store
             .job_ran(&state.user_id, &job.id, now, next)
@@ -110,7 +116,13 @@ async fn run_due_jobs_of(state: &Arc<AppState>) {
             continue;
         }
         let st = state.clone();
-        tokio::spawn(async move { run_job(&st, job).await });
+        tokio::spawn(async move {
+            let id = job.id.clone();
+            run_job(&st, job).await;
+            if once && let Err(e) = st.store.delete_job(&st.user_id, &id).await {
+                tracing::warn!(%e, job = id, "couldn't remove a one-off job that ran");
+            }
+        });
     }
 }
 

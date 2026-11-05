@@ -303,6 +303,7 @@ impl Runner {
             memory: None,
             browser: self.base.browser.clone(),
             disabled_skills: Vec::new(),
+            pc: None,
         }
     }
 

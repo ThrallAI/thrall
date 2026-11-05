@@ -128,6 +128,7 @@ pub(crate) async fn run_step(
         memory: Some(state.memory.clone()),
         browser: state.browsers.clone(),
         disabled_skills: state.config.skills.disabled.clone(),
+        pc: state.companions.pc_of(emitter.session_id),
     };
 
     // A session working on a companion PC checks and runs its PC tools there.
