@@ -953,6 +953,16 @@ export function App() {
             {view.card ? (
               <DecisionCard key={view.card.request} card={view.card} onChoose={(c) => void choose(c)} keysActive={composerEmpty} />
             ) : null}
+            {me?.oversight ? (
+              <p className="th-oversight" role="note">
+                {me.overseer ?? "This Thrall's owner"}{" "}
+                {me.oversight === "full"
+                  ? "can read your chats with Thrall."
+                  : me.oversight === "flagged"
+                    ? "can see your chats' titles, and read chats where something wasn't allowed."
+                    : "can see your chats' titles and when you had them."}
+              </p>
+            ) : null}
             <ModeBanner
               mode={view.mode}
               limit={view.modeLimit}

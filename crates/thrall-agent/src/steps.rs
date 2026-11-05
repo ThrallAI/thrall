@@ -23,9 +23,9 @@ use tokio::sync::mpsc;
 use crate::checks::Track;
 use crate::constants::{
     BACKGROUND_CANT_CHANGE, BLOCKED_BY_HOOK, BLOCKED_BY_PLAN, BLOCKED_UNATTENDED, CHECK_IN_BLOCKED,
-    CHECK_IN_READ_ONLY, COMMAND_TOOLS, COMMANDS_OFF, NOT_ALLOWED, NOT_LOOKING, SKILL_HELPER_DONE,
-    SKILL_HELPER_TASK, SYSTEM_FOLDERS_OFF, THINKER_BLOCKED, THINKER_CANT, THINKER_LOOK_ONLY,
-    TOOL_MAX_SECS, TOOL_STOP_GRACE_SECS, step_status,
+    CHECK_IN_READ_ONLY, COMMAND_TOOLS, COMMANDS_OFF, FLAG_COMMAND, FLAG_SYSTEM_FOLDER, NOT_ALLOWED,
+    NOT_LOOKING, SKILL_HELPER_DONE, SKILL_HELPER_TASK, SYSTEM_FOLDERS_OFF, THINKER_BLOCKED,
+    THINKER_CANT, THINKER_LOOK_ONLY, TOOL_MAX_SECS, TOOL_STOP_GRACE_SECS, step_status,
 };
 use crate::error::AgentError;
 use crate::hooks;
@@ -160,6 +160,10 @@ pub(crate) async fn run_step(
                 json!({ "rule": "no_commands" }),
             )
             .await?;
+            let _ = state
+                .store
+                .flag_session(&state.user_id, emitter.session_id, FLAG_COMMAND)
+                .await;
             status = Some(StepStatus::Denied);
             step_summary = Some(NOT_ALLOWED.to_owned());
             ToolOutput::error(COMMANDS_OFF)
@@ -307,6 +311,10 @@ pub(crate) async fn run_step(
                     json!({ "rule": "no_system_folders" }),
                 )
                 .await?;
+                let _ = state
+                    .store
+                    .flag_session(&state.user_id, emitter.session_id, FLAG_SYSTEM_FOLDER)
+                    .await;
                 status = Some(StepStatus::Denied);
                 step_summary = Some(NOT_ALLOWED.to_owned());
                 ToolOutput::error(SYSTEM_FOLDERS_OFF)

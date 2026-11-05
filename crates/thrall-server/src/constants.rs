@@ -114,6 +114,30 @@ pub use thrall_core::constants::COMPANION_FILE;
 /// How often a companion PC's runner shows it's still there.
 pub const COMPANION_PING: Duration = Duration::from_secs(20);
 
+/// What the owner can see of someone's chats (`PersonRules::oversight`): titles and when.
+pub const OVERSIGHT_SUMMARY: &str = "summary";
+/// That, and the chats where something wasn't allowed.
+pub const OVERSIGHT_FLAGGED: &str = "flagged";
+/// Every chat.
+pub const OVERSIGHT_FULL: &str = "full";
+/// All three.
+pub const OVERSIGHT_LEVELS: &[&str] = &[OVERSIGHT_SUMMARY, OVERSIGHT_FLAGGED, OVERSIGHT_FULL];
+
+/// Most of someone's chats listed for the owner.
+pub const OVERSIGHT_LIST_MAX: u32 = 200;
+
+/// Events read per page when the owner reads a chat.
+pub const OVERSIGHT_EVENTS_PAGE: u32 = 500;
+
+/// The most events of one chat the owner is sent.
+pub const OVERSIGHT_EVENTS_MAX: usize = 5000;
+
+/// The audit log's name for the owner reading someone's chat.
+pub const OVERSIGHT_GATE: &str = "oversight";
+
+/// A chat with no title yet, as the owner sees it.
+pub const UNTITLED_CHAT: &str = "New chat";
+
 /// A child account's age bands (`PersonRules::child`).
 pub const CHILD_BANDS: &[&str] = &["under_13", "13_15", "16_17"];
 

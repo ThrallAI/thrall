@@ -640,7 +640,7 @@ object ProtocolTypes {
         "engine.stop", "audio.transcribe",
         // Managed on the computer only: refused over the phone link.
         "phone.list", "phone.pair", "phone.assign", "phone.remove",
-        "pc.requests", "pc.accept", "pc.decline", "pc.unblock", "people.rules",
+        "pc.requests", "pc.accept", "pc.decline", "pc.unblock", "people.rules", "people.chats", "people.chat",
         // Only a companion PC's runner sends these.
         "runner.ready", "runner.output", "runner.done",
         // Moving a chat to another folder: the phone has /folder for now.
@@ -668,7 +668,7 @@ object ProtocolTypes {
         "folder.created", "app.latest", "group.listed", "heartbeat.shown", "checkpoint.shown", "turn.rewound",
         "memory.listed", "settings.shown", "people.listed", "personality.shown",
     )
-    val repliesLater = setOf("experience.listed", "skill.shown", "skill.safer", "audio.transcribed", "phone.listed", "phone.pairing", "signin.code", "device.listed", "startup.shown", "provider.tested", "local.found", "folders.shown", "pc.requests")
+    val repliesLater = setOf("experience.listed", "skill.shown", "skill.safer", "audio.transcribed", "phone.listed", "phone.pairing", "signin.code", "device.listed", "startup.shown", "provider.tested", "local.found", "folders.shown", "pc.requests", "people.chats", "people.chat")
     val eventsUsed = setOf(
         "turn.started", "turn.completed", "turn.retracted", "message.started", "message.delta",
         "reasoning.delta", "message.completed", "step.started", "step.output", "step.completed",

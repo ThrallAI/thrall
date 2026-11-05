@@ -24,6 +24,13 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 - Settings → People → Controls: for each person, switch off commands, file changes in system
   folders, or their phones, or make it a child's account (answers fit for their age). Everything is
   allowed until you switch it off.
+- Controls → "What you can see of their chats": nothing (the default), chat titles, titles and the
+  chats where something was blocked, or every chat. They see a note in every chat saying so, and
+  each time you read one it goes in the audit log.
+- One-off reminders: "remind me at 8:15", "in 20 minutes", "tomorrow at 7". Thrall uses its own
+  scheduler for every reminder and alarm, and says when it's time.
+- Rewinding a chat on a companion PC puts that PC's files back too, and a project's `THRALL.md`
+  and skills in a folder on that PC are read from there.
 
 ### Fixed
 
@@ -34,6 +41,8 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
   pages tall with blank space at the bottom.
 - On Windows, Thrall's engine (`thrall.exe`) shows its version and name in Task Manager and file
   properties, like the desktop app. It was blank, which looked like a second, different Thrall.
+- Installing, updating or uninstalling on Windows stops Thrall's engine first, so its files are
+  never locked mid-install.
 
 ## [0.2.2] - 2026-11-04
 

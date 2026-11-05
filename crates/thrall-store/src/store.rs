@@ -321,6 +321,14 @@ pub trait Store: Send + Sync {
         at: i64,
     ) -> StoreFuture<'a, ()>;
 
+    /// Flag a session for the owner: its person tried something their controls don't allow.
+    fn flag_session<'a>(
+        &'a self,
+        user_id: &'a str,
+        session_id: &'a str,
+        why: &'a str,
+    ) -> StoreFuture<'a, ()>;
+
     /// Set the companion PC a session's tools run on (`None`: this computer).
     fn set_session_pc<'a>(
         &'a self,

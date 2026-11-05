@@ -1448,6 +1448,47 @@
         }
       ]
     },
+    "OverseenChat": {
+      "description": "One of someone's chats, as the owner sees it with oversight.",
+      "type": "object",
+      "properties": {
+        "created": {
+          "description": "When it started, Unix ms.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "flagged": {
+          "description": "Why it was flagged (something wasn't allowed), if it was.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "readable": {
+          "description": "The owner can read it at this level.",
+          "type": "boolean"
+        },
+        "session": {
+          "description": "The session.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Its title.",
+          "type": "string"
+        },
+        "updated": {
+          "description": "When it was last active, Unix ms.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "session",
+        "title",
+        "created",
+        "updated"
+      ]
+    },
     "PcLinkInfo": {
       "description": "The PC listener's state.",
       "type": "object",
@@ -1627,6 +1668,13 @@
         "no_system_folders": {
           "description": "Thrall's file tools keep out of the system's folders (Windows, programs, other people's\nfolders) for them.",
           "type": "boolean"
+        },
+        "oversight": {
+          "description": "What the owner can see of their chats: `summary` (titles and when), `flagged` (that, and\nthe chats where something wasn't allowed) or `full` (every chat). They're always told.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -2439,6 +2487,73 @@
             "type",
             "items",
             "remote"
+          ]
+        },
+        {
+          "description": "Answer to `people.chats`.",
+          "type": "object",
+          "properties": {
+            "items": {
+              "description": "Their chats, most recently active first.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/OverseenChat"
+              }
+            },
+            "level": {
+              "description": "What the owner can see (`summary`, `flagged`, `full`).",
+              "type": "string"
+            },
+            "person": {
+              "description": "Whose.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "people.chats"
+            }
+          },
+          "required": [
+            "type",
+            "person",
+            "level",
+            "items"
+          ]
+        },
+        {
+          "description": "Answer to `people.chat`: the chat's events, as `session.open` replays them.",
+          "type": "object",
+          "properties": {
+            "events": {
+              "description": "Its events, oldest first.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/EventFrame"
+              }
+            },
+            "person": {
+              "description": "Whose.",
+              "type": "string"
+            },
+            "session": {
+              "description": "The chat.",
+              "type": "string"
+            },
+            "title": {
+              "description": "Its title.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "people.chat"
+            }
+          },
+          "required": [
+            "type",
+            "person",
+            "session",
+            "title",
+            "events"
           ]
         },
         {
@@ -4196,6 +4311,47 @@
           ]
         },
         {
+          "description": "Someone's chats, as far as their oversight lets the owner see them (owner only). Answered\nby `people.chats`.",
+          "type": "object",
+          "properties": {
+            "person": {
+              "description": "Their id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "people.chats"
+            }
+          },
+          "required": [
+            "type",
+            "person"
+          ]
+        },
+        {
+          "description": "Read one of someone's chats (owner only; `full`, or `flagged` and the chat was). Answered by\n`people.chat`. The view is noted in the audit log.",
+          "type": "object",
+          "properties": {
+            "person": {
+              "description": "Their id.",
+              "type": "string"
+            },
+            "session": {
+              "description": "The chat.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "people.chat"
+            }
+          },
+          "required": [
+            "type",
+            "person",
+            "session"
+          ]
+        },
+        {
           "description": "Let a blocked PC ask again. Answered by `pc.requests`.",
           "type": "object",
           "properties": {
@@ -5041,6 +5197,20 @@
         "name": {
           "description": "Display name.",
           "type": "string"
+        },
+        "overseer": {
+          "description": "Who can see it (the owner's name).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "oversight": {
+          "description": "What the owner can see of their chats (`summary`, `flagged`, `full`), when anything: shown\nto them in every chat.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "role": {
           "description": "`owner` (runs this engine) or `member`.",

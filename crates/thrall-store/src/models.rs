@@ -81,6 +81,8 @@ pub struct Session {
     pub home_day: Option<String>,
     /// The companion PC (a joined device's id) its tools run on; `None`: this computer.
     pub pc: Option<String>,
+    /// Why it was flagged for the owner (something its person wasn't allowed), if it was.
+    pub flagged: Option<String>,
 }
 
 /// A group the person made for sessions.

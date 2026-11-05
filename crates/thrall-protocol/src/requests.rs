@@ -535,6 +535,22 @@ pub enum Request {
         /// What's allowed.
         rules: PersonRules,
     },
+    /// Someone's chats, as far as their oversight lets the owner see them (owner only). Answered
+    /// by `people.chats`.
+    #[serde(rename = "people.chats")]
+    PeopleChats {
+        /// Their id.
+        person: String,
+    },
+    /// Read one of someone's chats (owner only; `full`, or `flagged` and the chat was). Answered by
+    /// `people.chat`. The view is noted in the audit log.
+    #[serde(rename = "people.chat")]
+    PeopleChat {
+        /// Their id.
+        person: String,
+        /// The chat.
+        session: String,
+    },
     /// Let a blocked PC ask again. Answered by `pc.requests`.
     #[serde(rename = "pc.unblock")]
     PcUnblock {
@@ -762,6 +778,8 @@ impl Request {
             Self::PcDecline { .. } => "pc.decline",
             Self::PcUnblock { .. } => "pc.unblock",
             Self::PeopleRules { .. } => "people.rules",
+            Self::PeopleChats { .. } => "people.chats",
+            Self::PeopleChat { .. } => "people.chat",
             Self::RunnerReady { .. } => "runner.ready",
             Self::RunnerOutput { .. } => "runner.output",
             Self::RunnerDone { .. } => "runner.done",
@@ -1096,6 +1114,28 @@ pub enum Reply {
         /// The phone link.
         remote: RemoteInfo,
     },
+    /// Answer to `people.chats`.
+    #[serde(rename = "people.chats")]
+    PeopleChats {
+        /// Whose.
+        person: String,
+        /// What the owner can see (`summary`, `flagged`, `full`).
+        level: String,
+        /// Their chats, most recently active first.
+        items: Vec<OverseenChat>,
+    },
+    /// Answer to `people.chat`: the chat's events, as `session.open` replays them.
+    #[serde(rename = "people.chat")]
+    PeopleChat {
+        /// Whose.
+        person: String,
+        /// The chat.
+        session: String,
+        /// Its title.
+        title: String,
+        /// Its events, oldest first.
+        events: Vec<crate::EventFrame>,
+    },
     /// Answer to `pc.requests`, `pc.accept`, `pc.decline` and `pc.unblock`.
     #[serde(rename = "pc.requests")]
     PcRequests {
@@ -1369,6 +1409,29 @@ pub struct PersonRules {
     /// A child's account, with answers fit for their age: `under_13`, `13_15` or `16_17`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub child: Option<String>,
+    /// What the owner can see of their chats: `summary` (titles and when), `flagged` (that, and
+    /// the chats where something wasn't allowed) or `full` (every chat). They're always told.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oversight: Option<String>,
+}
+
+/// One of someone's chats, as the owner sees it with oversight.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct OverseenChat {
+    /// The session.
+    pub session: String,
+    /// Its title.
+    pub title: String,
+    /// When it started, Unix ms.
+    pub created: i64,
+    /// When it was last active, Unix ms.
+    pub updated: i64,
+    /// Why it was flagged (something wasn't allowed), if it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flagged: Option<String>,
+    /// The owner can read it at this level.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub readable: bool,
 }
 
 /// A browser or PC signed in as a person.
@@ -1596,6 +1659,13 @@ pub struct UserInfo {
     /// `owner` (runs this engine) or `member`.
     #[serde(default)]
     pub role: String,
+    /// What the owner can see of their chats (`summary`, `flagged`, `full`), when anything: shown
+    /// to them in every chat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oversight: Option<String>,
+    /// Who can see it (the owner's name).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overseer: Option<String>,
 }
 
 /// Limits a client must respect.

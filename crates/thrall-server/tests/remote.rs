@@ -1915,3 +1915,112 @@ async fn a_pc_its_thrall_forgot_is_told_to_join_again() {
     rx.await.expect("the request went through");
     asking.abort();
 }
+
+#[tokio::test]
+async fn the_owner_sees_someones_chats_only_as_far_as_they_chose_and_they_are_told() {
+    let sam = phone_keys();
+    let url = engine_with("oversight", Some(&sam.public)).await;
+    let mut owner = desktop(&url).await;
+    let port = phone_port(&mut owner).await;
+    let engine_key = new_code(&mut owner, "code").await.key;
+    let set = |level: Option<&str>| Request::PeopleRules {
+        person: "u_sam".into(),
+        rules: thrall_protocol::PersonRules {
+            oversight: level.map(str::to_owned),
+            ..Default::default()
+        },
+    };
+
+    // Nothing until the owner chooses: their chats are their own.
+    let mut phone = Phone::handshake(port, &sam, &engine_key, None, "")
+        .await
+        .unwrap();
+    let Reply::Welcome { user, .. } = phone.ask("h", hello("")).await else {
+        panic!("no welcome");
+    };
+    assert_eq!(user.oversight, None);
+    let sams = opened_id(
+        phone
+            .ask(
+                "c",
+                Request::SessionCreate {
+                    workspace: None,
+                    title: Some("Homework".into()),
+                    mode: None,
+                },
+            )
+            .await,
+    );
+    let none = ask(
+        &mut owner,
+        "n",
+        Request::PeopleChats {
+            person: "u_sam".into(),
+        },
+    )
+    .await;
+    assert!(is_error(&none, ErrorCode::Invalid), "got {none:?}");
+
+    // Titles only: listed, not readable; Sam is told who can see what.
+    ask(&mut owner, "s1", set(Some("summary"))).await;
+    let Reply::PeopleChats { items, level, .. } = ask(
+        &mut owner,
+        "l1",
+        Request::PeopleChats {
+            person: "u_sam".into(),
+        },
+    )
+    .await
+    else {
+        panic!("no chats");
+    };
+    assert_eq!(level, "summary");
+    assert_eq!(items.len(), 1);
+    assert_eq!(
+        (items[0].title.as_str(), items[0].readable),
+        ("Homework", false)
+    );
+    let read = Request::PeopleChat {
+        person: "u_sam".into(),
+        session: sams.clone(),
+    };
+    assert!(is_error(
+        &ask(&mut owner, "r1", read.clone()).await,
+        ErrorCode::Invalid
+    ));
+    let mut again = Phone::handshake(port, &sam, &engine_key, None, "")
+        .await
+        .unwrap();
+    let Reply::Welcome { user, .. } = again.ask("h2", hello("")).await else {
+        panic!("no welcome");
+    };
+    assert_eq!(user.oversight.as_deref(), Some("summary"));
+    assert_eq!(user.overseer.as_deref(), Some("Test"));
+
+    // Everything: readable.
+    ask(&mut owner, "s2", set(Some("full"))).await;
+    let Reply::PeopleChat { title, .. } = ask(&mut owner, "r2", read).await else {
+        panic!("couldn't read it");
+    };
+    assert_eq!(title, "Homework");
+
+    // The owner's own chats are never overseen, and only the owner may ask.
+    let own = ask(
+        &mut owner,
+        "o",
+        Request::PeopleChats {
+            person: "u_test".into(),
+        },
+    )
+    .await;
+    assert!(is_error(&own, ErrorCode::Invalid), "got {own:?}");
+    let theirs = phone
+        .ask(
+            "p",
+            Request::PeopleChats {
+                person: "u_sam".into(),
+            },
+        )
+        .await;
+    assert!(is_error(&theirs, ErrorCode::Unauthorized), "got {theirs:?}");
+}

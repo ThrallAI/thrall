@@ -882,3 +882,9 @@ pub const CHILD_GUIDANCE: &[(&str, &str)] = &[
          to a trusted adult or proper help for anything risky.",
     ),
 ];
+
+/// Why a chat was flagged for the owner: a command when commands are off for its person.
+pub const FLAG_COMMAND: &str = "Tried to run a command";
+
+/// Why a chat was flagged for the owner: a change in a system folder when that's off for them.
+pub const FLAG_SYSTEM_FOLDER: &str = "Tried to change a system folder";

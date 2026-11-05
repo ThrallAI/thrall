@@ -442,6 +442,11 @@ where
                 id: person.id.clone(),
                 name: person.name.clone(),
                 role: person.role.clone(),
+                oversight: crate::people::oversight_of(&person),
+                overseer: match crate::people::oversight_of(&person) {
+                    Some(_) => crate::people::owner_name(shared).await,
+                    None => None,
+                },
             },
             capabilities: CAPABILITIES.iter().map(|c| (*c).to_owned()).collect(),
             limits: Limits {
@@ -1152,6 +1157,12 @@ impl Connection {
                         vec![error(id, ErrorCode::NotFound, "There's no such phone.")]
                     }
                 }
+                Request::PeopleChats { person } => {
+                    refused_or(id, crate::people::chats(&self.shared, &person).await?)
+                }
+                Request::PeopleChat { person, session } => {
+                    refused_or(id, crate::people::chat(&self.shared, &person, &session).await?)
+                }
                 Request::PeopleRules { person, rules } => {
                     refused_or(id, crate::people::set_rules(&self.shared, &person, rules).await?)
                 }
@@ -1768,6 +1779,8 @@ fn owner_only(request: &Request) -> bool {
         | Request::PeopleRemove { .. }
         | Request::PeopleTerms { .. }
         | Request::PeopleRules { .. }
+        | Request::PeopleChats { .. }
+        | Request::PeopleChat { .. }
         | Request::SigninCreate { .. } => true,
         Request::CommandRun { name, args, .. } => {
             let first = args.split_whitespace().next().unwrap_or_default();

@@ -74,7 +74,7 @@ fn dollars_to_micros(cost: Option<f64>) -> Option<i64> {
 /// The columns `session_from_row` reads, as a literal so queries stay compile-time strings.
 macro_rules! session_columns {
     () => {
-        "id, user_id, title, workspace, mode, state, last_seq, created_at, updated_at, group_id, pinned_at, home_day, pc"
+        "id, user_id, title, workspace, mode, state, last_seq, created_at, updated_at, group_id, pinned_at, home_day, pc, flagged"
     };
 }
 
@@ -118,6 +118,7 @@ fn session_from_row(row: &SqliteRow) -> Result<Session, StoreError> {
         pinned_at: row.try_get("pinned_at")?,
         home_day: row.try_get("home_day")?,
         pc: row.try_get("pc")?,
+        flagged: row.try_get("flagged")?,
     })
 }
 
@@ -1253,6 +1254,23 @@ impl Store for SqliteStore {
             .bind(at)
             .execute(&self.pool)
             .await?;
+            Ok(())
+        })
+    }
+
+    fn flag_session<'a>(
+        &'a self,
+        user_id: &'a str,
+        session_id: &'a str,
+        why: &'a str,
+    ) -> StoreFuture<'a, ()> {
+        Box::pin(async move {
+            sqlx::query("UPDATE sessions SET flagged = ? WHERE id = ? AND user_id = ?")
+                .bind(why)
+                .bind(session_id)
+                .bind(user_id)
+                .execute(&self.pool)
+                .await?;
             Ok(())
         })
     }

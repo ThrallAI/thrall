@@ -3544,6 +3544,14 @@ async fn commands_the_owner_turned_off_never_run_or_ask() {
         }
     )));
     assert!(!marker.exists(), "a command that's off must not run");
+    let flagged = state
+        .store
+        .get_session("u_test", &s.id)
+        .await
+        .unwrap()
+        .unwrap()
+        .flagged;
+    assert!(flagged.is_some(), "the chat is flagged for the owner");
 }
 
 #[tokio::test]
