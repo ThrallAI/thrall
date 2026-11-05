@@ -1,2 +1,4 @@
 * text=auto eol=lf
 *.ps1 text eol=crlf
+# Applied to databases already as these exact bytes (ending in CRLF); its checksum must not change.
+crates/thrall-store/migrations/sqlite/0016_people_rules.sql -text
