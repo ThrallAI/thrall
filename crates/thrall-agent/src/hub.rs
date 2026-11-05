@@ -843,14 +843,20 @@ impl Hub {
         turn: &str,
     ) -> Result<Vec<crate::checkpoints::Planned>, AgentError> {
         let state = self.me(user);
-        let workspace = state
+        let session = state
             .store
             .get_session(&state.user_id, session_id)
             .await?
-            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_owned()))?
-            .workspace
-            .map(PathBuf::from);
-        crate::checkpoints::plan(&state, session_id, turn, workspace.as_deref()).await
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_owned()))?;
+        let workspace = session.workspace.map(PathBuf::from);
+        crate::checkpoints::plan(
+            &state,
+            session_id,
+            turn,
+            workspace.as_deref(),
+            session.pc.as_deref(),
+        )
+        .await
     }
 
     /// What rewinding to before `turn` would do: the message that started it, and the files.

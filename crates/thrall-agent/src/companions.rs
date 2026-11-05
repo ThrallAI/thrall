@@ -58,6 +58,9 @@ pub struct Companions {
     links: Mutex<HashMap<String, Link>>,
     /// Sessions working on a PC, by session id.
     sessions: Mutex<HashMap<String, String>>,
+    /// The project instructions and skills of sessions working on a PC, as read at their turn's
+    /// start (by session id).
+    projects: Mutex<HashMap<String, thrall_tools::companion::Project>>,
     /// What the owner allows each person, as last read (by person id).
     rules: Mutex<HashMap<String, thrall_protocol::PersonRules>>,
     next: AtomicU64,
@@ -106,6 +109,37 @@ impl Companions {
     /// The PC's Thrall folder, while its runner is connected.
     pub fn home(&self, device: &str) -> Option<String> {
         lock(&self.links).get(device).map(|l| l.home.clone())
+    }
+
+    /// `session`'s project (instructions and skills) on its PC, as last read.
+    pub fn project(&self, session: &str) -> Option<thrall_tools::companion::Project> {
+        lock(&self.projects).get(session).cloned()
+    }
+
+    /// Read `session`'s project from its PC (`pc`), working in `workspace` there. Kept for the
+    /// turn; a PC that can't be asked leaves none.
+    pub async fn load_project(&self, pc: &str, person: &str, session: &str, workspace: &str) {
+        let job = Call::Project {
+            files: crate::constants::PROJECT_FILES
+                .iter()
+                .map(|f| (*f).to_owned())
+                .collect(),
+            max_chars: crate::constants::INSTRUCTIONS_MAX_CHARS,
+        };
+        let project = self
+            .call(pc, person, session, workspace, job, None)
+            .await
+            .ok()
+            .and_then(|v| serde_json::from_value(v).ok());
+        let mut projects = lock(&self.projects);
+        match project {
+            Some(p) => {
+                projects.insert(session.to_owned(), p);
+            }
+            None => {
+                projects.remove(session);
+            }
+        }
     }
 
     /// What the owner allows `person` (everything until set).

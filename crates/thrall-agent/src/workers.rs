@@ -244,7 +244,7 @@ pub(crate) async fn run_helper(
                 workspace.display(),
                 std::env::consts::OS,
                 today(),
-                crate::extras::standing_instructions(state, workspace)
+                crate::extras::standing_instructions(state, emitter.session_id, workspace)
             ),
         ),
         ChatMessage::new(ChatRole::User, task),

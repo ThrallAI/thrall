@@ -255,6 +255,20 @@ pub(crate) async fn run_step(
         Some(t) if t.name() == EXIT_PLAN_MODE && *mode == Mode::Plan => {
             propose_plan(emitter, state, &args, mode, cancel).await?
         }
+        // A skill in a companion PC's project folder (read with the turn's project).
+        Some(t)
+            if t.name() == USE_SKILL
+                && find_skill(&ctx, arg_str(&args, "name")).is_none()
+                && pc_skill(state, emitter.session_id, arg_str(&args, "name")).is_some() =>
+        {
+            match pc_skill(state, emitter.session_id, arg_str(&args, "name")) {
+                Some(skill) => ToolOutput::ok(
+                    format!("# Skill: {}\n\n{}", skill.name, skill.body),
+                    format!("Loaded {}", skill.name),
+                ),
+                None => ToolOutput::error("that skill isn't there any more"),
+            }
+        }
         // A skill that runs in a helper: only its result comes back to the conversation.
         Some(t)
             if t.name() == USE_SKILL
@@ -357,10 +371,16 @@ pub(crate) async fn run_step(
                 }?;
                 match allowed {
                     Ok(()) => {
-                        // Keep the file as it was, so the person can rewind this turn.
+                        // Keep the file as it was, so the person can rewind this turn (a PC's
+                        // file is kept through its runner).
+                        let place = crate::checkpoints::Place::of(
+                            state,
+                            emitter.session_id,
+                            workspace,
+                            pc.as_deref(),
+                        );
                         let edited = match &effect {
-                            // A PC's files aren't kept here (rewinding leaves them as they are).
-                            Effect::Edit { path, .. } if emitter.records() && pc.is_none() => {
+                            Effect::Edit { path, .. } if emitter.records() => {
                                 Some(thrall_tools::paths::resolve(workspace, path))
                             }
                             _ => None,
@@ -368,6 +388,7 @@ pub(crate) async fn run_step(
                         if let Some(path) = &edited {
                             crate::checkpoints::before_edit(
                                 state,
+                                &place,
                                 emitter.session_id,
                                 emitter.turn_id,
                                 path,
@@ -435,6 +456,7 @@ pub(crate) async fn run_step(
                         {
                             crate::checkpoints::after_edit(
                                 state,
+                                &place,
                                 emitter.session_id,
                                 emitter.turn_id,
                                 path,
@@ -545,6 +567,21 @@ pub(crate) async fn run_step(
         .await?;
     }
     Ok(content)
+}
+
+/// A project skill called `name` in the session's companion PC folder, if any.
+fn pc_skill(
+    state: &AppState,
+    session: &str,
+    name: &str,
+) -> Option<thrall_tools::companion::PcSkill> {
+    state
+        .companions
+        .project(session)?
+        .skills
+        .into_iter()
+        .filter(|s| !thrall_tools::skills::is_disabled(&s.name, &state.config.skills.disabled))
+        .find(|s| s.name.eq_ignore_ascii_case(name.trim()))
 }
 
 /// Why a call can't work (`Err`, for the model), or what it would do. A tool that runs on the

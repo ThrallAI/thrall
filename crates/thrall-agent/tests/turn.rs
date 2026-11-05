@@ -2619,9 +2619,10 @@ async fn a_rewind_puts_edited_files_back_and_removes_made_ones() {
     std::fs::write(format!("{ws}/mine.txt"), "the person's").unwrap();
 
     let root = std::path::Path::new(&ws);
-    let planned = thrall_agent::checkpoints::plan(&state, &s.id, &summary.turn_id, Some(root))
-        .await
-        .unwrap();
+    let planned =
+        thrall_agent::checkpoints::plan(&state, &s.id, &summary.turn_id, Some(root), None)
+            .await
+            .unwrap();
     let shown: Vec<(&str, RewindAction, bool)> = planned
         .iter()
         .map(|p| (p.file.path.as_str(), p.file.action, p.file.changed))
@@ -3596,4 +3597,142 @@ async fn a_sessions_pc_work_never_runs_here_when_its_pc_is_away() {
         !std::path::Path::new(&ws).join("made.txt").exists(),
         "nothing is written on this computer instead"
     );
+}
+
+/// A pretend companion PC: its runner (Thrall's own) answers the calls `state` sends PC `device`.
+fn fake_pc(state: &AppState, device: &str, home: &std::path::Path) {
+    use thrall_tools::companion::{Base, Runner};
+    let (tx, mut rx) = mpsc::unbounded_channel::<thrall_agent::companions::Outgoing>();
+    state
+        .companions
+        .attach(device, &state.user_id, &home.to_string_lossy(), tx);
+    let store = state.store.clone();
+    let home = home.to_path_buf();
+    tokio::spawn(async move {
+        let runner = std::sync::Arc::new(Runner::new(Base {
+            tools: thrall_tools::tools::core(),
+            store,
+            http: thrall_tools::http_client().unwrap(),
+            data_dir: None,
+            browser: std::sync::Arc::new(thrall_tools::browser::Browsers::default()),
+            home: Some(home),
+        }));
+        while let Some(out) = rx.recv().await {
+            let runner = runner.clone();
+            tokio::spawn(async move {
+                let (lines, _) = mpsc::unbounded_channel();
+                let answer = runner
+                    .handle(
+                        &out.id,
+                        out.call,
+                        std::path::Path::new(&out.workspace),
+                        &out.person,
+                        &out.session,
+                        lines,
+                    )
+                    .await;
+                let _ = out.reply.send(answer);
+            });
+        }
+    });
+}
+
+#[tokio::test]
+async fn rewinding_puts_a_companion_pcs_files_back() {
+    let (state, _) = setup(vec![
+        tool_call(
+            "c1",
+            "write_file",
+            r#"{"path": "made-on-pc.txt", "content": "from the PC"}"#,
+        ),
+        reply(&["Made it."]),
+        reply(&["PC file"]),
+    ])
+    .await;
+    let pc_home = workspace("pc-rewind");
+    fake_pc(&state, "p_kids", std::path::Path::new(&pc_home));
+    let s = session::create(&state, Some(pc_home.clone()))
+        .await
+        .unwrap();
+    state
+        .store
+        .set_session_pc("u_test", &s.id, Some("p_kids"))
+        .await
+        .unwrap();
+    let (summary, _) = run_answering(&state, &s.id, "make a file", PermissionChoice::Yes).await;
+    let made = std::path::Path::new(&pc_home).join("made-on-pc.txt");
+    assert_eq!(std::fs::read_to_string(&made).unwrap(), "from the PC");
+
+    let planned = thrall_agent::checkpoints::plan(
+        &state,
+        &s.id,
+        &summary.turn_id,
+        Some(std::path::Path::new(&pc_home)),
+        Some("p_kids"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(planned.len(), 1, "the PC's file is kept for rewinding");
+    assert_eq!(
+        planned[0].file.action,
+        thrall_protocol::RewindAction::Delete
+    );
+    let (restored, failed) = thrall_agent::checkpoints::restore(planned, &[]).await;
+    assert!(failed.is_empty(), "{failed:?}");
+    assert_eq!(restored.len(), 1);
+    assert!(
+        !made.exists(),
+        "rewinding removed the file Thrall made on the PC"
+    );
+}
+#[tokio::test]
+async fn a_companion_pcs_project_instructions_and_skills_are_read_there() {
+    let (state, provider) = setup(vec![
+        tool_call("c1", "skill", r#"{"name": "pc-greeting"}"#),
+        reply(&["Hello from the skill."]),
+        reply(&["Project"]),
+    ])
+    .await;
+    let pc_home = workspace("pc-project");
+    let root = std::path::Path::new(&pc_home);
+    std::fs::write(
+        root.join("THRALL.md"),
+        "Always sign off as the PC's helper.",
+    )
+    .unwrap();
+    let skill = root.join(".thrall").join("skills").join("pc-greeting");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("SKILL.md"),
+        "---\nname: pc-greeting\ndescription: Greet the person from their PC\n---\nSay hi warmly.",
+    )
+    .unwrap();
+    fake_pc(&state, "p_kids", root);
+    // The session's folder isn't read here: only through the PC.
+    let s = session::create(&state, Some(pc_home.clone()))
+        .await
+        .unwrap();
+    state
+        .store
+        .set_session_pc("u_test", &s.id, Some("p_kids"))
+        .await
+        .unwrap();
+    let (_, frames) = run(&state, &s.id, "say hi").await;
+    let system = provider.seen.lock().unwrap()[0].messages[0].content.clone();
+    assert!(
+        system.contains("Always sign off as the PC's helper."),
+        "{system}"
+    );
+    assert!(system.contains("pc-greeting: Greet the person from their PC"));
+    let loaded = frames.iter().any(|f| {
+        matches!(
+            &f.event,
+            Event::StepCompleted {
+                status: StepStatus::Ok,
+                summary,
+                ..
+            } if summary.contains("Loaded pc-greeting")
+        )
+    });
+    assert!(loaded, "the PC's skill loaded");
 }

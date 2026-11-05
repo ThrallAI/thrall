@@ -61,6 +61,19 @@ pub enum Call {
         /// Its bytes, base64.
         data: String,
     },
+    /// The folder's project instructions (the first of `files` there, at most `max_chars`) and
+    /// its project skills, for the session's instructions.
+    Project {
+        /// Instruction files to look for, in order (`THRALL.md`, `AGENTS.md`).
+        files: Vec<String>,
+        /// Most characters of instructions read.
+        max_chars: usize,
+    },
+    /// Delete a file in the folder (rewinding a file Thrall made).
+    Delete {
+        /// Path, relative to the folder or absolute.
+        path: String,
+    },
     /// The folder's entries at `path` (relative; "" is the folder), for the Files view. Only
     /// inside the folder, read only.
     List {
@@ -107,6 +120,28 @@ pub struct Checked {
     pub precheck: Option<String>,
     /// What it would do.
     pub effect: Effect,
+}
+
+/// A project skill in a companion PC's folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PcSkill {
+    /// Its name.
+    pub name: String,
+    /// When to use it.
+    pub description: String,
+    /// The instructions.
+    pub body: String,
+}
+
+/// The answer to [`Call::Project`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Project {
+    /// The instruction file's name and text, if the folder has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<(String, String)>,
+    /// The folder's project skills.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<PcSkill>,
 }
 
 /// A file a tool made for the person to see, carried across the link.
@@ -365,6 +400,34 @@ impl Runner {
             | Call::Part { .. }
             | Call::Places { .. }
             | Call::MakeFolder { .. } => Err("the PC's link answers folder calls".to_owned()),
+            Call::Project { files, max_chars } => {
+                let instructions = files.iter().find_map(|name| {
+                    let text = std::fs::read_to_string(workspace.join(name)).ok()?;
+                    let text = text.trim();
+                    (!text.is_empty())
+                        .then(|| (name.clone(), text.chars().take(max_chars).collect()))
+                });
+                let skills = crate::skills::discover_all(None, workspace)
+                    .into_iter()
+                    .map(|s| PcSkill {
+                        name: s.name,
+                        description: s.description,
+                        body: s.body,
+                    })
+                    .collect();
+                serde_json::to_value(Project {
+                    instructions,
+                    skills,
+                })
+                .map_err(|e| e.to_string())
+            }
+            Call::Delete { path } => {
+                let path = crate::paths::resolve(workspace, &path);
+                match tokio::fs::remove_file(&path).await {
+                    Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+                    _ => Ok(Value::Null),
+                }
+            }
             Call::Write { path, data } => {
                 let bytes = BASE64.decode(data).map_err(|e| e.to_string())?;
                 let path = crate::paths::resolve(workspace, &path);
