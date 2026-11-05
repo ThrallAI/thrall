@@ -13,6 +13,17 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
   someone's (Settings → PCs → Let PCs on this network connect, off by default). A card pops up
   with the PC's name and a code that its screen shows too: Let in (as whose PC), Decline or
   Block. Blocked PCs can't ask again until unblocked. Everything between the PCs is encrypted.
+- Companion PCs do their own work: a chat started on a family member's or a worker's PC (or by
+  them on their phone) works in that PC's folders, and its file, document and command steps run
+  on that PC. The AI, memory and the web stay on the Thrall PC. If that PC is off, Thrall says so
+  and does nothing on the Thrall PC instead. The phone's Files view shows the PC's files, and Home
+  moves to the PC once it's connected.
+- The desktop app can be a companion: on a new PC, "Connect to Thrall on another PC" finds Thrall
+  on the network (or takes its name over Tailscale), shows the code, and once let in it needs no
+  AI key of its own. In a terminal: `thrall join`, `thrall runner`, `thrall leave`.
+- Settings → People → Controls: for each person, switch off commands, file changes in system
+  folders, or their phones, or make it a child's account (answers fit for their age). Everything is
+  allowed until you switch it off.
 
 ### Fixed
 
