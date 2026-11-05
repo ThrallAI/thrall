@@ -3505,3 +3505,95 @@ async fn testing_a_supplier_says_what_works_and_how_to_fix_what_doesnt() {
         );
     }
 }
+
+#[tokio::test]
+async fn commands_the_owner_turned_off_never_run_or_ask() {
+    let marker = std::env::temp_dir().join(format!("thrall-rule-cmd-{}", std::process::id()));
+    let _ = std::fs::remove_file(&marker);
+    let command = format!(
+        "{{\"command\": \"echo x > '{}'\"}}",
+        marker.to_string_lossy().replace('\\', "/")
+    );
+    let (state, _) = setup(vec![
+        tool_call("c1", "shell", &command),
+        reply(&["I can't run commands here."]),
+        reply(&["No commands"]),
+    ])
+    .await;
+    state
+        .store
+        .set_person_rules("u_test", r#"{"no_commands":true}"#)
+        .await
+        .unwrap();
+    let s = session::create(&state, Some(workspace("rule-cmd")))
+        .await
+        .unwrap();
+    let (_, frames) = run_answering(&state, &s.id, "make a file", PermissionChoice::Yes).await;
+    assert!(
+        !frames
+            .iter()
+            .any(|f| matches!(f.event, Event::PermissionRequest { .. })),
+        "nobody is asked about a command that isn't allowed"
+    );
+    assert!(frames.iter().any(|f| matches!(
+        f.event,
+        Event::StepCompleted {
+            status: StepStatus::Denied,
+            ..
+        }
+    )));
+    assert!(!marker.exists(), "a command that's off must not run");
+}
+
+#[tokio::test]
+async fn a_childs_answers_are_fit_for_their_age() {
+    let (state, provider) = setup(vec![reply(&["Hi!"]), reply(&["Hello"])]).await;
+    state
+        .store
+        .set_person_rules("u_test", r#"{"child":"under_13"}"#)
+        .await
+        .unwrap();
+    let s = session::create(&state, Some(workspace("rule-child")))
+        .await
+        .unwrap();
+    run(&state, &s.id, "hello").await;
+    let seen = provider.seen.lock().unwrap();
+    assert!(seen[0].messages[0].content.contains("child under 13"));
+}
+
+#[tokio::test]
+async fn a_sessions_pc_work_never_runs_here_when_its_pc_is_away() {
+    let (state, _) = setup(vec![
+        tool_call(
+            "c1",
+            "write_file",
+            r#"{"path": "made.txt", "content": "x"}"#,
+        ),
+        reply(&["Your PC isn't on."]),
+        reply(&["PC away"]),
+    ])
+    .await;
+    let ws = workspace("pc-away");
+    let s = session::create(&state, Some(ws.clone())).await.unwrap();
+    state
+        .store
+        .set_session_pc("u_test", &s.id, Some("p_away"))
+        .await
+        .unwrap();
+    let (_, frames) = run_answering(&state, &s.id, "make a file", PermissionChoice::Yes).await;
+    let failed = frames.iter().any(|f| {
+        matches!(
+            &f.event,
+            Event::StepCompleted {
+                status: StepStatus::Error,
+                summary,
+                ..
+            } if summary.contains("isn't connected")
+        )
+    });
+    assert!(failed, "the step says the PC isn't connected");
+    assert!(
+        !std::path::Path::new(&ws).join("made.txt").exists(),
+        "nothing is written on this computer instead"
+    );
+}

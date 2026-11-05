@@ -29,6 +29,14 @@ fn read_capped(path: &Path) -> Option<String> {
 /// Extra system-prompt text: personal and project instructions, and the available skills.
 pub fn standing_instructions(state: &AppState, workspace: &Path) -> String {
     let mut out = String::new();
+    // A child's account: answers fit for their age, before anything else.
+    if let Some(band) = state.companions.rules(&state.user_id).child
+        && let Some((_, guidance)) = crate::constants::CHILD_GUIDANCE
+            .iter()
+            .find(|(b, _)| *b == band)
+    {
+        out.push_str(guidance);
+    }
     if let Some(text) = state
         .my_dir()
         .and_then(|d| read_capped(&d.join(PERSONAL_FILE)))

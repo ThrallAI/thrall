@@ -640,7 +640,7 @@ object ProtocolTypes {
         "engine.stop", "audio.transcribe",
         // Managed on the computer only: refused over the phone link.
         "phone.list", "phone.pair", "phone.assign", "phone.remove",
-        "pc.requests", "pc.accept", "pc.decline", "pc.unblock",
+        "pc.requests", "pc.accept", "pc.decline", "pc.unblock", "people.rules",
         // Only a companion PC's runner sends these.
         "runner.ready", "runner.output", "runner.done",
         // Moving a chat to another folder: the phone has /folder for now.

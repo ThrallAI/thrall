@@ -567,6 +567,14 @@ export type RequestFrame = {
     }
   | {
       /**
+       * Their id.
+       */
+      person: string;
+      rules: PersonRules;
+      type: "people.rules";
+    }
+  | {
+      /**
        * The blocked PC's id.
        */
       blocked: string;
@@ -1682,6 +1690,28 @@ export interface ClientInfo {
   version: string;
 }
 /**
+ * What's allowed.
+ */
+export interface PersonRules {
+  /**
+   * A child's account, with answers fit for their age: `under_13`, `13_15` or `16_17`.
+   */
+  child?: string | null;
+  /**
+   * Thrall can't run commands for them (the shell and git).
+   */
+  no_commands?: boolean;
+  /**
+   * Their phones can't connect.
+   */
+  no_phones?: boolean;
+  /**
+   * Thrall's file tools keep out of the system's folders (Windows, programs, other people's
+   * folders) for them.
+   */
+  no_system_folders?: boolean;
+}
+/**
  * About the engine.
  */
 export interface EngineInfo {
@@ -2240,11 +2270,34 @@ export interface PersonInfo {
    * `owner` (runs this engine) or `member`.
    */
   role: string;
+  rules?: PersonRules1;
   /**
    * What their turns have cost (USD) since `people.list`'s `since`. Only what was recorded
    * with a price counts.
    */
   spent?: number;
+}
+/**
+ * What the owner allows them (everything, unless turned off).
+ */
+export interface PersonRules1 {
+  /**
+   * A child's account, with answers fit for their age: `under_13`, `13_15` or `16_17`.
+   */
+  child?: string | null;
+  /**
+   * Thrall can't run commands for them (the shell and git).
+   */
+  no_commands?: boolean;
+  /**
+   * Their phones can't connect.
+   */
+  no_phones?: boolean;
+  /**
+   * Thrall's file tools keep out of the system's folders (Windows, programs, other people's
+   * folders) for them.
+   */
+  no_system_folders?: boolean;
 }
 /**
  * A browser or PC signed in as a person.

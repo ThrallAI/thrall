@@ -1808,3 +1808,73 @@ async fn a_companion_window_uses_thrall_through_its_pc() {
     companion_bridge::stopped(&paths);
     assert!(!paths.engine_file.exists());
 }
+
+#[tokio::test]
+async fn the_owner_switches_controls_off_for_someone_and_phones_obey() {
+    let sam = phone_keys();
+    let url = engine_with("rules", Some(&sam.public)).await;
+    let mut owner = desktop(&url).await;
+    let port = phone_port(&mut owner).await;
+    let engine_key = new_code(&mut owner, "code").await.key;
+    let mut phone = Phone::handshake(port, &sam, &engine_key, None, "")
+        .await
+        .unwrap();
+    assert!(matches!(
+        phone.ask("h", hello("")).await,
+        Reply::Welcome { .. }
+    ));
+
+    // Everything is allowed until switched off; the owner's own can't be.
+    let listed = ask(&mut owner, "l", Request::PeopleList { since: None }).await;
+    assert_eq!(
+        person_info(&listed, "u_sam").rules,
+        thrall_protocol::PersonRules::default()
+    );
+    let mut rules = thrall_protocol::PersonRules {
+        no_phones: true,
+        child: Some("13_15".into()),
+        ..Default::default()
+    };
+    let refused = ask(
+        &mut owner,
+        "o",
+        Request::PeopleRules {
+            person: "u_test".into(),
+            rules: rules.clone(),
+        },
+    )
+    .await;
+    assert!(is_error(&refused, ErrorCode::Invalid), "got {refused:?}");
+    rules.child = Some("nine".into());
+    let bad = ask(
+        &mut owner,
+        "b",
+        Request::PeopleRules {
+            person: "u_sam".into(),
+            rules: rules.clone(),
+        },
+    )
+    .await;
+    assert!(is_error(&bad, ErrorCode::Invalid), "got {bad:?}");
+    rules.child = Some("13_15".into());
+    let set = ask(
+        &mut owner,
+        "s",
+        Request::PeopleRules {
+            person: "u_sam".into(),
+            rules: rules.clone(),
+        },
+    )
+    .await;
+    assert_eq!(person_info(&set, "u_sam").rules, rules);
+
+    // Sam's phone is disconnected, and can't come back while phones are off.
+    assert!(phone.frame().await.is_none(), "the phone link stayed open");
+    let mut again = Phone::handshake(port, &sam, &engine_key, None, "")
+        .await
+        .unwrap();
+    assert!(!matches!(
+        again.ask("h2", hello("")).await,
+        Reply::Welcome { .. }
+    ));
+}

@@ -2496,3 +2496,14 @@ select.th-input {
   font-size: 13px;
   box-shadow: var(--shadow-pop);
 }
+/* Settings → People → Controls: one plain switch per line. */
+.th-people-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: 13px;
+  color: var(--ink);
+}
+.th-people-check input {
+  margin-top: 3px;
+}

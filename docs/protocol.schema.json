@@ -1586,6 +1586,11 @@
           "description": "`owner` (runs this engine) or `member`.",
           "type": "string"
         },
+        "rules": {
+          "description": "What the owner allows them (everything, unless turned off).",
+          "$ref": "#/$defs/PersonRules",
+          "default": {}
+        },
         "spent": {
           "description": "What their turns have cost (USD) since `people.list`'s `since`. Only what was recorded\nwith a price counts.",
           "type": "number",
@@ -1599,6 +1604,31 @@
         "role",
         "added"
       ]
+    },
+    "PersonRules": {
+      "description": "What the owner allows a person. Everything is allowed until the owner turns it off; the\nperson can see what's off for them.",
+      "type": "object",
+      "properties": {
+        "child": {
+          "description": "A child's account, with answers fit for their age: `under_13`, `13_15` or `16_17`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "no_commands": {
+          "description": "Thrall can't run commands for them (the shell and git).",
+          "type": "boolean"
+        },
+        "no_phones": {
+          "description": "Their phones can't connect.",
+          "type": "boolean"
+        },
+        "no_system_folders": {
+          "description": "Thrall's file tools keep out of the system's folders (Windows, programs, other people's\nfolders) for them.",
+          "type": "boolean"
+        }
+      }
     },
     "PersonalityPreset": {
       "description": "A personality preset, for the settings screen.",
@@ -4140,6 +4170,29 @@
           "required": [
             "type",
             "call"
+          ]
+        },
+        {
+          "description": "Set what a person is allowed (the owner only; not the owner's own). Answered by\n`people.listed`.",
+          "type": "object",
+          "properties": {
+            "person": {
+              "description": "Their id.",
+              "type": "string"
+            },
+            "rules": {
+              "description": "What's allowed.",
+              "$ref": "#/$defs/PersonRules"
+            },
+            "type": {
+              "type": "string",
+              "const": "people.rules"
+            }
+          },
+          "required": [
+            "type",
+            "person",
+            "rules"
           ]
         },
         {

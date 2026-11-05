@@ -39,6 +39,10 @@ pub trait Store: Send + Sync {
         terms: &'a PersonTerms,
     ) -> StoreFuture<'a, bool>;
 
+    /// Set what the owner allows a person (`rules`: JSON). `false` when there's no such person (or
+    /// they were removed).
+    fn set_person_rules<'a>(&'a self, user_id: &'a str, rules: &'a str) -> StoreFuture<'a, bool>;
+
     /// Remove a person: they can't connect any more, but everything they made is kept. `false`
     /// when there's no such person (or they were already removed).
     fn remove_person<'a>(&'a self, user_id: &'a str, at: i64) -> StoreFuture<'a, bool>;

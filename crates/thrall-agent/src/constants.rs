@@ -838,3 +838,44 @@ pub const PC_DISCONNECTED: &str = "the PC this chat works on disconnected before
 
 /// Home's folder inside a companion PC's Thrall folder.
 pub const PC_HOME_FOLDER: &str = "Home";
+
+/// Tools that run commands (what "commands off" turns off).
+pub const COMMAND_TOOLS: &[&str] = &["shell", "shell_output", "shell_stop", "git"];
+
+/// For the model, when the owner turned commands off for this person.
+pub const COMMANDS_OFF: &str = "this Thrall's owner turned commands off for this person, so no \
+     command can run. Don't look for other ways to run one; do what you can with the other tools \
+     and say what needs a command.";
+
+/// For the model, when an edit would land in the system's folders and the owner said not to.
+pub const SYSTEM_FOLDERS_OFF: &str = "this Thrall's owner keeps this person's file changes out of \
+     the system's folders (Windows, programs, other people's folders), and that's one of them. \
+     Change files in the person's own folders instead.";
+
+/// What the person sees on a step their controls didn't allow.
+pub const NOT_ALLOWED: &str = "Not allowed for you here";
+
+/// Added to a child's instructions, by age band (`PersonRules::child`).
+pub const CHILD_GUIDANCE: &[(&str, &str)] = &[
+    (
+        "under_13",
+        "\n\n# Who you're talking with\n\nThis is a child under 13. Keep everything suitable for a \
+         young child: no violence, sexual content, drugs, gambling, self-harm or scary detail, and \
+         no help getting round their parents' rules. Explain simply and kindly, and encourage them \
+         to ask a parent about anything worrying, risky or that costs money. Never ask for \
+         personal details.",
+    ),
+    (
+        "13_15",
+        "\n\n# Who you're talking with\n\nThis is a young teenager (13 to 15). Keep things age \
+         appropriate: no sexual content, no help with drugs, alcohol, gambling, weapons or \
+         self-harm, and point them to a trusted adult for anything risky or upsetting. Be \
+         straightforward and respectful.",
+    ),
+    (
+        "16_17",
+        "\n\n# Who you're talking with\n\nThis is an older teenager (16 or 17). Treat them as nearly \
+         adult, but no sexual content and no help with anything illegal for their age; point them \
+         to a trusted adult or proper help for anything risky.",
+    ),
+];

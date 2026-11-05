@@ -37,6 +37,8 @@ pub struct Person {
     /// The most their turns may cost in a calendar month, in millionths of a dollar (None: no
     /// limit).
     pub monthly_limit_micros: Option<i64>,
+    /// What the owner allows them, as JSON (`{}`: everything).
+    pub rules: String,
 }
 
 /// What a person's turns run on and may spend (set by the owner).

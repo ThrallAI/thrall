@@ -320,6 +320,18 @@ impl LlmProvider for PersonLlm {
     }
 }
 
+/// Read what the owner allows `state`'s person (kept for the turn's steps).
+pub async fn load_rules(state: &AppState) -> Result<thrall_protocol::PersonRules, AgentError> {
+    let rules: thrall_protocol::PersonRules = state
+        .store
+        .get_person(&state.user_id)
+        .await?
+        .and_then(|p| serde_json::from_str(&p.rules).ok())
+        .unwrap_or_default();
+    state.companions.set_rules(&state.user_id, rules.clone());
+    Ok(rules)
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::Timelike;

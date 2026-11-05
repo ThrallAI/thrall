@@ -54,3 +54,32 @@ pub mod decision {
     /// Refused without asking.
     pub const DENY: &str = "deny";
 }
+
+/// The system's folders a person's file tools keep out of when the owner says so (lower case,
+/// `\` separators; Linux and macOS ones too).
+pub const SYSTEM_FOLDERS: &[&str] = &[
+    "c:\\windows",
+    "c:\\program files",
+    "c:\\program files (x86)",
+    "c:\\programdata",
+    "c:\\$recycle.bin",
+    "c:\\system volume information",
+    "c:\\recovery",
+    "c:\\boot",
+    "\\etc",
+    "\\usr",
+    "\\bin",
+    "\\sbin",
+    "\\boot",
+    "\\var",
+    "\\opt",
+    "\\system",
+    "\\library",
+    "\\applications",
+];
+
+/// Where people's user folders are (each person's is theirs only).
+pub const USER_ROOTS: &[&str] = &["c:\\users\\", "\\home\\", "\\users\\"];
+
+/// User folders everyone shares.
+pub const SHARED_USERS: &[&str] = &["public", "shared"];

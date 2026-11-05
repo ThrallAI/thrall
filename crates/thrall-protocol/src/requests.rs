@@ -526,6 +526,15 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
+    /// Set what a person is allowed (the owner only; not the owner's own). Answered by
+    /// `people.listed`.
+    #[serde(rename = "people.rules")]
+    PeopleRules {
+        /// Their id.
+        person: String,
+        /// What's allowed.
+        rules: PersonRules,
+    },
     /// Let a blocked PC ask again. Answered by `pc.requests`.
     #[serde(rename = "pc.unblock")]
     PcUnblock {
@@ -752,6 +761,7 @@ impl Request {
             Self::PcAccept { .. } => "pc.accept",
             Self::PcDecline { .. } => "pc.decline",
             Self::PcUnblock { .. } => "pc.unblock",
+            Self::PeopleRules { .. } => "people.rules",
             Self::RunnerReady { .. } => "runner.ready",
             Self::RunnerOutput { .. } => "runner.output",
             Self::RunnerDone { .. } => "runner.done",
@@ -1337,6 +1347,28 @@ pub struct PersonInfo {
     /// Their monthly spending limit in US dollars, if they have one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub monthly_limit: Option<f64>,
+    /// What the owner allows them (everything, unless turned off).
+    #[serde(default)]
+    pub rules: PersonRules,
+}
+
+/// What the owner allows a person. Everything is allowed until the owner turns it off; the
+/// person can see what's off for them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PersonRules {
+    /// Thrall can't run commands for them (the shell and git).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_commands: bool,
+    /// Thrall's file tools keep out of the system's folders (Windows, programs, other people's
+    /// folders) for them.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_system_folders: bool,
+    /// Their phones can't connect.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_phones: bool,
+    /// A child's account, with answers fit for their age: `under_13`, `13_15` or `16_17`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child: Option<String>,
 }
 
 /// A browser or PC signed in as a person.

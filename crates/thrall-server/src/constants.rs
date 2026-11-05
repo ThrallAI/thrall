@@ -114,6 +114,9 @@ pub use thrall_core::constants::COMPANION_FILE;
 /// How often a companion PC's runner shows it's still there.
 pub const COMPANION_PING: Duration = Duration::from_secs(20);
 
+/// A child account's age bands (`PersonRules::child`).
+pub const CHILD_BANDS: &[&str] = &["under_13", "13_15", "16_17"];
+
 /// How long a companion window's one-time sign-in code works.
 pub const BRIDGE_CODE_LIFETIME: Duration = Duration::from_secs(5 * 60);
 

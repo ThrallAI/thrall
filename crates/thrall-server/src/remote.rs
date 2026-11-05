@@ -206,6 +206,8 @@ pub struct Remote {
     finder: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// Bumped when the PCs asking change, so the owner's screens ask for the list again.
     pub(crate) asked: watch::Sender<u64>,
+    /// People whose phones the owner turned off (their phone links close).
+    phones_off: Mutex<std::collections::HashSet<String>>,
 }
 
 /// Why a handshake was turned away (logged; the phone only sees the connection close).
@@ -256,6 +258,7 @@ impl Remote {
             pc_listener: Mutex::new(None),
             finder: Mutex::new(None),
             asked: watch::channel(0).0,
+            phones_off: Mutex::new(std::collections::HashSet::new()),
         }
     }
 
@@ -428,6 +431,34 @@ impl Remote {
         drop(phones);
         self.removed.send_modify(|n| *n += 1);
         tracing::info!(person, "a removed person's phones were forgotten");
+    }
+
+    /// Let `person`'s phones connect, or not (their open phone links close).
+    pub fn phones_allowed(&self, person: &str, allowed: bool) {
+        let changed = {
+            let mut off = lock(&self.phones_off);
+            if allowed {
+                off.remove(person)
+            } else {
+                off.insert(person.to_owned())
+            }
+        };
+        if changed && !allowed {
+            self.removed.send_modify(|n| *n += 1);
+        }
+    }
+
+    /// Whether `phone`'s person has phones turned off (PCs aren't phones).
+    fn phone_muted(&self, phone: &str, owner_less: Option<&str>) -> bool {
+        let phones = lock(&self.phones);
+        let Some(p) = phones.iter().find(|p| p.id == phone) else {
+            return false;
+        };
+        p.kind == Kind::Phone
+            && p.person
+                .as_deref()
+                .or(owner_less)
+                .is_some_and(|who| lock(&self.phones_off).contains(who))
     }
 
     /// Whether `device` is a PC that joined (not a phone).
@@ -1321,7 +1352,10 @@ async fn pump(
             }
             _ = close.changed() => break,
             _ = removed.changed() => {
-                if !shared.remote.is_paired(phone) || shared.remote.person_of(phone) != whose {
+                if !shared.remote.is_paired(phone)
+                    || shared.remote.person_of(phone) != whose
+                    || shared.remote.phone_muted(phone, None)
+                {
                     break;
                 }
             }

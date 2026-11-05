@@ -89,6 +89,7 @@ fn person_from_row(row: &SqliteRow) -> Result<Person, StoreError> {
         own_key: row.try_get("own_key")?,
         model: row.try_get("model")?,
         monthly_limit_micros: row.try_get("monthly_limit_micros")?,
+        rules: row.try_get("rules")?,
     })
 }
 
@@ -160,7 +161,7 @@ impl Store for SqliteStore {
     fn get_person<'a>(&'a self, user_id: &'a str) -> StoreFuture<'a, Option<Person>> {
         Box::pin(async move {
             let row = sqlx::query(
-                "SELECT id, name, role, plan, created_at, removed_at, own_key, model, \n                 monthly_limit_micros FROM users WHERE id = ?",
+                "SELECT id, name, role, plan, created_at, removed_at, own_key, model, \n                 monthly_limit_micros, rules FROM users WHERE id = ?",
             )
             .bind(user_id)
             .fetch_optional(&self.pool)
@@ -172,7 +173,7 @@ impl Store for SqliteStore {
     fn list_people(&self) -> StoreFuture<'_, Vec<Person>> {
         Box::pin(async move {
             let rows = sqlx::query(
-                "SELECT id, name, role, plan, created_at, removed_at, own_key, model, \n                 monthly_limit_micros FROM users \
+                "SELECT id, name, role, plan, created_at, removed_at, own_key, model, \n                 monthly_limit_micros, rules FROM users \
                  WHERE removed_at IS NULL ORDER BY created_at, id",
             )
             .fetch_all(&self.pool)
@@ -218,6 +219,18 @@ impl Store for SqliteStore {
             .bind(user_id)
             .execute(&self.pool)
             .await?;
+            Ok(done.rows_affected() > 0)
+        })
+    }
+
+    fn set_person_rules<'a>(&'a self, user_id: &'a str, rules: &'a str) -> StoreFuture<'a, bool> {
+        Box::pin(async move {
+            let done =
+                sqlx::query("UPDATE users SET rules = ? WHERE id = ? AND removed_at IS NULL")
+                    .bind(rules)
+                    .bind(user_id)
+                    .execute(&self.pool)
+                    .await?;
             Ok(done.rows_affected() > 0)
         })
     }

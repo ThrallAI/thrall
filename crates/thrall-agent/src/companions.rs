@@ -58,6 +58,8 @@ pub struct Companions {
     links: Mutex<HashMap<String, Link>>,
     /// Sessions working on a PC, by session id.
     sessions: Mutex<HashMap<String, String>>,
+    /// What the owner allows each person, as last read (by person id).
+    rules: Mutex<HashMap<String, thrall_protocol::PersonRules>>,
     next: AtomicU64,
 }
 
@@ -104,6 +106,16 @@ impl Companions {
     /// The PC's Thrall folder, while its runner is connected.
     pub fn home(&self, device: &str) -> Option<String> {
         lock(&self.links).get(device).map(|l| l.home.clone())
+    }
+
+    /// What the owner allows `person` (everything until set).
+    pub fn rules(&self, person: &str) -> thrall_protocol::PersonRules {
+        lock(&self.rules).get(person).cloned().unwrap_or_default()
+    }
+
+    /// Remember what the owner allows `person`.
+    pub fn set_rules(&self, person: &str, rules: thrall_protocol::PersonRules) {
+        lock(&self.rules).insert(person.to_owned(), rules);
     }
 
     /// A connected PC of `person`'s, with its Thrall folder.

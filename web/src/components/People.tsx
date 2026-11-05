@@ -124,6 +124,56 @@ function TermsEditor({
   );
 }
 
+type Rules = NonNullable<Person["rules"]>;
+
+/** How many of a person's controls are on (something turned off for them). */
+function controlsOn(rules: Rules | undefined): number {
+  if (!rules) return 0;
+  return [rules.no_commands, rules.no_system_folders, rules.no_phones, rules.child].filter(Boolean).length;
+}
+
+/** What Thrall may do for someone, all allowed until switched off. Saved as each one changes. */
+function ControlsEditor({ person, onSave, onClose }: { person: Person; onSave: (rules: Rules) => void; onClose: () => void }) {
+  const rules: Rules = person.rules ?? {};
+  const set = (change: Partial<Rules>) => onSave({ ...rules, ...change });
+  return (
+    <div className="th-people-terms">
+      <p className="th-set-note">Everything is allowed until you switch it off. What's off shows beside {person.name}'s name.</p>
+      <label className="th-people-check">
+        <input type="checkbox" checked={!rules.no_commands} onChange={(e) => set({ no_commands: !e.target.checked })} /> Thrall can run
+        commands for them
+      </label>
+      <label className="th-people-check">
+        <input type="checkbox" checked={!rules.no_system_folders} onChange={(e) => set({ no_system_folders: !e.target.checked })} />{" "}
+        Thrall can change files in system folders for them (Windows, programs, other people's folders)
+      </label>
+      <label className="th-people-check">
+        <input type="checkbox" checked={!rules.no_phones} onChange={(e) => set({ no_phones: !e.target.checked })} /> Their phones can
+        connect
+      </label>
+      <label className="th-people-check">
+        <input type="checkbox" checked={Boolean(rules.child)} onChange={(e) => set({ child: e.target.checked ? "under_13" : undefined })} />{" "}
+        Child's account: answers fit for their age
+      </label>
+      {rules.child ? (
+        <label className="th-people-field">
+          <span>Their age</span>
+          <select className="th-input" value={rules.child} onChange={(e) => set({ child: e.target.value })}>
+            <option value="under_13">Under 13</option>
+            <option value="13_15">13 to 15</option>
+            <option value="16_17">16 or 17</option>
+          </select>
+        </label>
+      ) : null}
+      <div className="th-set-add">
+        <button type="button" className="th-btn th-btn-quiet" onClick={onClose}>
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function People({
   engine,
   onStatus,
@@ -142,6 +192,7 @@ export function People({
   const [link, setLink] = useState<{ person: string; url: string; expires: number } | null>(null);
   const [devices, setDevices] = useState<Devices | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [controlling, setControlling] = useState<string | null>(null);
 
   const load = useCallback(
     () =>
@@ -203,6 +254,10 @@ export function People({
       },
       ownKey && !p.key_set ? `Saved. ${p.name}'s turns wait until their key is set.` : "Saved.",
     );
+  };
+
+  const saveRules = (p: Person, rules: Rules) => {
+    void change({ type: "people.rules", person: p.person, rules }, `Saved. It applies to ${p.name} from their next step.`);
   };
 
   const saveKey = (p: Person, key: string) => {
@@ -289,7 +344,7 @@ export function People({
     <>
       <Group
         title="People"
-        note="Everyone gets their own chats, files and memory. They use your key and model unless you give them their own, and their tool steps run on this computer. Spending is this month's, from the first; a limit stops their turns when it's reached."
+        note="Everyone gets their own chats, files and memory. They use your key and model unless you give them their own. Their work runs on this computer, or on their own PC once it joins (Settings → PCs). Spending is this month's, from the first; a limit stops their turns when it's reached."
       >
         {people.map((p) => {
           const owner = p.role === "owner";
@@ -300,6 +355,10 @@ export function People({
             p.monthly_limit != null ? `${dollars(spent)} of ${dollars(p.monthly_limit)} this month` : `${dollars(spent)} this month`,
             p.own_key ? (p.key_set ? "their own key" : "their own key (not set)") : null,
             p.model ? p.model : null,
+            p.rules?.no_commands ? "no commands" : null,
+            p.rules?.no_system_folders ? "no system folders" : null,
+            p.rules?.no_phones ? "no phones" : null,
+            p.rules?.child ? "child's account" : null,
           ]
             .filter(Boolean)
             .join(" · ");
@@ -344,6 +403,16 @@ export function People({
                       >
                         Key & limit
                       </button>
+                      {owner ? null : (
+                        <button
+                          type="button"
+                          className="th-btn th-btn-quiet"
+                          aria-expanded={controlling === p.person}
+                          onClick={() => setControlling(controlling === p.person ? null : p.person)}
+                        >
+                          {controlsOn(p.rules) > 0 ? `Controls (${controlsOn(p.rules)} on)` : "Controls"}
+                        </button>
+                      )}
                       <button type="button" className="th-btn th-btn-quiet" onClick={() => makeLink(p)}>
                         Sign-in link
                       </button>
@@ -375,6 +444,9 @@ export function People({
                   onKey={(key) => saveKey(p, key)}
                   onClose={() => setEditing(null)}
                 />
+              ) : null}
+              {controlling === p.person && !owner ? (
+                <ControlsEditor person={p} onSave={(rules) => saveRules(p, rules)} onClose={() => setControlling(null)} />
               ) : null}
               {linkFor(p)}
               {devicesFor(p)}

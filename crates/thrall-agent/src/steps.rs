@@ -23,8 +23,9 @@ use tokio::sync::mpsc;
 use crate::checks::Track;
 use crate::constants::{
     BACKGROUND_CANT_CHANGE, BLOCKED_BY_HOOK, BLOCKED_BY_PLAN, BLOCKED_UNATTENDED, CHECK_IN_BLOCKED,
-    CHECK_IN_READ_ONLY, NOT_LOOKING, SKILL_HELPER_DONE, SKILL_HELPER_TASK, THINKER_BLOCKED,
-    THINKER_CANT, THINKER_LOOK_ONLY, TOOL_MAX_SECS, TOOL_STOP_GRACE_SECS, step_status,
+    CHECK_IN_READ_ONLY, COMMAND_TOOLS, COMMANDS_OFF, NOT_ALLOWED, NOT_LOOKING, SKILL_HELPER_DONE,
+    SKILL_HELPER_TASK, SYSTEM_FOLDERS_OFF, THINKER_BLOCKED, THINKER_CANT, THINKER_LOOK_ONLY,
+    TOOL_MAX_SECS, TOOL_STOP_GRACE_SECS, step_status,
 };
 use crate::error::AgentError;
 use crate::hooks;
@@ -135,6 +136,9 @@ pub(crate) async fn run_step(
         .filter(|t| thrall_tools::companion::runs_on_pc(t.name()))
         .and_then(|_| state.companions.pc_of(emitter.session_id));
 
+    // What the owner allows this person (everything, unless they turned something off).
+    let rules = state.companions.rules(&state.user_id);
+
     let mut status: Option<StepStatus> = None;
     let mut step_summary: Option<String> = None;
     let output = match &tool {
@@ -146,6 +150,19 @@ pub(crate) async fn run_step(
             "the arguments for {} weren't valid JSON. Send a JSON object.",
             call.name
         )),
+        Some(t) if rules.no_commands && COMMAND_TOOLS.contains(&t.name()) => {
+            audit(
+                state,
+                gate::TOOL,
+                &call.name,
+                decision::DENY,
+                json!({ "rule": "no_commands" }),
+            )
+            .await?;
+            status = Some(StepStatus::Denied);
+            step_summary = Some(NOT_ALLOWED.to_owned());
+            ToolOutput::error(COMMANDS_OFF)
+        }
         // Split mode's Thinker isn't offered these; refused if it calls one anyway.
         Some(t) if track.look_only && THINKER_CANT.contains(&t.name()) => {
             status = Some(StepStatus::Denied);
@@ -262,6 +279,23 @@ pub(crate) async fn run_step(
         .await
         {
             Err(why) => ToolOutput::error(why),
+            Ok(effect)
+                if rules.no_system_folders
+                    && matches!(&effect, Effect::Edit { path, .. }
+                        if thrall_gates::system_folder(path, &workspace.to_string_lossy())) =>
+            {
+                audit(
+                    state,
+                    gate::TOOL,
+                    &call.name,
+                    decision::DENY,
+                    json!({ "rule": "no_system_folders" }),
+                )
+                .await?;
+                status = Some(StepStatus::Denied);
+                step_summary = Some(NOT_ALLOWED.to_owned());
+                ToolOutput::error(SYSTEM_FOLDERS_OFF)
+            }
             Ok(mut effect) => {
                 // Saving facts without asking is off: ask, showing the fact.
                 if t.name() == MEMORY_SAVE && !state.config.memory.save_facts {

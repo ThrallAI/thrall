@@ -310,9 +310,16 @@ async fn who(shared: &Shared, peer: &Peer) -> Option<thrall_store::Person> {
         Peer::Phone { id } => shared.remote.person_of(id),
     }
     .unwrap_or_else(|| state.user_id.clone());
+    let phone = matches!(peer, Peer::Phone { id } if !shared.remote.is_pc(id));
     match state.store.get_person(&user).await {
-        // Someone the owner removed can't come back in.
-        Ok(person) => person.filter(|p| p.removed_at.is_none()),
+        // Someone the owner removed can't come back in, nor a phone of someone whose phones are
+        // turned off.
+        Ok(person) => person.filter(|p| {
+            p.removed_at.is_none()
+                && !(phone
+                    && serde_json::from_str::<thrall_protocol::PersonRules>(&p.rules)
+                        .is_ok_and(|r| r.no_phones))
+        }),
         Err(e) => {
             tracing::warn!(%e, "couldn't look up who is connecting");
             None
@@ -1145,6 +1152,9 @@ impl Connection {
                         vec![error(id, ErrorCode::NotFound, "There's no such phone.")]
                     }
                 }
+                Request::PeopleRules { person, rules } => {
+                    refused_or(id, crate::people::set_rules(&self.shared, &person, rules).await?)
+                }
                 Request::RunnerReady { home } => {
                     let pc = match &self.peer {
                         Peer::Phone { id } if self.shared.remote.is_pc(id) => id.clone(),
@@ -1757,6 +1767,7 @@ fn owner_only(request: &Request) -> bool {
         | Request::PeopleRename { .. }
         | Request::PeopleRemove { .. }
         | Request::PeopleTerms { .. }
+        | Request::PeopleRules { .. }
         | Request::SigninCreate { .. } => true,
         Request::CommandRun { name, args, .. } => {
             let first = args.split_whitespace().next().unwrap_or_default();

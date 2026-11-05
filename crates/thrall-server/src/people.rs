@@ -6,11 +6,11 @@
 use thrall_agent::AgentError;
 use thrall_core::constants::{PERSON_NAME_MAX_CHARS, id_prefix, person_role};
 use thrall_core::ids::{new_id, now_ms};
-use thrall_protocol::{PersonInfo, Reply};
+use thrall_protocol::{PersonInfo, PersonRules, Reply};
 use thrall_store::PersonTerms;
 
 use crate::connection::Shared;
-use crate::constants::{MICROS_PER_DOLLAR, MODEL_ID_MAX_CHARS, MONTHLY_LIMIT_MAX_USD};
+use crate::constants::{CHILD_BANDS, MICROS_PER_DOLLAR, MODEL_ID_MAX_CHARS, MONTHLY_LIMIT_MAX_USD};
 
 /// Why a people request was refused (shown to the owner as is).
 pub type Refusal = &'static str;
@@ -36,6 +36,7 @@ pub async fn listed(shared: &Shared, since: Option<i64>) -> Result<Reply, AgentE
             key_set,
             model: p.model,
             monthly_limit: p.monthly_limit_micros.map(|m| m as f64 / MICROS_PER_DOLLAR),
+            rules: serde_json::from_str(&p.rules).unwrap_or_default(),
             person: p.id,
             name: p.name,
             role: p.role,
@@ -110,6 +111,36 @@ pub async fn remove(shared: &Shared, person: &str) -> Result<Result<Reply, Refus
     shared.remote.forget_person(person);
     crate::signin::sign_out_everywhere(shared, person).await?;
     tracing::info!(person, "person removed");
+    Ok(Ok(listed(shared, None).await?))
+}
+
+/// Set what someone (never the owner) is allowed. Takes effect from their next step; their phones
+/// are disconnected straight away when phones are turned off.
+pub async fn set_rules(
+    shared: &Shared,
+    person: &str,
+    rules: PersonRules,
+) -> Result<Result<Reply, Refusal>, AgentError> {
+    let state = shared.hub.state();
+    match state.store.get_person(person).await? {
+        Some(p) if p.removed_at.is_none() && p.role == person_role::OWNER => {
+            return Ok(Err(
+                "The person who runs this Thrall is always allowed everything.",
+            ));
+        }
+        Some(p) if p.removed_at.is_none() => {}
+        _ => return Ok(Err("There's no such person.")),
+    }
+    if let Some(band) = &rules.child
+        && !CHILD_BANDS.contains(&band.as_str())
+    {
+        return Ok(Err("A child's age is under 13, 13 to 15, or 16 to 17."));
+    }
+    let text = serde_json::to_string(&rules).unwrap_or_else(|_| "{}".to_owned());
+    state.store.set_person_rules(person, &text).await?;
+    state.companions.set_rules(person, rules.clone());
+    shared.remote.phones_allowed(person, !rules.no_phones);
+    tracing::info!(person, "a person's controls changed");
     Ok(Ok(listed(shared, None).await?))
 }
 
