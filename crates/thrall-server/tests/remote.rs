@@ -1555,6 +1555,7 @@ async fn a_joined_pcs_sessions_work_in_its_folder_and_its_runner_does_the_work()
         http: thrall_tools::http_client().unwrap(),
         data_dir: None,
         browser: Arc::new(thrall_tools::browser::Browsers::default()),
+        home: Some(pc_home.clone()),
     };
     let runner = Arc::new(Runner::new(base));
     let home = pc_home.to_string_lossy().into_owned();
@@ -1653,6 +1654,28 @@ async fn a_joined_pcs_sessions_work_in_its_folder_and_its_runner_does_the_work()
         std::fs::read_to_string(pc_home.join("hello.txt")).unwrap(),
         "made on Sam's PC"
     );
+
+    // The Files view (on a phone, say) shows the PC's folder, not this computer's.
+    let list = Request::FolderList {
+        session: info.session.clone(),
+        path: String::new(),
+    };
+    window
+        .send(&serde_json::to_string(&RequestFrame::new("f", list)).unwrap())
+        .await
+        .unwrap();
+    let names = loop {
+        let text = window.next().await.unwrap().unwrap();
+        if let Ok(ServerFrame::Reply(r)) = serde_json::from_str::<ServerFrame>(&text)
+            && r.re == "f"
+        {
+            let Reply::FolderListed { items, .. } = r.reply else {
+                panic!("expected folder.listed, got {:?}", r.reply);
+            };
+            break items.into_iter().map(|i| i.name).collect::<Vec<_>>();
+        }
+    };
+    assert_eq!(names, vec!["hello.txt".to_owned()]);
 
     // A tool that doesn't run on PCs is refused there, and a PC that isn't connected says so.
     let refused = companions

@@ -149,6 +149,7 @@ pub async fn runner(paths: &Paths, work_folder: &str) -> anyhow::Result<ExitCode
         http: thrall_tools::http_client()?,
         data_dir: Some(paths.home.clone()),
         browser: Arc::new(thrall_tools::browser::Browsers::default()),
+        home: Some(home.clone()),
     };
     let runner = Arc::new(Runner::new(base));
     let home = home.to_string_lossy().into_owned();

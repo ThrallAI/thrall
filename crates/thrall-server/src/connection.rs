@@ -3,6 +3,7 @@
 //! opened; a client that falls behind catches up from the event log, so nothing stored is lost.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
@@ -22,6 +23,7 @@ use thrall_protocol::{
     ClientKind, CommandItem, EngineInfo, ErrorCode, Event, EventFrame, Limits, Reply, ReplyFrame,
     Request, RequestFrame, ServerFrame, UserInfo,
 };
+use thrall_tools::companion::Call;
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::constants::{
@@ -471,6 +473,48 @@ impl Connection {
     /// The engine acting for this connection's person.
     fn me(&self) -> thrall_agent::AppState {
         self.shared.hub.state().for_user(&self.person.id)
+    }
+
+    /// Ask the companion PC `pc` to do `job` for this person's `session` (in `workspace`, there).
+    async fn on_pc(
+        &self,
+        pc: &str,
+        session: &str,
+        workspace: &Path,
+        job: Call,
+    ) -> Result<serde_json::Value, String> {
+        self.shared
+            .hub
+            .state()
+            .companions
+            .call(
+                pc,
+                &self.person.id,
+                session,
+                &workspace.to_string_lossy(),
+                job,
+                None,
+            )
+            .await
+    }
+
+    /// The folders this person's sessions on `pc` used, most recently active first.
+    async fn pc_folders(&self, pc: &str) -> Result<Vec<String>, thrall_agent::AgentError> {
+        let state = self.me();
+        let sessions = state
+            .store
+            .list_sessions(&state.user_id, crate::constants::PLACES_SCAN)
+            .await?;
+        let mut folders: Vec<String> = Vec::new();
+        for s in sessions {
+            if s.pc.as_deref() == Some(pc)
+                && let Some(w) = s.workspace
+                && !folders.contains(&w)
+            {
+                folders.push(w);
+            }
+        }
+        Ok(folders)
     }
 
     /// Where a session started on this connection works: on the companion PC it was started on;
@@ -1113,7 +1157,12 @@ impl Connection {
                         }
                     };
                     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-                    let token = self.shared.hub.state().companions.attach(&pc, &home, tx);
+                    let token = self
+                        .shared
+                        .hub
+                        .state()
+                        .companions
+                        .attach(&pc, &self.person.id, &home, tx);
                     self.runner = Some(crate::runner_link::RunnerSide::new(pc, token));
                     self.runner_calls = Some(rx);
                     vec![reply(id, Reply::Ack {})]
@@ -1286,6 +1335,25 @@ impl Connection {
                     vec![self.file_put(id, upload, &name, &data).await]
                 }
                 Request::FolderPlaces {} => {
+                    if let Some(pc) = self.session_pc() {
+                        let recent = self.pc_folders(&pc).await?;
+                        let job = Call::Places { recent };
+                        return Ok(match self.on_pc(&pc, "", Path::new(""), job).await {
+                            Ok(v) => {
+                                let text = |k: &str| v[k].as_str().map(str::to_owned);
+                                vec![reply(
+                                    id,
+                                    Reply::FolderPlaces {
+                                        recent: serde_json::from_value(v["recent"].clone())
+                                            .unwrap_or_default(),
+                                        default: text("default"),
+                                        new_in: text("new_in"),
+                                    },
+                                )]
+                            }
+                            Err(why) => vec![error(id, ErrorCode::Invalid, why)],
+                        });
+                    }
                     let p = crate::folders::places(&self.me()).await?;
                     vec![reply(
                         id,
@@ -1297,6 +1365,18 @@ impl Connection {
                     )]
                 }
                 Request::FolderCreate { parent, name } => {
+                    if let Some(pc) = self.session_pc() {
+                        let job = Call::MakeFolder { parent, name };
+                        return Ok(match self.on_pc(&pc, "", Path::new(""), job).await {
+                            Ok(v) => vec![reply(
+                                id,
+                                Reply::FolderCreated {
+                                    path: v["path"].as_str().unwrap_or_default().to_owned(),
+                                },
+                            )],
+                            Err(why) => vec![error(id, ErrorCode::Invalid, why)],
+                        });
+                    }
                     match crate::folders::create(&self.me(), &parent, &name).await {
                         Ok(path) => vec![reply(id, Reply::FolderCreated { path })],
                         Err(why) => vec![error(id, ErrorCode::Invalid, why)],
@@ -1327,6 +1407,22 @@ impl Connection {
                 Request::FolderList { session, path } => {
                     let s = session::get(&self.me(), &session).await?;
                     let ws = session::folder_of(&s);
+                    if let Some(pc) = &s.pc {
+                        let job = Call::List { path };
+                        return Ok(match self.on_pc(pc, &session, &ws, job).await {
+                            Ok(v) => vec![reply(
+                                id,
+                                Reply::FolderListed {
+                                    session,
+                                    path: v["path"].as_str().unwrap_or_default().to_owned(),
+                                    items: serde_json::from_value(v["items"].clone())
+                                        .unwrap_or_default(),
+                                    more: v["more"].as_bool().unwrap_or(false),
+                                },
+                            )],
+                            Err(why) => vec![error(id, ErrorCode::NotFound, why)],
+                        });
+                    }
                     match crate::folders::list(&ws, &path) {
                         Ok((path, items, more)) => vec![reply(
                             id,
@@ -1347,6 +1443,22 @@ impl Connection {
                 } => {
                     let s = session::get(&self.me(), &session).await?;
                     let ws = session::folder_of(&s);
+                    if let Some(pc) = &s.pc {
+                        let job = Call::Part { path, offset };
+                        return Ok(match self.on_pc(pc, &session, &ws, job).await {
+                            Ok(v) => vec![reply(
+                                id,
+                                Reply::FolderPart {
+                                    session,
+                                    path: v["path"].as_str().unwrap_or_default().to_owned(),
+                                    offset: v["offset"].as_u64().unwrap_or(0),
+                                    size: v["size"].as_u64().unwrap_or(0),
+                                    data: v["data"].as_str().unwrap_or_default().to_owned(),
+                                },
+                            )],
+                            Err(why) => vec![error(id, ErrorCode::NotFound, why)],
+                        });
+                    }
                     match crate::folders::read(&ws, &path, offset).await {
                         Ok((path, offset, size, bytes)) => vec![reply(
                             id,

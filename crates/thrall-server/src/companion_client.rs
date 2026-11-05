@@ -378,6 +378,7 @@ pub async fn run_once(
                     tokio::spawn(handle(
                         runner.clone(),
                         out_tx.clone(),
+                        home.to_owned(),
                         call,
                         person,
                         in_session,
@@ -396,10 +397,45 @@ pub async fn run_once(
     }
 }
 
+/// A folder call (the Files view, picking or making a folder), answered on this PC. `home` is
+/// this PC's Thrall folder.
+async fn folder_call(job: Call, workspace: &str, home: &str) -> Result<serde_json::Value, String> {
+    use base64::Engine as _;
+    match job {
+        Call::List { path } => {
+            let (path, items, more) = crate::folders::list(Path::new(workspace), &path)?;
+            Ok(serde_json::json!({ "path": path, "items": items, "more": more }))
+        }
+        Call::Part { path, offset } => {
+            let (path, offset, size, bytes) =
+                crate::folders::read(Path::new(workspace), &path, offset).await?;
+            let data = base64::engine::general_purpose::STANDARD.encode(bytes);
+            Ok(serde_json::json!({ "path": path, "offset": offset, "size": size, "data": data }))
+        }
+        Call::Places { recent } => {
+            let recent: Vec<String> = recent
+                .into_iter()
+                .filter(|p| Path::new(p).is_dir())
+                .take(crate::constants::PLACES_MAX)
+                .collect();
+            Ok(serde_json::json!({ "recent": recent, "default": home, "new_in": home }))
+        }
+        Call::MakeFolder { parent, name } => {
+            // This PC is the person's own: a new folder can go in any folder that's there, and
+            // in its Thrall folder (made when first used).
+            let path = crate::folders::make_in(&parent, &name, &[home])?;
+            Ok(serde_json::json!({ "path": path }))
+        }
+        _ => Err("not a folder call".to_owned()),
+    }
+}
+
 /// Run one call and send back its output and answer.
+#[allow(clippy::too_many_arguments)]
 async fn handle(
     runner: Arc<Runner>,
     out: mpsc::UnboundedSender<String>,
+    home: String,
     call: String,
     person: String,
     session: String,
@@ -421,6 +457,7 @@ async fn handle(
         })
     };
     let result = match serde_json::from_value::<Call>(job) {
+        Ok(job) if job.is_folder_call() => folder_call(job, &workspace, &home).await,
         Ok(job) => {
             runner
                 .handle(

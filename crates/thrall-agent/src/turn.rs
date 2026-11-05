@@ -610,6 +610,9 @@ async fn run_turn(
     // Their own key is there if they use one, and they're under their monthly limit; refused
     // before anything is recorded.
     let warning = crate::people::before_turn(state).await?;
+    // Home for someone whose PC is connected works on that PC.
+    let moved = crate::companions::home_on_pc(state, session).await?;
+    let session = moved.as_ref().unwrap_or(session);
     let session_id = session.id.as_str();
     let user_id = state.user_id.as_str();
     let workspace = crate::session::folder_of(session);

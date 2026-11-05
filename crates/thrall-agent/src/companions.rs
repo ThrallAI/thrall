@@ -40,6 +40,8 @@ pub struct Outgoing {
 struct Link {
     /// Tells this link apart from a newer one from the same PC.
     token: u64,
+    /// Whose PC it is.
+    person: String,
     /// The PC's Thrall folder (where its sessions work unless one picks another).
     home: String,
     /// The connection serving it.
@@ -62,12 +64,19 @@ pub struct Companions {
 impl Companions {
     /// A PC's runner connected (`device` is its id); the connection gets calls on `tx`. Returns a
     /// token for `detach`. A newer link from the same PC replaces the older one.
-    pub fn attach(&self, device: &str, home: &str, tx: mpsc::UnboundedSender<Outgoing>) -> u64 {
+    pub fn attach(
+        &self,
+        device: &str,
+        person: &str,
+        home: &str,
+        tx: mpsc::UnboundedSender<Outgoing>,
+    ) -> u64 {
         let token = self.next.fetch_add(1, Ordering::SeqCst) + 1;
         lock(&self.links).insert(
             device.to_owned(),
             Link {
                 token,
+                person: person.to_owned(),
                 home: home.to_owned(),
                 tx,
             },
@@ -95,6 +104,14 @@ impl Companions {
     /// The PC's Thrall folder, while its runner is connected.
     pub fn home(&self, device: &str) -> Option<String> {
         lock(&self.links).get(device).map(|l| l.home.clone())
+    }
+
+    /// A connected PC of `person`'s, with its Thrall folder.
+    pub fn pc_of_person(&self, person: &str) -> Option<(String, String)> {
+        lock(&self.links)
+            .iter()
+            .find(|(_, l)| l.person == person && !l.tx.is_closed())
+            .map(|(device, l)| (device.clone(), l.home.clone()))
     }
 
     /// While a turn of `session` runs: its PC (`None`: it works here).
@@ -166,4 +183,34 @@ impl Companions {
         .map_err(|_| PC_NOT_CONNECTED.to_owned())?;
         answer.await.map_err(|_| PC_DISCONNECTED.to_owned())?
     }
+}
+
+/// Home for someone (not the owner) whose PC is connected: a Home page that still works here
+/// moves to `Home` in the PC's Thrall folder, and stays there. Returns the moved session.
+pub async fn home_on_pc(
+    state: &crate::state::AppState,
+    session: &thrall_store::Session,
+) -> Result<Option<thrall_store::Session>, crate::error::AgentError> {
+    if session.pc.is_some() || session.home_day.is_none() || state.user_id == state.owner_id {
+        return Ok(None);
+    }
+    let Some((pc, home)) = state.companions.pc_of_person(&state.user_id) else {
+        return Ok(None);
+    };
+    let sep = if home.contains('\\') { '\\' } else { '/' };
+    let folder = format!(
+        "{}{sep}{}",
+        home.trim_end_matches(['\\', '/']),
+        crate::constants::PC_HOME_FOLDER
+    );
+    state
+        .store
+        .set_session_pc(&state.user_id, &session.id, Some(&pc))
+        .await?;
+    state
+        .store
+        .set_session_workspace(&state.user_id, &session.id, &folder)
+        .await?;
+    tracing::info!(session = session.id, "Home moved to the person's PC");
+    Ok(Some(crate::session::get(state, &session.id).await?))
 }

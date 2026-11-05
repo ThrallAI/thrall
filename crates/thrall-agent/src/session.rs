@@ -72,8 +72,25 @@ pub async fn set_folder(
             "Give the whole path, like `C:\\Users\\you\\Projects\\{path}`."
         )));
     }
-    if !folder.is_dir() {
-        return Ok(Err(format!("There's no folder `{path}` on this computer.")));
+    // A session on a companion PC moves to a folder on that PC: the PC says whether it's there.
+    let pc = get(state, session_id).await?.pc;
+    match &pc {
+        Some(pc) => {
+            let look = thrall_tools::companion::Call::List {
+                path: String::new(),
+            };
+            let there = state
+                .companions
+                .call(pc, &state.user_id, session_id, path, look, None)
+                .await;
+            if let Err(why) = there {
+                return Ok(Err(format!("Couldn't use `{path}` on the PC: {why}")));
+            }
+        }
+        None if !folder.is_dir() => {
+            return Ok(Err(format!("There's no folder `{path}` on this computer.")));
+        }
+        None => {}
     }
     state
         .store

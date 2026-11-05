@@ -61,6 +61,42 @@ pub enum Call {
         /// Its bytes, base64.
         data: String,
     },
+    /// The folder's entries at `path` (relative; "" is the folder), for the Files view. Only
+    /// inside the folder, read only.
+    List {
+        /// Relative path.
+        path: String,
+    },
+    /// A piece of a file in the folder, for the Files view.
+    Part {
+        /// Relative path.
+        path: String,
+        /// Where to start, in bytes.
+        offset: u64,
+    },
+    /// Folders a new session on this PC could work in: those of `recent` still there, and the
+    /// PC's Thrall folder.
+    Places {
+        /// Folders this PC's sessions used, most recent first.
+        recent: Vec<String>,
+    },
+    /// A new, empty folder in `parent` (the PC's Thrall folder or one of its sessions' folders).
+    MakeFolder {
+        /// Where.
+        parent: String,
+        /// Its name (a plain folder name).
+        name: String,
+    },
+}
+
+impl Call {
+    /// Whether the folder tools of the PC's link answer this (not the tool runner).
+    pub fn is_folder_call(&self) -> bool {
+        matches!(
+            self,
+            Self::List { .. } | Self::Part { .. } | Self::Places { .. } | Self::MakeFolder { .. }
+        )
+    }
 }
 
 /// The answer to [`Call::Check`].
@@ -182,6 +218,8 @@ pub struct Base {
     pub data_dir: Option<std::path::PathBuf>,
     /// The PC's browser (making PDFs).
     pub browser: Arc<crate::browser::Browsers>,
+    /// The PC's Thrall folder: a session's folder inside it is made when first used (Home).
+    pub home: Option<std::path::PathBuf>,
 }
 
 /// The companion PC's side: runs the calls the engine sends, one context per session.
@@ -256,6 +294,15 @@ impl Runner {
         session: &str,
         output: mpsc::UnboundedSender<String>,
     ) -> Result<Value, String> {
+        if call.is_folder_call() {
+            return Err("the PC's link answers folder calls".to_owned());
+        }
+        if !workspace.is_dir()
+            && let Some(home) = &self.base.home
+            && workspace.starts_with(home)
+        {
+            let _ = std::fs::create_dir_all(workspace);
+        }
         if !matches!(call, Call::Stop { .. }) && !workspace.is_dir() {
             return Err(format!(
                 "the folder {} isn't on this PC (any more)",
@@ -314,6 +361,10 @@ impl Runner {
                     }
                 }
             }
+            Call::List { .. }
+            | Call::Part { .. }
+            | Call::Places { .. }
+            | Call::MakeFolder { .. } => Err("the PC's link answers folder calls".to_owned()),
             Call::Write { path, data } => {
                 let bytes = BASE64.decode(data).map_err(|e| e.to_string())?;
                 let path = crate::paths::resolve(workspace, &path);

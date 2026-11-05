@@ -835,3 +835,6 @@ pub const PC_NOT_CONNECTED: &str = "the PC this chat works on isn't connected (i
 /// The same, when the PC went away while the call was on it.
 pub const PC_DISCONNECTED: &str = "the PC this chat works on disconnected before it finished. It may \
      or may not have done it; check before trying again.";
+
+/// Home's folder inside a companion PC's Thrall folder.
+pub const PC_HOME_FOLDER: &str = "Home";
