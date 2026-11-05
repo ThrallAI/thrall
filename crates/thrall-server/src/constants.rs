@@ -108,6 +108,15 @@ pub const MASTER_FALLBACK_NAME: &str = "Thrall";
 /// The PC listener listens on every network this computer is on (home or office, the tailnet).
 pub const ANY_HOST: &str = "0.0.0.0";
 
+/// A companion PC's joined Thrall and its own key pair, in its data folder.
+pub const COMPANION_FILE: &str = "companion.json";
+
+/// How often a companion PC's runner shows it's still there.
+pub const COMPANION_PING: Duration = Duration::from_secs(20);
+
+/// How long a finished call's last output lines get to go out before its answer.
+pub const OUTPUT_FLUSH: Duration = Duration::from_secs(1);
+
 /// What a companion broadcasts to find Thrall on the network; anything else gets no answer.
 pub const DISCOVER_HELLO: &[u8] = b"thrall-find-v1";
 

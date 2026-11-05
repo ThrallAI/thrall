@@ -100,8 +100,10 @@ impl Mode {
 
 // ---------- tool gate ----------
 
-/// What a tool call would do, as the tool describes it.
-#[derive(Debug, Clone, PartialEq)]
+/// What a tool call would do, as the tool describes it. (Serialised when a companion PC works it
+/// out for a tool that runs there.)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Effect {
     /// Only reads (files, the web, memory).
     Read,

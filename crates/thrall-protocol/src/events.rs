@@ -298,6 +298,22 @@ pub enum Event {
     /// the list. Sent only to the owner's clients on this computer, with an empty `session`.
     #[serde(rename = "pc.asked")]
     PcAsked {},
+    /// Work for a companion PC's runner (sent only to its link, with an empty `session`): run
+    /// `job` (`{"phase": "check" | "run" | "stop" | "read" | "write", ...}`) in `workspace` for
+    /// `person`'s `in_session`, and answer with `runner.done {call}`.
+    #[serde(rename = "runner.call")]
+    RunnerCall {
+        /// The call's id.
+        call: String,
+        /// Whose session it is.
+        person: String,
+        /// The session.
+        in_session: String,
+        /// Its folder, on the PC.
+        workspace: String,
+        /// What to do.
+        job: serde_json::Value,
+    },
     /// Something failed.
     #[serde(rename = "error")]
     Error {
@@ -339,6 +355,7 @@ impl Event {
             Self::Notice { .. } => "notice",
             Self::UpdateRequested {} => "update.requested",
             Self::PcAsked {} => "pc.asked",
+            Self::RunnerCall { .. } => "runner.call",
             Self::Error { .. } => "error",
         }
     }

@@ -430,6 +430,24 @@ impl Remote {
         tracing::info!(person, "a removed person's phones were forgotten");
     }
 
+    /// Whether `device` is a PC that joined (not a phone).
+    pub fn is_pc(&self, device: &str) -> bool {
+        lock(&self.phones)
+            .iter()
+            .any(|p| p.id == device && p.kind == Kind::Pc)
+    }
+
+    /// The PCs that joined as `person`'s, oldest first (the owner's: `owner`).
+    pub fn pcs_of(&self, person: &str, owner: &str) -> Vec<String> {
+        let mut pcs: Vec<(i64, String)> = lock(&self.phones)
+            .iter()
+            .filter(|p| p.kind == Kind::Pc && p.person.as_deref().unwrap_or(owner) == person)
+            .map(|p| (p.added, p.id.clone()))
+            .collect();
+        pcs.sort();
+        pcs.into_iter().map(|(_, id)| id).collect()
+    }
+
     fn is_paired(&self, phone: &str) -> bool {
         lock(&self.phones).iter().any(|p| p.id == phone)
     }

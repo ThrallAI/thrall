@@ -499,6 +499,33 @@ pub enum Request {
         #[serde(default)]
         block: bool,
     },
+    /// A companion PC's runner is ready: from now on this link gets `runner.call` events for the
+    /// sessions that work on this PC. Only on a joined PC's link. Answered by `ack`.
+    #[serde(rename = "runner.ready")]
+    RunnerReady {
+        /// The PC's Thrall folder (where its sessions work unless one picks another).
+        home: String,
+    },
+    /// Live output of a call the runner is running (a command's lines). Answered by `ack`.
+    #[serde(rename = "runner.output")]
+    RunnerOutput {
+        /// The call's id.
+        call: String,
+        /// The new text.
+        text: String,
+    },
+    /// What came of a call. Answered by `ack`.
+    #[serde(rename = "runner.done")]
+    RunnerDone {
+        /// The call's id.
+        call: String,
+        /// Its answer, when it worked.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        result: Option<serde_json::Value>,
+        /// Why it didn't, when it didn't.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
     /// Let a blocked PC ask again. Answered by `pc.requests`.
     #[serde(rename = "pc.unblock")]
     PcUnblock {
@@ -725,6 +752,9 @@ impl Request {
             Self::PcAccept { .. } => "pc.accept",
             Self::PcDecline { .. } => "pc.decline",
             Self::PcUnblock { .. } => "pc.unblock",
+            Self::RunnerReady { .. } => "runner.ready",
+            Self::RunnerOutput { .. } => "runner.output",
+            Self::RunnerDone { .. } => "runner.done",
             Self::PeopleList { .. } => "people.list",
             Self::PeopleAdd { .. } => "people.add",
             Self::PeopleRename { .. } => "people.rename",
@@ -773,6 +803,8 @@ pub enum ClientKind {
     Telegram,
     /// Scripts (`thrall run`).
     Headless,
+    /// A companion PC's runner (`thrall runner`), doing that PC's share of the work.
+    Companion,
 }
 
 impl ClientKind {
@@ -785,6 +817,7 @@ impl ClientKind {
             Self::Android => "android",
             Self::Telegram => "telegram",
             Self::Headless => "headless",
+            Self::Companion => "companion",
         }
     }
 }

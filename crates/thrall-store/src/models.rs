@@ -77,6 +77,8 @@ pub struct Session {
     pub pinned_at: Option<i64>,
     /// A page of Home (Thrall's built-in conversation): the local date it started.
     pub home_day: Option<String>,
+    /// The companion PC (a joined device's id) its tools run on; `None`: this computer.
+    pub pc: Option<String>,
 }
 
 /// A group the person made for sessions.

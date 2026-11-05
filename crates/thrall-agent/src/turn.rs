@@ -613,6 +613,8 @@ async fn run_turn(
     let session_id = session.id.as_str();
     let user_id = state.user_id.as_str();
     let workspace = crate::session::folder_of(session);
+    // A session that works on a companion PC sends its PC tools there.
+    state.companions.bind(session_id, session.pc.as_deref());
     let mut mode = Mode::parse(&session.mode).unwrap_or_default();
     let turn_id = new_id(id_prefix::TURN);
     let emitter = Emitter::new(state, session_id, &turn_id, sink, true);

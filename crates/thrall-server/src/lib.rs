@@ -5,12 +5,14 @@
 //! ([`remote`]), on its own listener, only while remote access is on.
 
 pub mod app_release;
+pub mod companion_client;
 pub mod connection;
 pub mod constants;
 pub mod error;
 pub mod folders;
 pub mod people;
 pub mod remote;
+mod runner_link;
 pub mod signin;
 pub mod token;
 pub mod uploads;

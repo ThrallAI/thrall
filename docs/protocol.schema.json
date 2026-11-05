@@ -134,6 +134,11 @@
           "description": "Scripts (`thrall run`).",
           "type": "string",
           "const": "headless"
+        },
+        {
+          "description": "A companion PC's runner (`thrall runner`), doing that PC's share of the work.",
+          "type": "string",
+          "const": "companion"
         }
       ]
     },
@@ -1094,6 +1099,43 @@
           },
           "required": [
             "type"
+          ]
+        },
+        {
+          "description": "Work for a companion PC's runner (sent only to its link, with an empty `session`): run\n`job` (`{\"phase\": \"check\" | \"run\" | \"stop\" | \"read\" | \"write\", ...}`) in `workspace` for\n`person`'s `in_session`, and answer with `runner.done {call}`.",
+          "type": "object",
+          "properties": {
+            "call": {
+              "description": "The call's id.",
+              "type": "string"
+            },
+            "in_session": {
+              "description": "The session.",
+              "type": "string"
+            },
+            "job": {
+              "description": "What to do."
+            },
+            "person": {
+              "description": "Whose session it is.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "runner.call"
+            },
+            "workspace": {
+              "description": "Its folder, on the PC.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "call",
+            "person",
+            "in_session",
+            "workspace",
+            "job"
           ]
         },
         {
@@ -4029,6 +4071,75 @@
           "required": [
             "type",
             "request"
+          ]
+        },
+        {
+          "description": "A companion PC's runner is ready: from now on this link gets `runner.call` events for the\nsessions that work on this PC. Only on a joined PC's link. Answered by `ack`.",
+          "type": "object",
+          "properties": {
+            "home": {
+              "description": "The PC's Thrall folder (where its sessions work unless one picks another).",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "runner.ready"
+            }
+          },
+          "required": [
+            "type",
+            "home"
+          ]
+        },
+        {
+          "description": "Live output of a call the runner is running (a command's lines). Answered by `ack`.",
+          "type": "object",
+          "properties": {
+            "call": {
+              "description": "The call's id.",
+              "type": "string"
+            },
+            "text": {
+              "description": "The new text.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "runner.output"
+            }
+          },
+          "required": [
+            "type",
+            "call",
+            "text"
+          ]
+        },
+        {
+          "description": "What came of a call. Answered by `ack`.",
+          "type": "object",
+          "properties": {
+            "call": {
+              "description": "The call's id.",
+              "type": "string"
+            },
+            "error": {
+              "description": "Why it didn't, when it didn't.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "result": {
+              "description": "Its answer, when it worked."
+            },
+            "type": {
+              "type": "string",
+              "const": "runner.done"
+            }
+          },
+          "required": [
+            "type",
+            "call"
           ]
         },
         {

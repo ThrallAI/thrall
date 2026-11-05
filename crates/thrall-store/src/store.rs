@@ -317,6 +317,14 @@ pub trait Store: Send + Sync {
         at: i64,
     ) -> StoreFuture<'a, ()>;
 
+    /// Set the companion PC a session's tools run on (`None`: this computer).
+    fn set_session_pc<'a>(
+        &'a self,
+        user_id: &'a str,
+        session_id: &'a str,
+        pc: Option<&'a str>,
+    ) -> StoreFuture<'a, ()>;
+
     /// Set a session's permission mode.
     fn set_session_mode<'a>(
         &'a self,

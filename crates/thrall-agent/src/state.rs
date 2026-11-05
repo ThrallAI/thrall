@@ -94,6 +94,8 @@ pub struct AppState {
     pub memory: Arc<thrall_memory::Memory>,
     /// The browser (started on first use; a tab per session).
     pub browsers: Arc<thrall_tools::browser::Browsers>,
+    /// Companion PCs' runners connected now, and the sessions working on them.
+    pub companions: Arc<crate::companions::Companions>,
     /// Keys for services besides the AI provider (fal.ai).
     pub keys: Arc<dyn crate::keys::KeyStore>,
     /// The model in use; starts as the config's, `/model` changes it until restart.
@@ -174,6 +176,7 @@ impl AppState {
             mcp_all,
             memory,
             browsers: Arc::new(thrall_tools::browser::Browsers::default()),
+            companions: Arc::new(crate::companions::Companions::default()),
             keys: Arc::new(crate::keys::SystemKeys),
             http: thrall_tools::http_client()?,
             prompts: Arc::new(Prompts::default()),

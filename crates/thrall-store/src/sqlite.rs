@@ -74,7 +74,7 @@ fn dollars_to_micros(cost: Option<f64>) -> Option<i64> {
 /// The columns `session_from_row` reads, as a literal so queries stay compile-time strings.
 macro_rules! session_columns {
     () => {
-        "id, user_id, title, workspace, mode, state, last_seq, created_at, updated_at, group_id, pinned_at, home_day"
+        "id, user_id, title, workspace, mode, state, last_seq, created_at, updated_at, group_id, pinned_at, home_day, pc"
     };
 }
 
@@ -116,6 +116,7 @@ fn session_from_row(row: &SqliteRow) -> Result<Session, StoreError> {
         group_id: row.try_get("group_id")?,
         pinned_at: row.try_get("pinned_at")?,
         home_day: row.try_get("home_day")?,
+        pc: row.try_get("pc")?,
     })
 }
 
@@ -1239,6 +1240,26 @@ impl Store for SqliteStore {
             .bind(at)
             .execute(&self.pool)
             .await?;
+            Ok(())
+        })
+    }
+
+    fn set_session_pc<'a>(
+        &'a self,
+        user_id: &'a str,
+        session_id: &'a str,
+        pc: Option<&'a str>,
+    ) -> StoreFuture<'a, ()> {
+        Box::pin(async move {
+            let done = sqlx::query("UPDATE sessions SET pc = ? WHERE id = ? AND user_id = ?")
+                .bind(pc)
+                .bind(session_id)
+                .bind(user_id)
+                .execute(&self.pool)
+                .await?;
+            if done.rows_affected() == 0 {
+                return Err(StoreError::NotFound("session"));
+            }
             Ok(())
         })
     }

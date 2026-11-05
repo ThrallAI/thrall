@@ -77,6 +77,11 @@ async fn engine(name: &str) -> String {
 /// An engine with remote access on, and optionally a member ("u_sam") whose phone, with
 /// `member_key`, is already paired. Returns the local socket URL.
 async fn engine_with(name: &str, member_key: Option<&[u8]>) -> String {
+    format!("ws://{}/v1/ws", engine_running(name, member_key).await.addr)
+}
+
+/// [`engine_with`], with the running server (its hub and shared state).
+async fn engine_running(name: &str, member_key: Option<&[u8]>) -> thrall_server::Running {
     let store = SqliteStore::open_in_memory().await.unwrap();
     store.ensure_user("u_test", "Test", 0).await.unwrap();
     store.set_role("u_test", "owner").await.unwrap();
@@ -103,7 +108,7 @@ async fn engine_with(name: &str, member_key: Option<&[u8]>) -> String {
     }
     state.data_dir = Some(data);
     let hub = Hub::new(state, None);
-    let running = start(
+    start(
         hub,
         Options {
             port: 0,
@@ -115,8 +120,7 @@ async fn engine_with(name: &str, member_key: Option<&[u8]>) -> String {
         },
     )
     .await
-    .unwrap();
-    format!("ws://{}/v1/ws", running.addr)
+    .unwrap()
 }
 
 /// Write a request; read frames until its reply.
@@ -1506,4 +1510,174 @@ async fn pcs_can_be_turned_away_blocked_and_unblocked() {
             .await
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn a_joined_pcs_sessions_work_in_its_folder_and_its_runner_does_the_work() {
+    use thrall_server::companion_client::{self, Link};
+    use thrall_tools::companion::{Base, Call, Checked, Ran, Runner};
+
+    let running = engine_running("pc-runner", None).await;
+    let hub = running.shared.hub.clone();
+    let mut desk = desktop(&format!("ws://{}/v1/ws", running.addr)).await;
+    let port = pc_port(&mut desk).await;
+
+    // Sam's PC asks to join; the owner lets it in as Sam's.
+    let (code_tx, code_rx) = tokio::sync::oneshot::channel();
+    let asking = tokio::spawn(async move {
+        companion_client::ask(&format!("127.0.0.1:{port}"), "SAMS-PC", move |code| {
+            let _ = code_tx.send(code.to_owned());
+        })
+        .await
+    });
+    let code = code_rx.await.unwrap();
+    let request = first_request(&mut desk).await;
+    assert_eq!(request.code, code);
+    ask(
+        &mut desk,
+        "a",
+        Request::PcAccept {
+            request: request.request,
+            person: "u_sam".into(),
+            code: Some(code),
+        },
+    )
+    .await;
+    let joined = asking.await.unwrap().unwrap().expect("let in");
+
+    // Its runner connects, with its own folder.
+    let pc_home = std::env::temp_dir().join(format!("thrall-pc-home-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&pc_home);
+    std::fs::create_dir_all(&pc_home).unwrap();
+    let base = Base {
+        tools: thrall_tools::tools::core(),
+        store: Arc::new(SqliteStore::open_in_memory().await.unwrap()),
+        http: thrall_tools::http_client().unwrap(),
+        data_dir: None,
+        browser: Arc::new(thrall_tools::browser::Browsers::default()),
+    };
+    let runner = Arc::new(Runner::new(base));
+    let home = pc_home.to_string_lossy().into_owned();
+    {
+        let (joined, home) = (joined.clone(), home.clone());
+        tokio::spawn(async move { companion_client::run_once(&joined, runner, &home, "0").await });
+    }
+    let companions = hub.state().companions.clone();
+    for _ in 0..100 {
+        if companions.connected(&joined.device) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(
+        companions.connected(&joined.device),
+        "the runner never connected"
+    );
+
+    // A session started on the PC is Sam's, works on the PC, in the PC's folder.
+    let mut window = Link::connect(&joined).await.unwrap();
+    window
+        .hello(thrall_protocol::ClientKind::Desktop, "0")
+        .await
+        .unwrap();
+    let create = Request::SessionCreate {
+        workspace: None,
+        title: None,
+        mode: None,
+    };
+    window
+        .send(&serde_json::to_string(&RequestFrame::new("c", create)).unwrap())
+        .await
+        .unwrap();
+    let info = loop {
+        let text = window.next().await.unwrap().unwrap();
+        if let Ok(ServerFrame::Reply(r)) = serde_json::from_str::<ServerFrame>(&text)
+            && r.re == "c"
+        {
+            let Reply::SessionOpened(info) = r.reply else {
+                panic!("expected session.opened, got {:?}", r.reply);
+            };
+            break info;
+        }
+    };
+    assert_eq!(info.workspace.as_deref(), Some(home.as_str()));
+    let stored = hub
+        .state()
+        .store
+        .get_session("u_sam", &info.session)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.pc.as_deref(), Some(joined.device.as_str()));
+
+    // A file edit is checked, then done, on the PC.
+    let args = serde_json::json!({ "path": "hello.txt", "content": "made on Sam's PC" });
+    let checked = companions
+        .call(
+            &joined.device,
+            "u_sam",
+            &info.session,
+            &home,
+            Call::Check {
+                tool: "write_file".into(),
+                args: args.clone(),
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    let checked: Checked = serde_json::from_value(checked).unwrap();
+    assert!(checked.precheck.is_none(), "{:?}", checked.precheck);
+    assert!(
+        serde_json::to_value(&checked.effect).unwrap()["kind"] == "edit",
+        "{:?}",
+        checked.effect
+    );
+    let ran = companions
+        .call(
+            &joined.device,
+            "u_sam",
+            &info.session,
+            &home,
+            Call::Run {
+                tool: "write_file".into(),
+                args,
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    let ran: Ran = serde_json::from_value(ran).unwrap();
+    assert!(ran.ok, "{}", ran.content);
+    assert_eq!(
+        std::fs::read_to_string(pc_home.join("hello.txt")).unwrap(),
+        "made on Sam's PC"
+    );
+
+    // A tool that doesn't run on PCs is refused there, and a PC that isn't connected says so.
+    let refused = companions
+        .call(
+            &joined.device,
+            "u_sam",
+            &info.session,
+            &home,
+            Call::Run {
+                tool: "web_search".into(),
+                args: serde_json::json!({}),
+            },
+            None,
+        )
+        .await;
+    assert!(refused.is_err());
+    let away = companions
+        .call(
+            "p_nobody",
+            "u_sam",
+            &info.session,
+            &home,
+            Call::Stop { call: "x".into() },
+            None,
+        )
+        .await;
+    assert!(away.unwrap_err().contains("isn't connected"));
 }

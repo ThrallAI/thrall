@@ -532,6 +532,41 @@ export type RequestFrame = {
     }
   | {
       /**
+       * The PC's Thrall folder (where its sessions work unless one picks another).
+       */
+      home: string;
+      type: "runner.ready";
+    }
+  | {
+      /**
+       * The call's id.
+       */
+      call: string;
+      /**
+       * The new text.
+       */
+      text: string;
+      type: "runner.output";
+    }
+  | {
+      /**
+       * The call's id.
+       */
+      call: string;
+      /**
+       * Why it didn't, when it didn't.
+       */
+      error?: string | null;
+      /**
+       * Its answer, when it worked.
+       */
+      result?: {
+        [k: string]: unknown;
+      };
+      type: "runner.done";
+    }
+  | {
+      /**
        * The blocked PC's id.
        */
       blocked: string;
@@ -1561,6 +1596,31 @@ export type EventFrame = {
     }
   | {
       /**
+       * The call's id.
+       */
+      call: string;
+      /**
+       * The session.
+       */
+      in_session: string;
+      /**
+       * What to do.
+       */
+      job: {
+        [k: string]: unknown;
+      };
+      /**
+       * Whose session it is.
+       */
+      person: string;
+      type: "runner.call";
+      /**
+       * Its folder, on the PC.
+       */
+      workspace: string;
+    }
+  | {
+      /**
        * Stable code clients switch on.
        */
       code:
@@ -1611,7 +1671,7 @@ export interface ClientInfo {
   /**
    * What sort of client.
    */
-  kind: "tui" | "web" | "desktop" | "android" | "telegram" | "headless";
+  kind: "tui" | "web" | "desktop" | "android" | "telegram" | "headless" | "companion";
   /**
    * Display name ("Thrall Terminal").
    */

@@ -641,6 +641,8 @@ object ProtocolTypes {
         // Managed on the computer only: refused over the phone link.
         "phone.list", "phone.pair", "phone.assign", "phone.remove",
         "pc.requests", "pc.accept", "pc.decline", "pc.unblock",
+        // Only a companion PC's runner sends these.
+        "runner.ready", "runner.output", "runner.done",
         // Moving a chat to another folder: the phone has /folder for now.
         "session.set_folder",
         // People are managed on the computer's People page; the phone shows only its own person.
@@ -674,5 +676,5 @@ object ProtocolTypes {
         "question.resolved", "session.updated",
         "status", "notice", "error", "agent.completed",
     )
-    val eventsLater = setOf("tasks.updated", "agent.started", "memory.saved", "update.requested", "pc.asked")
+    val eventsLater = setOf("tasks.updated", "agent.started", "memory.saved", "update.requested", "pc.asked", "runner.call")
 }

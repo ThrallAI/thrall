@@ -516,6 +516,8 @@ impl App {
             Event::UpdateRequested {} => {}
             // PCs asking to join are answered in the desktop app's Settings.
             Event::PcAsked {} => {}
+            // Only a companion PC's runner gets these.
+            Event::RunnerCall { .. } => {}
             Event::AgentCompleted {
                 title,
                 status,

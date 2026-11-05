@@ -825,3 +825,13 @@ their computer or work is set up, decisions, people or projects that matter to t
 they clearly stated about themselves; not one-off task details, not guesses, never passwords, keys \
 or other secrets. Answer with a JSON list only, at most 5 items, each {\"topic\": \"two or three \
 words\", \"content\": \"one sentence\"}. If there's nothing lasting, answer [].";
+
+/// A PC tool in a session that works on a companion PC, when that PC isn't connected (for the
+/// model; nothing runs on this computer instead).
+pub const PC_NOT_CONNECTED: &str = "the PC this chat works on isn't connected (it's off, asleep, or \
+     Thrall isn't open there). Nothing was done. Tell the person, and carry on with what doesn't \
+     need their PC.";
+
+/// The same, when the PC went away while the call was on it.
+pub const PC_DISCONNECTED: &str = "the PC this chat works on disconnected before it finished. It may \
+     or may not have done it; check before trying again.";

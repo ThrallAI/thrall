@@ -128,7 +128,12 @@ where
         person,
         device,
         whose: HashMap::new(),
+        runner: None,
+        runner_calls: None,
     };
+    let mut calls: Option<
+        tokio::sync::mpsc::UnboundedReceiver<thrall_agent::companions::Outgoing>,
+    > = None;
     let mut bus = shared.hub.subscribe();
     let mut signed_out = shared.signins.signed_out.subscribe();
     let owners_desktop = kind == ClientKind::Desktop
@@ -142,7 +147,20 @@ where
     let mut heard = Instant::now();
     let mut check = tokio::time::interval(SILENCE_CHECK);
     loop {
+        let mut calls_closed = false;
         let out = tokio::select! {
+            call = async {
+                match calls.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => match call {
+                Some(call) => conn.runner.as_mut().and_then(|r| r.send(call)).into_iter().collect(),
+                None => {
+                    calls_closed = true;
+                    Vec::new()
+                }
+            },
             msg = stream.next() => match msg {
                 Some(Incoming::Text(text)) => {
                     heard = Instant::now();
@@ -193,9 +211,22 @@ where
                 Vec::new()
             }
         };
+        if calls_closed {
+            calls = None;
+        }
+        if let Some(rx) = conn.runner_calls.take() {
+            calls = Some(rx);
+        }
         if send_all(&mut sink, out).await.is_err() {
             break;
         }
+    }
+    if let Some(runner) = &conn.runner {
+        shared
+            .hub
+            .state()
+            .companions
+            .detach(&runner.device, runner.token);
     }
     let _ = sink.close().await;
     tracing::info!(client = kind.as_str(), "client disconnected");
@@ -430,12 +461,36 @@ struct Connection {
     person: thrall_store::Person,
     /// Sessions seen on the bus, and whether they're this person's (only theirs are sent).
     whose: HashMap<String, bool>,
+    /// A companion PC's runner on this link (after `runner.ready`).
+    runner: Option<crate::runner_link::RunnerSide>,
+    /// Its calls, handed over to the connection's loop.
+    runner_calls: Option<tokio::sync::mpsc::UnboundedReceiver<thrall_agent::companions::Outgoing>>,
 }
 
 impl Connection {
     /// The engine acting for this connection's person.
     fn me(&self) -> thrall_agent::AppState {
         self.shared.hub.state().for_user(&self.person.id)
+    }
+
+    /// Where a session started on this connection works: on the companion PC it was started on;
+    /// for someone other than the owner whose PC joined, on that PC (the one connected now, else
+    /// the first); otherwise here.
+    fn session_pc(&self) -> Option<String> {
+        if let Peer::Phone { id } = &self.peer
+            && self.shared.remote.is_pc(id)
+        {
+            return Some(id.clone());
+        }
+        let state = self.shared.hub.state();
+        if self.person.id == state.owner_id {
+            return None;
+        }
+        let pcs = self.shared.remote.pcs_of(&self.person.id, &state.owner_id);
+        pcs.iter()
+            .find(|pc| state.companions.connected(pc))
+            .or(pcs.first())
+            .cloned()
     }
 
     /// Whether a signed-in browser hasn't been signed out (true for other connections).
@@ -547,10 +602,27 @@ impl Connection {
                         Some(m) => m,
                         None => None,
                     };
-                    if let Some(Err(why)) = workspace.as_deref().map(crate::folders::usable) {
-                        return Ok(vec![error(id, ErrorCode::Invalid, why)]);
+                    // Work on a companion PC uses the PC's folders: none of them is checked (or
+                    // made) on this computer.
+                    let pc = self.session_pc();
+                    let workspace = match &pc {
+                        Some(pc) => workspace.or_else(|| hub.state().companions.home(pc)),
+                        None => {
+                            if let Some(Err(why)) = workspace.as_deref().map(crate::folders::usable)
+                            {
+                                return Ok(vec![error(id, ErrorCode::Invalid, why)]);
+                            }
+                            workspace
+                        }
+                    };
+                    let mut s = hub.create(&self.person.id, workspace, title, mode).await?;
+                    if let Some(pc) = &pc {
+                        self.me()
+                            .store
+                            .set_session_pc(&self.person.id, &s.id, Some(pc))
+                            .await?;
+                        s.pc = Some(pc.clone());
                     }
-                    let s = hub.create(&self.person.id, workspace, title, mode).await?;
                     self.attached.insert(s.id.clone(), s.last_seq);
                     vec![reply(id, Reply::SessionOpened(hub.info(&s).await))]
                 }
@@ -1028,6 +1100,39 @@ impl Connection {
                     } else {
                         vec![error(id, ErrorCode::NotFound, "There's no such phone.")]
                     }
+                }
+                Request::RunnerReady { home } => {
+                    let pc = match &self.peer {
+                        Peer::Phone { id } if self.shared.remote.is_pc(id) => id.clone(),
+                        _ => {
+                            return Ok(vec![error(
+                                id,
+                                ErrorCode::Unauthorized,
+                                "Only a PC that joined this Thrall can run its work.",
+                            )]);
+                        }
+                    };
+                    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                    let token = self.shared.hub.state().companions.attach(&pc, &home, tx);
+                    self.runner = Some(crate::runner_link::RunnerSide::new(pc, token));
+                    self.runner_calls = Some(rx);
+                    vec![reply(id, Reply::Ack {})]
+                }
+                Request::RunnerOutput { call, text } => {
+                    if let Some(runner) = &self.runner {
+                        runner.output(&call, text);
+                    }
+                    vec![reply(id, Reply::Ack {})]
+                }
+                Request::RunnerDone {
+                    call,
+                    result,
+                    error: why,
+                } => {
+                    if let Some(runner) = &mut self.runner {
+                        runner.done(&call, result, why);
+                    }
+                    vec![reply(id, Reply::Ack {})]
                 }
                 Request::PcRequests {}
                 | Request::PcAccept { .. }

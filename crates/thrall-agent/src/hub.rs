@@ -682,7 +682,10 @@ impl Hub {
         let Some(rebuild) = &self.rebuild else {
             return Err("reloading isn't available here".to_owned());
         };
-        let fresh = Arc::new(rebuild().await?);
+        let mut fresh = rebuild().await?;
+        // Companion PCs stay connected through a restart.
+        fresh.companions = self.state().companions.clone();
+        let fresh = Arc::new(fresh);
         let old = match self.state.write() {
             Ok(mut s) => std::mem::replace(&mut *s, fresh.clone()),
             Err(poisoned) => std::mem::replace(&mut *poisoned.into_inner(), fresh.clone()),
