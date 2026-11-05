@@ -1878,3 +1878,40 @@ async fn the_owner_switches_controls_off_for_someone_and_phones_obey() {
         Reply::Welcome { .. }
     ));
 }
+
+#[tokio::test]
+async fn a_pc_its_thrall_forgot_is_told_to_join_again() {
+    use thrall_server::companion_client::{self, Joined, Link};
+    let url = engine("pc-forgot").await;
+    let mut desk = desktop(&url).await;
+    let port = pc_port(&mut desk).await;
+    let engine_key = new_code(&mut desk, "k").await.key;
+    let keys = phone_keys();
+    let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+    let stale = Joined {
+        address: format!("127.0.0.1:{port}"),
+        name: "THRALL-PC".into(),
+        master_key: hex(&engine_key),
+        private: hex(&keys.private),
+        public: hex(&keys.public),
+        device: "ph_gone".into(),
+    };
+    let Err(why) = Link::connect(&stale).await else {
+        panic!("a PC nobody let in got in");
+    };
+    assert!(companion_client::is_not_joined(&why), "{why}");
+
+    // Many such tries don't stop a PC from asking to join.
+    for _ in 0..25 {
+        let _ = Link::connect(&stale).await;
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let asking = tokio::spawn(async move {
+        companion_client::ask(&format!("127.0.0.1:{port}"), "SAMS-PC", move |c| {
+            let _ = tx.send(c.to_owned());
+        })
+        .await
+    });
+    rx.await.expect("the request went through");
+    asking.abort();
+}

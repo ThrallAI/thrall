@@ -334,6 +334,10 @@ pub const DEFAULT_REMOTE_PORT: u16 = 7419;
 /// app starts `thrall runner` instead of the engine while it's there).
 pub const COMPANION_FILE: &str = "companion.json";
 
+/// What a companion PC says when the Thrall it joined doesn't let it in any more (removed there,
+/// or that Thrall was set up again). The desktop app looks for it to offer joining again.
+pub const NOT_JOINED: &str = "This PC isn't joined to that Thrall any more";
+
 /// Port PCs reach this Thrall on to join as companions unless `[remote] pc_port` says otherwise.
 pub const DEFAULT_PC_PORT: u16 = 7420;
 

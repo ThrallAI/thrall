@@ -99,7 +99,7 @@ async fn dispatch(cli: Cli) -> anyhow::Result<ExitCode> {
             machine,
         }) => companion::join(&paths, address, find, machine).await,
         Some(Command::Runner) => companion::runner(&paths, &config.folders.new_in).await,
-        Some(Command::Leave) => companion::leave(&paths),
+        Some(Command::Leave) => companion::leave(&paths).await,
         Some(Command::RemoveEverything) => remove::run(&paths, &config).await,
         Some(Command::Paths) => {
             println!("{} {}", constants::APP_NAME, env!("CARGO_PKG_VERSION"));

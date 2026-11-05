@@ -372,11 +372,19 @@ async fn carry(mut socket: WebSocket, b: Bridge) {
     let mut link = match Link::connect(&b.joined).await {
         Ok(l) => l,
         Err(why) => {
-            let refused = ServerFrame::Reply(ReplyFrame::error(
-                &frame.id,
-                thrall_protocol::ErrorCode::Internal,
-                format!("Couldn't reach Thrall on {}: {why}", b.joined.name),
-            ));
+            let refused = if crate::companion_client::is_not_joined(&why) {
+                ServerFrame::Reply(ReplyFrame::error(
+                    &frame.id,
+                    thrall_protocol::ErrorCode::Unauthorized,
+                    why,
+                ))
+            } else {
+                ServerFrame::Reply(ReplyFrame::error(
+                    &frame.id,
+                    thrall_protocol::ErrorCode::Internal,
+                    format!("Couldn't reach Thrall on {}: {why}", b.joined.name),
+                ))
+            };
             let _ = socket
                 .send(Message::Text(
                     serde_json::to_string(&refused).unwrap_or_default().into(),

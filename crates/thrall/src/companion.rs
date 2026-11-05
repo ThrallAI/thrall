@@ -10,7 +10,13 @@ use thrall_server::companion_bridge;
 use thrall_server::companion_client::{self, Joined};
 use thrall_tools::companion::{Base, Runner};
 
-use crate::constants::{COMPANION_FIND_WAIT, COMPANION_RETRY_MAX, COMPANION_RETRY_MIN};
+use thrall_protocol::{ClientKind, Request};
+
+use crate::constants::{
+    COMPANION_FIND_WAIT, COMPANION_RETRY_MAX, COMPANION_RETRY_MIN, COMPANION_STOP_POLL,
+    COMPANION_STOP_TRIES, OPEN_CLIENT_NAME,
+};
+use crate::{attach, discover};
 
 /// This computer's name, as the owner sees it when it asks to join.
 fn this_pc() -> String {
@@ -126,8 +132,43 @@ pub async fn join(
         }
     }
 }
-/// `thrall leave`: forget the joined Thrall (the owner can remove this PC there too).
-pub fn leave(paths: &Paths) -> anyhow::Result<ExitCode> {
+/// Stop this PC's companion runner if it's running. False when what's running is a real engine
+/// (it isn't stopped) or the runner didn't stop.
+pub async fn stop_runner(paths: &Paths) -> bool {
+    let Some(found) = discover::running(paths).await else {
+        return true;
+    };
+    if !discover::is_companion(&found).await {
+        return false;
+    }
+    if let Ok(token) = attach::token(paths)
+        && let Ok(c) = thrall_tui::client::connect_as(
+            &found.ws_url,
+            &token,
+            ClientKind::Headless,
+            OPEN_CLIENT_NAME,
+        )
+        .await
+    {
+        let _ = c.client.request(Request::EngineStop {}).await;
+    }
+    for _ in 0..COMPANION_STOP_TRIES {
+        tokio::time::sleep(COMPANION_STOP_POLL).await;
+        if discover::running(paths).await.is_none() {
+            return true;
+        }
+    }
+    false
+}
+
+/// `thrall leave`: stop being a companion: the runner stops and the joined Thrall is forgotten
+/// (the owner can remove this PC there too).
+pub async fn leave(paths: &Paths) -> anyhow::Result<ExitCode> {
+    if !stop_runner(paths).await {
+        anyhow::bail!(
+            "Thrall is running here and didn't stop. Quit it (tray → Quit), then try again."
+        );
+    }
     Joined::forget(&paths.home)?;
     println!("This PC isn't a companion any more.");
     Ok(ExitCode::SUCCESS)
@@ -163,6 +204,11 @@ pub async fn runner(paths: &Paths, work_folder: &str) -> anyhow::Result<ExitCode
                 Ok(()) => {
                     tracing::info!("the link to Thrall closed; reconnecting");
                     wait = COMPANION_RETRY_MIN;
+                }
+                // Not let in any more: nothing to gain by trying often.
+                Err(e) if companion_client::is_not_joined(&e) => {
+                    tracing::warn!(%e, "the Thrall this PC joined doesn't let it in");
+                    wait = COMPANION_RETRY_MAX;
                 }
                 Err(e) => {
                     tracing::warn!(%e, "couldn't stay connected to Thrall");

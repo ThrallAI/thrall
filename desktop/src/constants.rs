@@ -142,3 +142,7 @@ pub const RUNNER_ARG: &str = "runner";
 
 /// The loading page's function that shows the code while a companion asks to join.
 pub const JOIN_CODE_JS: &str = "thrallJoinCode";
+
+/// The loading page's function that offers joining again (the Thrall this PC joined doesn't let
+/// it in any more).
+pub const REJOIN_JS: &str = "thrallRejoin";

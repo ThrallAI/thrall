@@ -181,6 +181,15 @@
         swap("join", "setup");
         document.getElementById("msg").textContent = "Welcome. One thing first:";
       });
+      // The Thrall this PC joined doesn't let it in any more: leave it, then join again.
+      var leaving = false;
+      window.thrallRejoin = function (message) {
+        if (!document.getElementById("join").hidden) return;
+        leaving = true;
+        document.getElementById("setup").hidden = true;
+        document.getElementById("join").hidden = false;
+        document.getElementById("msg").textContent = message + ". Join it again:";
+      };
       // While this PC asks to join, the app shows the code it and the Thrall PC both show.
       window.thrallJoinCode = function (code) {
         document.getElementById("waiting").hidden = false;
@@ -197,7 +206,12 @@
         }
         why.textContent = "";
         document.getElementById("ask").disabled = true;
-        invoke("companion_join", { address: address })
+        var first = leaving ? invoke("companion_leave") : Promise.resolve();
+        first
+          .then(function () {
+            leaving = false;
+            return invoke("companion_join", { address: address });
+          })
           .then(function () {
             document.getElementById("join").hidden = true;
             document.getElementById("msg").textContent = "Joined. Starting Thrall…";

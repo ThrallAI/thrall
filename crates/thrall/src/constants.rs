@@ -92,3 +92,9 @@ pub const COMPANION_RETRY_MIN: std::time::Duration = std::time::Duration::from_s
 
 /// Its longest wait between tries (it doubles up to this while Thrall can't be reached).
 pub const COMPANION_RETRY_MAX: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How many times `thrall leave` checks that the companion's runner has stopped.
+pub const COMPANION_STOP_TRIES: u32 = 20;
+
+/// How long between those checks.
+pub const COMPANION_STOP_POLL: std::time::Duration = std::time::Duration::from_millis(250);

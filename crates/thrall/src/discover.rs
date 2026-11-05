@@ -23,3 +23,22 @@ pub async fn running(paths: &Paths) -> Option<EngineFile> {
         .is_ok_and(|r| r.status().is_success());
     ok.then_some(file)
 }
+
+/// Whether `file` is a companion PC's runner standing in for the engine (not a real engine).
+pub async fn is_companion(file: &EngineFile) -> bool {
+    let url = format!("{}{}", file.web_url.trim_end_matches('/'), HEALTH_PATH);
+    let Ok(client) = reqwest::Client::builder()
+        .timeout(HEALTH_TIMEOUT)
+        .no_proxy()
+        .build()
+    else {
+        return false;
+    };
+    let Ok(reply) = client.get(url).send().await else {
+        return false;
+    };
+    reply
+        .json::<serde_json::Value>()
+        .await
+        .is_ok_and(|v| v["companion"] == true)
+}

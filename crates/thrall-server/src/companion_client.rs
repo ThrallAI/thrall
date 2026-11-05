@@ -268,9 +268,9 @@ impl Link {
         let wait = Duration::from_secs(thrall_protocol::constants::HELLO_TIMEOUT_SECS);
         let answer = next_binary(&mut socket, wait)
             .await
-            .ok_or("Thrall didn't let this PC in (was it removed?)")?;
+            .ok_or_else(not_joined)?;
         hs.read_message(&answer, &mut buf)
-            .map_err(|_| "that isn't the Thrall this PC joined")?;
+            .map_err(|_| not_joined())?;
         Ok(Self {
             transport: hs.into_transport_mode().map_err(|e| e.to_string())?,
             socket,
@@ -335,6 +335,19 @@ impl Link {
             }
         }
     }
+}
+
+/// Why a joined PC can't get in: it was removed there, or that Thrall was set up again.
+fn not_joined() -> String {
+    format!(
+        "{}: join again (Thrall → Connect to Thrall on another PC).",
+        thrall_core::constants::NOT_JOINED
+    )
+}
+
+/// Whether `why` says this PC isn't joined any more.
+pub fn is_not_joined(why: &str) -> bool {
+    why.contains(thrall_core::constants::NOT_JOINED)
 }
 
 fn frame(id: &str, request: Request) -> String {

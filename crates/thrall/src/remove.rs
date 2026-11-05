@@ -14,7 +14,8 @@ use crate::discover;
 
 /// `thrall remove-everything`.
 pub async fn run(paths: &Paths, config: &Config) -> anyhow::Result<ExitCode> {
-    if discover::running(paths).await.is_some() {
+    // A companion PC's runner stops by itself; a real engine has to be quit first.
+    if discover::running(paths).await.is_some() && !crate::companion::stop_runner(paths).await {
         anyhow::bail!(
             "Thrall is running. Quit it first (the tray icon → Quit Thrall → Quit and stop \
              Thrall), then run this again."

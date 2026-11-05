@@ -1197,12 +1197,9 @@ async fn ask_to_join(
     from: SocketAddr,
     mut close: watch::Receiver<bool>,
 ) {
+    // Asking isn't held up by a burst of failed connections (an old PC still trying its old key):
+    // every request waits for the owner, and only a few wait at once.
     let remote = &shared.remote;
-    if remote.paused() {
-        tracing::warn!(why = ?Refused::Paused, "turned a PC away");
-        let _ = sink.close().await;
-        return;
-    }
     let Ok(mut handshake) = responder(NOISE_ASK, &remote.private, None) else {
         return;
     };
