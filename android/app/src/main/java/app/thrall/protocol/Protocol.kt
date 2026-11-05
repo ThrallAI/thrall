@@ -640,6 +640,7 @@ object ProtocolTypes {
         "engine.stop", "audio.transcribe",
         // Managed on the computer only: refused over the phone link.
         "phone.list", "phone.pair", "phone.assign", "phone.remove",
+        "pc.requests", "pc.accept", "pc.decline", "pc.unblock",
         // Moving a chat to another folder: the phone has /folder for now.
         "session.set_folder",
         // People are managed on the computer's People page; the phone shows only its own person.
@@ -665,7 +666,7 @@ object ProtocolTypes {
         "folder.created", "app.latest", "group.listed", "heartbeat.shown", "checkpoint.shown", "turn.rewound",
         "memory.listed", "settings.shown", "people.listed", "personality.shown",
     )
-    val repliesLater = setOf("experience.listed", "skill.shown", "skill.safer", "audio.transcribed", "phone.listed", "phone.pairing", "signin.code", "device.listed", "startup.shown", "provider.tested", "local.found", "folders.shown")
+    val repliesLater = setOf("experience.listed", "skill.shown", "skill.safer", "audio.transcribed", "phone.listed", "phone.pairing", "signin.code", "device.listed", "startup.shown", "provider.tested", "local.found", "folders.shown", "pc.requests")
     val eventsUsed = setOf(
         "turn.started", "turn.completed", "turn.retracted", "message.started", "message.delta",
         "reasoning.delta", "message.completed", "step.started", "step.output", "step.completed",
@@ -673,5 +674,5 @@ object ProtocolTypes {
         "question.resolved", "session.updated",
         "status", "notice", "error", "agent.completed",
     )
-    val eventsLater = setOf("tasks.updated", "agent.started", "memory.saved", "update.requested")
+    val eventsLater = setOf("tasks.updated", "agent.started", "memory.saved", "update.requested", "pc.asked")
 }
