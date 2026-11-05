@@ -37,6 +37,8 @@ pub struct Person {
     /// The most their turns may cost in a calendar month, in millionths of a dollar (None: no
     /// limit).
     pub monthly_limit_micros: Option<i64>,
+    /// What the owner allows them, as JSON (`{}`: everything).
+    pub rules: String,
 }
 
 /// What a person's turns run on and may spend (set by the owner).
@@ -77,6 +79,10 @@ pub struct Session {
     pub pinned_at: Option<i64>,
     /// A page of Home (Thrall's built-in conversation): the local date it started.
     pub home_day: Option<String>,
+    /// The companion PC (a joined device's id) its tools run on; `None`: this computer.
+    pub pc: Option<String>,
+    /// Why it was flagged for the owner (something its person wasn't allowed), if it was.
+    pub flagged: Option<String>,
 }
 
 /// A group the person made for sessions.

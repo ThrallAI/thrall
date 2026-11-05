@@ -27,6 +27,7 @@ const TOKEN: &str = "test-token";
 const PAIR: &str = "Noise_IKpsk1_25519_ChaChaPoly_BLAKE2s";
 const CONNECT: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 const PROLOGUE: &[u8] = b"thrall-remote-v1";
+const ASK: &str = "Noise_XX_25519_ChaChaPoly_BLAKE2s";
 
 struct Silent;
 
@@ -76,6 +77,11 @@ async fn engine(name: &str) -> String {
 /// An engine with remote access on, and optionally a member ("u_sam") whose phone, with
 /// `member_key`, is already paired. Returns the local socket URL.
 async fn engine_with(name: &str, member_key: Option<&[u8]>) -> String {
+    format!("ws://{}/v1/ws", engine_running(name, member_key).await.addr)
+}
+
+/// [`engine_with`], with the running server (its hub and shared state).
+async fn engine_running(name: &str, member_key: Option<&[u8]>) -> thrall_server::Running {
     let store = SqliteStore::open_in_memory().await.unwrap();
     store.ensure_user("u_test", "Test", 0).await.unwrap();
     store.set_role("u_test", "owner").await.unwrap();
@@ -83,6 +89,7 @@ async fn engine_with(name: &str, member_key: Option<&[u8]>) -> String {
     let mut config = Config::default();
     config.remote.enabled = true;
     config.remote.address = "https://pc.example.ts.net".into();
+    config.remote.pcs = true;
     let mut state = AppState::new(config, Arc::new(store), Arc::new(Silent), "u_test".into())
         .unwrap()
         .with_own_keys(Arc::new(MemoryKeys::default()));
@@ -101,7 +108,7 @@ async fn engine_with(name: &str, member_key: Option<&[u8]>) -> String {
     }
     state.data_dir = Some(data);
     let hub = Hub::new(state, None);
-    let running = start(
+    start(
         hub,
         Options {
             port: 0,
@@ -113,8 +120,7 @@ async fn engine_with(name: &str, member_key: Option<&[u8]>) -> String {
         },
     )
     .await
-    .unwrap();
-    format!("ws://{}/v1/ws", running.addr)
+    .unwrap()
 }
 
 /// Write a request; read frames until its reply.
@@ -1255,4 +1261,766 @@ async fn a_pairing_code_is_for_one_person_and_phones_can_change_hands() {
         ),
         "got {reply:?}"
     );
+}
+
+/// The PC listener's port, once it's listening.
+async fn pc_port(desk: &mut Socket) -> u16 {
+    for i in 0..50 {
+        if let Reply::PcRequests { pcs, .. } =
+            ask(desk, &format!("pl{i}"), Request::PcRequests {}).await
+            && pcs.listening
+        {
+            return pcs.port;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("the PC link never started");
+}
+
+/// The PCs asking now, and the blocked ones' names.
+async fn pc_requests(
+    desk: &mut Socket,
+    id: &str,
+) -> (Vec<thrall_protocol::PcRequestInfo>, Vec<String>) {
+    match ask(desk, id, Request::PcRequests {}).await {
+        Reply::PcRequests { items, blocked, .. } => {
+            (items, blocked.into_iter().map(|b| b.name).collect())
+        }
+        other => panic!("expected pc.requests, got {other:?}"),
+    }
+}
+
+/// Wait until a PC is asking; its request.
+async fn first_request(desk: &mut Socket) -> thrall_protocol::PcRequestInfo {
+    for i in 0..50 {
+        if let Some(r) = pc_requests(desk, &format!("w{i}"))
+            .await
+            .0
+            .into_iter()
+            .next()
+        {
+            return r;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("no PC asked");
+}
+
+/// A PC asking to join, link open.
+struct Asking {
+    socket: Socket,
+    transport: TransportState,
+    /// The code it shows.
+    code: String,
+    /// The engine's key, learned in the handshake.
+    engine_key: Vec<u8>,
+}
+
+impl Asking {
+    /// Ask to join on `port`; `None` when the engine turns the handshake away.
+    async fn start(port: u16, keys: &Keypair, name: &str) -> Option<Self> {
+        let url = format!("ws://127.0.0.1:{port}/v1/remote");
+        let (mut socket, _) = tokio_tungstenite::connect_async(url).await.unwrap();
+        let mut hs = Builder::new(ASK.parse().unwrap())
+            .local_private_key(&keys.private)
+            .unwrap()
+            .prologue(PROLOGUE)
+            .unwrap()
+            .build_initiator()
+            .unwrap();
+        let mut message = vec![0u8; 65_535];
+        let n = hs.write_message(&[], &mut message).unwrap();
+        let first = [&[3u8][..], &message[..n]].concat();
+        socket.send(Message::Binary(first.into())).await.unwrap();
+        let second = match tokio::time::timeout(Duration::from_secs(10), socket.next()).await {
+            Ok(Some(Ok(Message::Binary(bytes)))) => bytes,
+            _ => return None,
+        };
+        let mut payload = vec![0u8; 65_535];
+        hs.read_message(&second, &mut payload).unwrap();
+        let hello = serde_json::json!({ "name": name }).to_string();
+        let n = hs.write_message(hello.as_bytes(), &mut message).unwrap();
+        socket
+            .send(Message::Binary(message[..n].to_vec().into()))
+            .await
+            .unwrap();
+        let code = thrall_server::remote::ask_code(hs.get_handshake_hash());
+        let engine_key = hs.get_remote_static().unwrap().to_vec();
+        Some(Self {
+            socket,
+            transport: hs.into_transport_mode().unwrap(),
+            code,
+            engine_key,
+        })
+    }
+
+    /// What the owner decided: the device id if let in, `None` if turned away.
+    async fn verdict(mut self) -> Option<String> {
+        let mut partial = Vec::new();
+        loop {
+            let msg = tokio::time::timeout(Duration::from_secs(10), self.socket.next())
+                .await
+                .expect("no answer within 10 s");
+            match msg {
+                Some(Ok(Message::Binary(bytes))) => {
+                    if let Some(whole) = open(&mut self.transport, &bytes, &mut partial).unwrap() {
+                        let answer: serde_json::Value = serde_json::from_slice(&whole).unwrap();
+                        return (answer["approved"] == true)
+                            .then(|| answer["device"].as_str().unwrap().to_owned());
+                    }
+                }
+                Some(Ok(Message::Close(_))) | None | Some(Err(_)) => {
+                    panic!("closed without an answer")
+                }
+                Some(Ok(_)) => {}
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_pc_asks_to_join_and_the_owner_lets_it_in() {
+    let url = engine("pc-accept").await;
+    let mut desk = desktop(&url).await;
+    let port = pc_port(&mut desk).await;
+    let keys = phone_keys();
+    let asking = Asking::start(port, &keys, "KIDS-PC").await.unwrap();
+
+    // The owner sees it, with the same code the PC shows.
+    let request = first_request(&mut desk).await;
+    assert_eq!(request.name, "KIDS-PC");
+    assert_eq!(request.code, asking.code);
+    assert_eq!(request.code.len(), 7, "three digits, a space, three digits");
+
+    // A typed code must be the PC's.
+    let wrong = if asking.code == "000 000" {
+        "111 111"
+    } else {
+        "000 000"
+    };
+    let reply = ask(
+        &mut desk,
+        "a1",
+        Request::PcAccept {
+            request: request.request.clone(),
+            person: "u_sam".into(),
+            code: Some(wrong.into()),
+        },
+    )
+    .await;
+    assert!(is_error(&reply, ErrorCode::Invalid), "got {reply:?}");
+    let reply = ask(
+        &mut desk,
+        "a2",
+        Request::PcAccept {
+            request: request.request.clone(),
+            person: "u_sam".into(),
+            code: Some(asking.code.replace(' ', "")),
+        },
+    )
+    .await;
+    let Reply::PcRequests { items, .. } = reply else {
+        panic!("expected pc.requests, got {reply:?}");
+    };
+    assert!(items.is_empty(), "still asking: {items:?}");
+    let engine_key = asking.engine_key.clone();
+    let device = asking.verdict().await.expect("let in");
+
+    // It's listed as Sam's PC, and connects as Sam like a paired phone.
+    let Reply::PhoneListed { items, .. } = ask(&mut desk, "l", Request::PhoneList {}).await else {
+        panic!("no list");
+    };
+    let pc = items.iter().find(|p| p.phone == device).unwrap();
+    assert_eq!(
+        (pc.kind.as_str(), pc.person.as_str(), pc.name.as_str()),
+        ("pc", "u_sam", "KIDS-PC")
+    );
+    let mut link = Phone::handshake(port, &keys, &engine_key, None, "")
+        .await
+        .expect("a joined PC connects");
+    assert_eq!(welcomed_as(&mut link, "h").await, "u_sam");
+
+    // Asking again, it's let straight back in.
+    let again = Asking::start(port, &keys, "KIDS-PC").await.unwrap();
+    assert_eq!(again.verdict().await.as_deref(), Some(device.as_str()));
+}
+
+#[tokio::test]
+async fn pcs_can_be_turned_away_blocked_and_unblocked() {
+    let url = engine("pc-block").await;
+    let mut desk = desktop(&url).await;
+    let port = pc_port(&mut desk).await;
+    let keys = phone_keys();
+
+    // Declined: told no, and may ask again.
+    let asking = Asking::start(port, &keys, "STRANGER").await.unwrap();
+    let request = first_request(&mut desk).await;
+    let reply = ask(
+        &mut desk,
+        "d1",
+        Request::PcDecline {
+            request: request.request,
+            block: false,
+        },
+    )
+    .await;
+    assert!(matches!(reply, Reply::PcRequests { .. }), "got {reply:?}");
+    assert_eq!(asking.verdict().await, None);
+
+    // Blocked: told no, then turned away without the owner being asked.
+    let asking = Asking::start(port, &keys, "STRANGER").await.unwrap();
+    let request = first_request(&mut desk).await;
+    ask(
+        &mut desk,
+        "d2",
+        Request::PcDecline {
+            request: request.request,
+            block: true,
+        },
+    )
+    .await;
+    assert_eq!(asking.verdict().await, None);
+    let asking = Asking::start(port, &keys, "STRANGER").await.unwrap();
+    assert_eq!(asking.verdict().await, None);
+    let (items, blocked) = pc_requests(&mut desk, "r1").await;
+    assert!(items.is_empty(), "a blocked PC was listed: {items:?}");
+    assert_eq!(blocked, vec!["STRANGER".to_owned()]);
+
+    // Unblocked: it may ask again.
+    let Reply::PcRequests { blocked, .. } = ask(&mut desk, "r2", Request::PcRequests {}).await
+    else {
+        panic!("no list");
+    };
+    let reply = ask(
+        &mut desk,
+        "u",
+        Request::PcUnblock {
+            blocked: blocked[0].blocked.clone(),
+        },
+    )
+    .await;
+    assert!(matches!(reply, Reply::PcRequests { .. }), "got {reply:?}");
+    let _asking = Asking::start(port, &keys, "STRANGER").await.unwrap();
+    assert_eq!(first_request(&mut desk).await.name, "STRANGER");
+
+    // The phone link never takes requests to join.
+    let phone_port = phone_port(&mut desk).await;
+    assert!(
+        Asking::start(phone_port, &phone_keys(), "SNEAKY")
+            .await
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn a_joined_pcs_sessions_work_in_its_folder_and_its_runner_does_the_work() {
+    use thrall_server::companion_client::{self, Link};
+    use thrall_tools::companion::{Base, Call, Checked, Ran, Runner};
+
+    let running = engine_running("pc-runner", None).await;
+    let hub = running.shared.hub.clone();
+    let mut desk = desktop(&format!("ws://{}/v1/ws", running.addr)).await;
+    let port = pc_port(&mut desk).await;
+
+    // Sam's PC asks to join; the owner lets it in as Sam's.
+    let (code_tx, code_rx) = tokio::sync::oneshot::channel();
+    let asking = tokio::spawn(async move {
+        companion_client::ask(&format!("127.0.0.1:{port}"), "SAMS-PC", move |code| {
+            let _ = code_tx.send(code.to_owned());
+        })
+        .await
+    });
+    let code = code_rx.await.unwrap();
+    let request = first_request(&mut desk).await;
+    assert_eq!(request.code, code);
+    ask(
+        &mut desk,
+        "a",
+        Request::PcAccept {
+            request: request.request,
+            person: "u_sam".into(),
+            code: Some(code),
+        },
+    )
+    .await;
+    let joined = asking.await.unwrap().unwrap().expect("let in");
+
+    // Its runner connects, with its own folder.
+    let pc_home = std::env::temp_dir().join(format!("thrall-pc-home-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&pc_home);
+    std::fs::create_dir_all(&pc_home).unwrap();
+    let base = Base {
+        tools: thrall_tools::tools::core(),
+        store: Arc::new(SqliteStore::open_in_memory().await.unwrap()),
+        http: thrall_tools::http_client().unwrap(),
+        data_dir: None,
+        browser: Arc::new(thrall_tools::browser::Browsers::default()),
+        home: Some(pc_home.clone()),
+    };
+    let runner = Arc::new(Runner::new(base));
+    let home = pc_home.to_string_lossy().into_owned();
+    {
+        let (joined, home) = (joined.clone(), home.clone());
+        tokio::spawn(async move { companion_client::run_once(&joined, runner, &home, "0").await });
+    }
+    let companions = hub.state().companions.clone();
+    for _ in 0..100 {
+        if companions.connected(&joined.device) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(
+        companions.connected(&joined.device),
+        "the runner never connected"
+    );
+
+    // A session started on the PC is Sam's, works on the PC, in the PC's folder.
+    let mut window = Link::connect(&joined).await.unwrap();
+    window
+        .hello(thrall_protocol::ClientKind::Desktop, "0")
+        .await
+        .unwrap();
+    let create = Request::SessionCreate {
+        workspace: None,
+        title: None,
+        mode: None,
+    };
+    window
+        .send(&serde_json::to_string(&RequestFrame::new("c", create)).unwrap())
+        .await
+        .unwrap();
+    let info = loop {
+        let text = window.next().await.unwrap().unwrap();
+        if let Ok(ServerFrame::Reply(r)) = serde_json::from_str::<ServerFrame>(&text)
+            && r.re == "c"
+        {
+            let Reply::SessionOpened(info) = r.reply else {
+                panic!("expected session.opened, got {:?}", r.reply);
+            };
+            break info;
+        }
+    };
+    assert_eq!(info.workspace.as_deref(), Some(home.as_str()));
+    let stored = hub
+        .state()
+        .store
+        .get_session("u_sam", &info.session)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.pc.as_deref(), Some(joined.device.as_str()));
+
+    // A file edit is checked, then done, on the PC.
+    let args = serde_json::json!({ "path": "hello.txt", "content": "made on Sam's PC" });
+    let checked = companions
+        .call(
+            &joined.device,
+            "u_sam",
+            &info.session,
+            &home,
+            Call::Check {
+                tool: "write_file".into(),
+                args: args.clone(),
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    let checked: Checked = serde_json::from_value(checked).unwrap();
+    assert!(checked.precheck.is_none(), "{:?}", checked.precheck);
+    assert!(
+        serde_json::to_value(&checked.effect).unwrap()["kind"] == "edit",
+        "{:?}",
+        checked.effect
+    );
+    let ran = companions
+        .call(
+            &joined.device,
+            "u_sam",
+            &info.session,
+            &home,
+            Call::Run {
+                tool: "write_file".into(),
+                args,
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    let ran: Ran = serde_json::from_value(ran).unwrap();
+    assert!(ran.ok, "{}", ran.content);
+    assert_eq!(
+        std::fs::read_to_string(pc_home.join("hello.txt")).unwrap(),
+        "made on Sam's PC"
+    );
+
+    // The Files view (on a phone, say) shows the PC's folder, not this computer's.
+    let list = Request::FolderList {
+        session: info.session.clone(),
+        path: String::new(),
+    };
+    window
+        .send(&serde_json::to_string(&RequestFrame::new("f", list)).unwrap())
+        .await
+        .unwrap();
+    let names = loop {
+        let text = window.next().await.unwrap().unwrap();
+        if let Ok(ServerFrame::Reply(r)) = serde_json::from_str::<ServerFrame>(&text)
+            && r.re == "f"
+        {
+            let Reply::FolderListed { items, .. } = r.reply else {
+                panic!("expected folder.listed, got {:?}", r.reply);
+            };
+            break items.into_iter().map(|i| i.name).collect::<Vec<_>>();
+        }
+    };
+    assert_eq!(names, vec!["hello.txt".to_owned()]);
+
+    // A tool that doesn't run on PCs is refused there, and a PC that isn't connected says so.
+    let refused = companions
+        .call(
+            &joined.device,
+            "u_sam",
+            &info.session,
+            &home,
+            Call::Run {
+                tool: "web_search".into(),
+                args: serde_json::json!({}),
+            },
+            None,
+        )
+        .await;
+    assert!(refused.is_err());
+    let away = companions
+        .call(
+            "p_nobody",
+            "u_sam",
+            &info.session,
+            &home,
+            Call::Stop { call: "x".into() },
+            None,
+        )
+        .await;
+    assert!(away.unwrap_err().contains("isn't connected"));
+}
+
+#[tokio::test]
+async fn a_companion_window_uses_thrall_through_its_pc() {
+    use thrall_server::companion_bridge;
+    use thrall_server::companion_client;
+
+    let running = engine_running("pc-bridge", None).await;
+    let mut desk = desktop(&format!("ws://{}/v1/ws", running.addr)).await;
+    let port = pc_port(&mut desk).await;
+    let (code_tx, code_rx) = tokio::sync::oneshot::channel();
+    let asking = tokio::spawn(async move {
+        companion_client::ask(&format!("127.0.0.1:{port}"), "SAMS-PC", move |code| {
+            let _ = code_tx.send(code.to_owned());
+        })
+        .await
+    });
+    let code = code_rx.await.unwrap();
+    let request = first_request(&mut desk).await;
+    ask(
+        &mut desk,
+        "a",
+        Request::PcAccept {
+            request: request.request,
+            person: "u_sam".into(),
+            code: Some(code),
+        },
+    )
+    .await;
+    let mut joined = asking.await.unwrap().unwrap().expect("let in");
+    joined.name = "THRALL-PC".into();
+
+    // The PC's own data folder: the bridge describes itself there like an engine.
+    let home = std::env::temp_dir().join(format!("thrall-pc-data-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    let paths = thrall_core::Paths::under(&home);
+    let bridge = companion_bridge::start(joined, &paths, "0").await.unwrap();
+    let file = thrall_core::EngineFile::read(&paths.engine_file).expect("engine.json");
+    assert_eq!(file.port, bridge.addr.port());
+    let token = std::fs::read_to_string(&paths.token_file).unwrap();
+
+    // Without the token: turned away. With it: welcomed as Sam, by the Thrall PC.
+    let (mut stranger, _) = tokio_tungstenite::connect_async(&file.ws_url)
+        .await
+        .unwrap();
+    assert!(matches!(
+        ask(&mut stranger, "h", hello("wrong")).await,
+        Reply::Error { .. }
+    ));
+    let (mut window, _) = tokio_tungstenite::connect_async(&file.ws_url)
+        .await
+        .unwrap();
+    match ask(&mut window, "h", hello(token.trim())).await {
+        Reply::Welcome { user, .. } => assert_eq!(user.id, "u_sam"),
+        other => panic!("expected welcome, got {other:?}"),
+    }
+
+    // A window's sign-in link is the PC's own, and the code trades for the PC's token once.
+    let Reply::SigninCode { code, .. } = ask(
+        &mut window,
+        "s",
+        Request::SigninCreate {
+            person: "u_sam".into(),
+        },
+    )
+    .await
+    else {
+        panic!("no sign-in code");
+    };
+    let client = reqwest::Client::new();
+    let signin = format!("http://127.0.0.1:{}/v1/signin", bridge.addr.port());
+    let first: serde_json::Value = client
+        .post(&signin)
+        .json(&serde_json::json!({ "code": code, "name": "Thrall Desktop" }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(first["token"].as_str(), Some(token.trim()));
+    let again = client
+        .post(&signin)
+        .json(&serde_json::json!({ "code": code }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(again.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    // Requests go on to the Thrall PC: Sam's sessions are Sam's.
+    assert!(matches!(
+        ask(
+            &mut window,
+            "l",
+            Request::SessionList {
+                limit: None,
+                archived: false
+            }
+        )
+        .await,
+        Reply::SessionListed { .. }
+    ));
+    companion_bridge::stopped(&paths);
+    assert!(!paths.engine_file.exists());
+}
+
+#[tokio::test]
+async fn the_owner_switches_controls_off_for_someone_and_phones_obey() {
+    let sam = phone_keys();
+    let url = engine_with("rules", Some(&sam.public)).await;
+    let mut owner = desktop(&url).await;
+    let port = phone_port(&mut owner).await;
+    let engine_key = new_code(&mut owner, "code").await.key;
+    let mut phone = Phone::handshake(port, &sam, &engine_key, None, "")
+        .await
+        .unwrap();
+    assert!(matches!(
+        phone.ask("h", hello("")).await,
+        Reply::Welcome { .. }
+    ));
+
+    // Everything is allowed until switched off; the owner's own can't be.
+    let listed = ask(&mut owner, "l", Request::PeopleList { since: None }).await;
+    assert_eq!(
+        person_info(&listed, "u_sam").rules,
+        thrall_protocol::PersonRules::default()
+    );
+    let mut rules = thrall_protocol::PersonRules {
+        no_phones: true,
+        child: Some("13_15".into()),
+        ..Default::default()
+    };
+    let refused = ask(
+        &mut owner,
+        "o",
+        Request::PeopleRules {
+            person: "u_test".into(),
+            rules: rules.clone(),
+        },
+    )
+    .await;
+    assert!(is_error(&refused, ErrorCode::Invalid), "got {refused:?}");
+    rules.child = Some("nine".into());
+    let bad = ask(
+        &mut owner,
+        "b",
+        Request::PeopleRules {
+            person: "u_sam".into(),
+            rules: rules.clone(),
+        },
+    )
+    .await;
+    assert!(is_error(&bad, ErrorCode::Invalid), "got {bad:?}");
+    rules.child = Some("13_15".into());
+    let set = ask(
+        &mut owner,
+        "s",
+        Request::PeopleRules {
+            person: "u_sam".into(),
+            rules: rules.clone(),
+        },
+    )
+    .await;
+    assert_eq!(person_info(&set, "u_sam").rules, rules);
+
+    // Sam's phone is disconnected, and can't come back while phones are off.
+    assert!(phone.frame().await.is_none(), "the phone link stayed open");
+    let mut again = Phone::handshake(port, &sam, &engine_key, None, "")
+        .await
+        .unwrap();
+    assert!(!matches!(
+        again.ask("h2", hello("")).await,
+        Reply::Welcome { .. }
+    ));
+}
+
+#[tokio::test]
+async fn a_pc_its_thrall_forgot_is_told_to_join_again() {
+    use thrall_server::companion_client::{self, Joined, Link};
+    let url = engine("pc-forgot").await;
+    let mut desk = desktop(&url).await;
+    let port = pc_port(&mut desk).await;
+    let engine_key = new_code(&mut desk, "k").await.key;
+    let keys = phone_keys();
+    let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+    let stale = Joined {
+        address: format!("127.0.0.1:{port}"),
+        name: "THRALL-PC".into(),
+        master_key: hex(&engine_key),
+        private: hex(&keys.private),
+        public: hex(&keys.public),
+        device: "ph_gone".into(),
+    };
+    let Err(why) = Link::connect(&stale).await else {
+        panic!("a PC nobody let in got in");
+    };
+    assert!(companion_client::is_not_joined(&why), "{why}");
+
+    // Many such tries don't stop a PC from asking to join.
+    for _ in 0..25 {
+        let _ = Link::connect(&stale).await;
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let asking = tokio::spawn(async move {
+        companion_client::ask(&format!("127.0.0.1:{port}"), "SAMS-PC", move |c| {
+            let _ = tx.send(c.to_owned());
+        })
+        .await
+    });
+    rx.await.expect("the request went through");
+    asking.abort();
+}
+
+#[tokio::test]
+async fn the_owner_sees_someones_chats_only_as_far_as_they_chose_and_they_are_told() {
+    let sam = phone_keys();
+    let url = engine_with("oversight", Some(&sam.public)).await;
+    let mut owner = desktop(&url).await;
+    let port = phone_port(&mut owner).await;
+    let engine_key = new_code(&mut owner, "code").await.key;
+    let set = |level: Option<&str>| Request::PeopleRules {
+        person: "u_sam".into(),
+        rules: thrall_protocol::PersonRules {
+            oversight: level.map(str::to_owned),
+            ..Default::default()
+        },
+    };
+
+    // Nothing until the owner chooses: their chats are their own.
+    let mut phone = Phone::handshake(port, &sam, &engine_key, None, "")
+        .await
+        .unwrap();
+    let Reply::Welcome { user, .. } = phone.ask("h", hello("")).await else {
+        panic!("no welcome");
+    };
+    assert_eq!(user.oversight, None);
+    let sams = opened_id(
+        phone
+            .ask(
+                "c",
+                Request::SessionCreate {
+                    workspace: None,
+                    title: Some("Homework".into()),
+                    mode: None,
+                },
+            )
+            .await,
+    );
+    let none = ask(
+        &mut owner,
+        "n",
+        Request::PeopleChats {
+            person: "u_sam".into(),
+        },
+    )
+    .await;
+    assert!(is_error(&none, ErrorCode::Invalid), "got {none:?}");
+
+    // Titles only: listed, not readable; Sam is told who can see what.
+    ask(&mut owner, "s1", set(Some("summary"))).await;
+    let Reply::PeopleChats { items, level, .. } = ask(
+        &mut owner,
+        "l1",
+        Request::PeopleChats {
+            person: "u_sam".into(),
+        },
+    )
+    .await
+    else {
+        panic!("no chats");
+    };
+    assert_eq!(level, "summary");
+    assert_eq!(items.len(), 1);
+    assert_eq!(
+        (items[0].title.as_str(), items[0].readable),
+        ("Homework", false)
+    );
+    let read = Request::PeopleChat {
+        person: "u_sam".into(),
+        session: sams.clone(),
+    };
+    assert!(is_error(
+        &ask(&mut owner, "r1", read.clone()).await,
+        ErrorCode::Invalid
+    ));
+    let mut again = Phone::handshake(port, &sam, &engine_key, None, "")
+        .await
+        .unwrap();
+    let Reply::Welcome { user, .. } = again.ask("h2", hello("")).await else {
+        panic!("no welcome");
+    };
+    assert_eq!(user.oversight.as_deref(), Some("summary"));
+    assert_eq!(user.overseer.as_deref(), Some("Test"));
+
+    // Everything: readable.
+    ask(&mut owner, "s2", set(Some("full"))).await;
+    let Reply::PeopleChat { title, .. } = ask(&mut owner, "r2", read).await else {
+        panic!("couldn't read it");
+    };
+    assert_eq!(title, "Homework");
+
+    // The owner's own chats are never overseen, and only the owner may ask.
+    let own = ask(
+        &mut owner,
+        "o",
+        Request::PeopleChats {
+            person: "u_test".into(),
+        },
+    )
+    .await;
+    assert!(is_error(&own, ErrorCode::Invalid), "got {own:?}");
+    let theirs = phone
+        .ask(
+            "p",
+            Request::PeopleChats {
+                person: "u_sam".into(),
+            },
+        )
+        .await;
+    assert!(is_error(&theirs, ErrorCode::Unauthorized), "got {theirs:?}");
 }

@@ -43,6 +43,9 @@ there, like `book.pdf`. Never write sandbox: or /mnt/data links; they don't exis
 - A new project (a program, a site, a tool, even a one-file script) gets its own new folder inside \
 the working folder, named after it, like `bill-splitter/`. Put everything for it there, unless the \
 working folder is empty or is already that project's folder, or the user names a place.
+- Reminders, alarms, timers and \"tell me later\" always go through schedule (once: \"in 20m\", \
+\"at 20:15\"; or repeating), so Thrall tells the person when it's time. Never a shell loop, a \
+sleep command, a pop-up script or the system's task scheduler.
 - Never do arithmetic in your head or in the shell: use calc for every sum, product, percentage \
 or conversion, and quote its answer. When a tool already calculates something (a combined total, \
 a cost), use its number instead of redoing it.
@@ -825,3 +828,63 @@ their computer or work is set up, decisions, people or projects that matter to t
 they clearly stated about themselves; not one-off task details, not guesses, never passwords, keys \
 or other secrets. Answer with a JSON list only, at most 5 items, each {\"topic\": \"two or three \
 words\", \"content\": \"one sentence\"}. If there's nothing lasting, answer [].";
+
+/// A PC tool in a session that works on a companion PC, when that PC isn't connected (for the
+/// model; nothing runs on this computer instead).
+pub const PC_NOT_CONNECTED: &str = "the PC this chat works on isn't connected (it's off, asleep, or \
+     Thrall isn't open there). Nothing was done. Tell the person, and carry on with what doesn't \
+     need their PC.";
+
+/// The same, when the PC went away while the call was on it.
+pub const PC_DISCONNECTED: &str = "the PC this chat works on disconnected before it finished. It may \
+     or may not have done it; check before trying again.";
+
+/// Home's folder inside a companion PC's Thrall folder.
+pub const PC_HOME_FOLDER: &str = "Home";
+
+/// Tools that run commands (what "commands off" turns off).
+pub const COMMAND_TOOLS: &[&str] = &["shell", "shell_output", "shell_stop", "git"];
+
+/// For the model, when the owner turned commands off for this person.
+pub const COMMANDS_OFF: &str = "this Thrall's owner turned commands off for this person, so no \
+     command can run. Don't look for other ways to run one; do what you can with the other tools \
+     and say what needs a command.";
+
+/// For the model, when an edit would land in the system's folders and the owner said not to.
+pub const SYSTEM_FOLDERS_OFF: &str = "this Thrall's owner keeps this person's file changes out of \
+     the system's folders (Windows, programs, other people's folders), and that's one of them. \
+     Change files in the person's own folders instead.";
+
+/// What the person sees on a step their controls didn't allow.
+pub const NOT_ALLOWED: &str = "Not allowed for you here";
+
+/// Added to a child's instructions, by age band (`PersonRules::child`).
+pub const CHILD_GUIDANCE: &[(&str, &str)] = &[
+    (
+        "under_13",
+        "\n\n# Who you're talking with\n\nThis is a child under 13. Keep everything suitable for a \
+         young child: no violence, sexual content, drugs, gambling, self-harm or scary detail, and \
+         no help getting round their parents' rules. Explain simply and kindly, and encourage them \
+         to ask a parent about anything worrying, risky or that costs money. Never ask for \
+         personal details.",
+    ),
+    (
+        "13_15",
+        "\n\n# Who you're talking with\n\nThis is a young teenager (13 to 15). Keep things age \
+         appropriate: no sexual content, no help with drugs, alcohol, gambling, weapons or \
+         self-harm, and point them to a trusted adult for anything risky or upsetting. Be \
+         straightforward and respectful.",
+    ),
+    (
+        "16_17",
+        "\n\n# Who you're talking with\n\nThis is an older teenager (16 or 17). Treat them as nearly \
+         adult, but no sexual content and no help with anything illegal for their age; point them \
+         to a trusted adult or proper help for anything risky.",
+    ),
+];
+
+/// Why a chat was flagged for the owner: a command when commands are off for its person.
+pub const FLAG_COMMAND: &str = "Tried to run a command";
+
+/// Why a chat was flagged for the owner: a change in a system folder when that's off for them.
+pub const FLAG_SYSTEM_FOLDER: &str = "Tried to change a system folder";

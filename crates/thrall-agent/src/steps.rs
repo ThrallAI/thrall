@@ -11,6 +11,7 @@ use thrall_gates::{Decision, EDIT_GRANT, Effect, Mode, tool_gate};
 use thrall_llm::ToolCall;
 use thrall_protocol::{Event, PermissionChoice, Risk, StepStatus};
 use thrall_store::{AuditEntry, NewStep};
+use thrall_tools::companion::{Call, Checked, Ran};
 use thrall_tools::tool::arg_str;
 use thrall_tools::tools::{
     ASK_USER, DELEGATE, EXIT_PLAN_MODE, EXPERIENCE_NOTE, MAKE_IMAGE, MAKE_VIDEO, MEMORY_SAVE,
@@ -22,7 +23,8 @@ use tokio::sync::mpsc;
 use crate::checks::Track;
 use crate::constants::{
     BACKGROUND_CANT_CHANGE, BLOCKED_BY_HOOK, BLOCKED_BY_PLAN, BLOCKED_UNATTENDED, CHECK_IN_BLOCKED,
-    CHECK_IN_READ_ONLY, NOT_LOOKING, SKILL_HELPER_DONE, SKILL_HELPER_TASK, THINKER_BLOCKED,
+    CHECK_IN_READ_ONLY, COMMAND_TOOLS, COMMANDS_OFF, FLAG_COMMAND, FLAG_SYSTEM_FOLDER, NOT_ALLOWED,
+    NOT_LOOKING, SKILL_HELPER_DONE, SKILL_HELPER_TASK, SYSTEM_FOLDERS_OFF, THINKER_BLOCKED,
     THINKER_CANT, THINKER_LOOK_ONLY, TOOL_MAX_SECS, TOOL_STOP_GRACE_SECS, step_status,
 };
 use crate::error::AgentError;
@@ -126,7 +128,17 @@ pub(crate) async fn run_step(
         memory: Some(state.memory.clone()),
         browser: state.browsers.clone(),
         disabled_skills: state.config.skills.disabled.clone(),
+        pc: state.companions.pc_of(emitter.session_id),
     };
+
+    // A session working on a companion PC checks and runs its PC tools there.
+    let pc = tool
+        .as_ref()
+        .filter(|t| thrall_tools::companion::runs_on_pc(t.name()))
+        .and_then(|_| state.companions.pc_of(emitter.session_id));
+
+    // What the owner allows this person (everything, unless they turned something off).
+    let rules = state.companions.rules(&state.user_id);
 
     let mut status: Option<StepStatus> = None;
     let mut step_summary: Option<String> = None;
@@ -139,6 +151,23 @@ pub(crate) async fn run_step(
             "the arguments for {} weren't valid JSON. Send a JSON object.",
             call.name
         )),
+        Some(t) if rules.no_commands && COMMAND_TOOLS.contains(&t.name()) => {
+            audit(
+                state,
+                gate::TOOL,
+                &call.name,
+                decision::DENY,
+                json!({ "rule": "no_commands" }),
+            )
+            .await?;
+            let _ = state
+                .store
+                .flag_session(&state.user_id, emitter.session_id, FLAG_COMMAND)
+                .await;
+            status = Some(StepStatus::Denied);
+            step_summary = Some(NOT_ALLOWED.to_owned());
+            ToolOutput::error(COMMANDS_OFF)
+        }
         // Split mode's Thinker isn't offered these; refused if it calls one anyway.
         Some(t) if track.look_only && THINKER_CANT.contains(&t.name()) => {
             status = Some(StepStatus::Denied);
@@ -231,6 +260,20 @@ pub(crate) async fn run_step(
         Some(t) if t.name() == EXIT_PLAN_MODE && *mode == Mode::Plan => {
             propose_plan(emitter, state, &args, mode, cancel).await?
         }
+        // A skill in a companion PC's project folder (read with the turn's project).
+        Some(t)
+            if t.name() == USE_SKILL
+                && find_skill(&ctx, arg_str(&args, "name")).is_none()
+                && pc_skill(state, emitter.session_id, arg_str(&args, "name")).is_some() =>
+        {
+            match pc_skill(state, emitter.session_id, arg_str(&args, "name")) {
+                Some(skill) => ToolOutput::ok(
+                    format!("# Skill: {}\n\n{}", skill.name, skill.body),
+                    format!("Loaded {}", skill.name),
+                ),
+                None => ToolOutput::error("that skill isn't there any more"),
+            }
+        }
         // A skill that runs in a helper: only its result comes back to the conversation.
         Some(t)
             if t.name() == USE_SKILL
@@ -243,11 +286,40 @@ pub(crate) async fn run_step(
             )
             .await?
         }
-        Some(t) => match t.precheck(&ctx, &args) {
-            Some(why) => ToolOutput::error(why),
-            None => {
-                t.prepare(&ctx, &args).await;
-                let mut effect = t.effect(&ctx, &args);
+        Some(t) => match checked(
+            state,
+            emitter.session_id,
+            workspace,
+            pc.as_deref(),
+            t.as_ref(),
+            &ctx,
+            &args,
+        )
+        .await
+        {
+            Err(why) => ToolOutput::error(why),
+            Ok(effect)
+                if rules.no_system_folders
+                    && matches!(&effect, Effect::Edit { path, .. }
+                        if thrall_gates::system_folder(path, &workspace.to_string_lossy())) =>
+            {
+                audit(
+                    state,
+                    gate::TOOL,
+                    &call.name,
+                    decision::DENY,
+                    json!({ "rule": "no_system_folders" }),
+                )
+                .await?;
+                let _ = state
+                    .store
+                    .flag_session(&state.user_id, emitter.session_id, FLAG_SYSTEM_FOLDER)
+                    .await;
+                status = Some(StepStatus::Denied);
+                step_summary = Some(NOT_ALLOWED.to_owned());
+                ToolOutput::error(SYSTEM_FOLDERS_OFF)
+            }
+            Ok(mut effect) => {
                 // Saving facts without asking is off: ask, showing the fact.
                 if t.name() == MEMORY_SAVE && !state.config.memory.save_facts {
                     effect = Effect::AlwaysAsk {
@@ -308,7 +380,14 @@ pub(crate) async fn run_step(
                 }?;
                 match allowed {
                     Ok(()) => {
-                        // Keep the file as it was, so the person can rewind this turn.
+                        // Keep the file as it was, so the person can rewind this turn (a PC's
+                        // file is kept through its runner).
+                        let place = crate::checkpoints::Place::of(
+                            state,
+                            emitter.session_id,
+                            workspace,
+                            pc.as_deref(),
+                        );
                         let edited = match &effect {
                             Effect::Edit { path, .. } if emitter.records() => {
                                 Some(thrall_tools::paths::resolve(workspace, path))
@@ -318,6 +397,7 @@ pub(crate) async fn run_step(
                         if let Some(path) = &edited {
                             crate::checkpoints::before_edit(
                                 state,
+                                &place,
                                 emitter.session_id,
                                 emitter.turn_id,
                                 path,
@@ -325,10 +405,24 @@ pub(crate) async fn run_step(
                             .await;
                         }
                         // The humaniser on full checks the writing in documents Thrall saves.
-                        let written = (state.config.writing.humanise == Humanise::Full)
-                            .then(|| crate::writing::written_text(t.name(), &args, workspace))
-                            .flatten();
-                        let run = t.run(&ctx, args);
+                        let written = (state.config.writing.humanise == Humanise::Full
+                            && pc.is_none())
+                        .then(|| crate::writing::written_text(t.name(), &args, workspace))
+                        .flatten();
+                        let call_id = new_id(id_prefix::REQUEST);
+                        let run = match pc.as_deref() {
+                            None => t.run(&ctx, args),
+                            Some(device) => Box::pin(run_on_pc(
+                                state,
+                                device,
+                                &call_id,
+                                emitter.session_id,
+                                workspace,
+                                t.name(),
+                                args,
+                                &ctx,
+                            )),
+                        };
                         tokio::pin!(run);
                         // A backstop: no tool, however stuck, holds the turn past TOOL_MAX_SECS,
                         // and Stop ends it (after a moment to stop by itself).
@@ -348,6 +442,9 @@ pub(crate) async fn run_step(
                                     TOOL_MAX_SECS / 60
                                 )),
                                 () = stop.cancelled() => {
+                                    if let Some(device) = pc.as_deref() {
+                                        stop_on_pc(state, device, &call_id, emitter.session_id);
+                                    }
                                     let grace = std::time::Duration::from_secs(TOOL_STOP_GRACE_SECS);
                                     break tokio::time::timeout(grace, &mut run).await.unwrap_or_else(
                                         |_| ToolOutput::error("stopped by the person before it finished"),
@@ -368,6 +465,7 @@ pub(crate) async fn run_step(
                         {
                             crate::checkpoints::after_edit(
                                 state,
+                                &place,
                                 emitter.session_id,
                                 emitter.turn_id,
                                 path,
@@ -478,6 +576,117 @@ pub(crate) async fn run_step(
         .await?;
     }
     Ok(content)
+}
+
+/// A project skill called `name` in the session's companion PC folder, if any.
+fn pc_skill(
+    state: &AppState,
+    session: &str,
+    name: &str,
+) -> Option<thrall_tools::companion::PcSkill> {
+    state
+        .companions
+        .project(session)?
+        .skills
+        .into_iter()
+        .filter(|s| !thrall_tools::skills::is_disabled(&s.name, &state.config.skills.disabled))
+        .find(|s| s.name.eq_ignore_ascii_case(name.trim()))
+}
+
+/// Why a call can't work (`Err`, for the model), or what it would do. A tool that runs on the
+/// session's companion PC (`pc`) is checked there.
+async fn checked(
+    state: &AppState,
+    session: &str,
+    workspace: &Path,
+    pc: Option<&str>,
+    tool: &dyn thrall_tools::Tool,
+    ctx: &ToolContext,
+    args: &Value,
+) -> Result<Effect, String> {
+    let Some(device) = pc else {
+        if let Some(why) = tool.precheck(ctx, args) {
+            return Err(why);
+        }
+        tool.prepare(ctx, args).await;
+        return Ok(tool.effect(ctx, args));
+    };
+    let call = Call::Check {
+        tool: tool.name().to_owned(),
+        args: args.clone(),
+    };
+    let answer = state
+        .companions
+        .call(
+            device,
+            &state.user_id,
+            session,
+            &workspace.to_string_lossy(),
+            call,
+            None,
+        )
+        .await?;
+    let checked: Checked = serde_json::from_value(answer).map_err(|e| {
+        format!("the PC's answer didn't make sense ({e}); is its Thrall up to date?")
+    })?;
+    match checked.precheck {
+        Some(why) => Err(why),
+        None => Ok(checked.effect),
+    }
+}
+
+/// Run a call on the session's companion PC (`device`), with its live output shown as usual.
+#[allow(clippy::too_many_arguments)]
+async fn run_on_pc(
+    state: &AppState,
+    device: &str,
+    id: &str,
+    session: &str,
+    workspace: &Path,
+    tool: &str,
+    args: Value,
+    ctx: &ToolContext,
+) -> ToolOutput {
+    let call = Call::Run {
+        tool: tool.to_owned(),
+        args,
+    };
+    let answer = state
+        .companions
+        .call_as(
+            id,
+            device,
+            &state.user_id,
+            session,
+            &workspace.to_string_lossy(),
+            call,
+            Some(ctx.output.clone()),
+        )
+        .await;
+    match answer.map(serde_json::from_value::<Ran>) {
+        Ok(Ok(ran)) => ran.into_output(ctx),
+        Ok(Err(e)) => ToolOutput::error(format!(
+            "the PC's answer didn't make sense ({e}); is its Thrall up to date?"
+        )),
+        Err(why) => ToolOutput::error(why),
+    }
+}
+
+/// Tell the session's companion PC to stop call `id` (the person pressed Stop).
+fn stop_on_pc(state: &AppState, device: &str, id: &str, session: &str) {
+    let companions = state.companions.clone();
+    let (device, id, session, person) = (
+        device.to_owned(),
+        id.to_owned(),
+        session.to_owned(),
+        state.user_id.clone(),
+    );
+    tokio::spawn(async move {
+        let call = Call::Stop { call: id };
+        let _ = companions
+            .call(&device, &person, &session, "", call, None)
+            .await;
+    });
 }
 
 /// Run a `run: helper` skill: a helper gets its instructions and the task; its answer is the

@@ -27,31 +27,53 @@ fn read_capped(path: &Path) -> Option<String> {
 }
 
 /// Extra system-prompt text: personal and project instructions, and the available skills.
-pub fn standing_instructions(state: &AppState, workspace: &Path) -> String {
+pub fn standing_instructions(state: &AppState, session_id: &str, workspace: &Path) -> String {
     let mut out = String::new();
+    // A child's account: answers fit for their age, before anything else.
+    if let Some(band) = state.companions.rules(&state.user_id).child
+        && let Some((_, guidance)) = crate::constants::CHILD_GUIDANCE
+            .iter()
+            .find(|(b, _)| *b == band)
+    {
+        out.push_str(guidance);
+    }
     if let Some(text) = state
         .my_dir()
         .and_then(|d| read_capped(&d.join(PERSONAL_FILE)))
     {
         out.push_str(&format!("\n\n# The user's standing instructions\n\n{text}"));
     }
-    if let Some((name, text)) = PROJECT_FILES
-        .iter()
-        .find_map(|f| read_capped(&workspace.join(f)).map(|t| (*f, t)))
-    {
+    // A session on a companion PC: its project is the PC folder's, as read at the turn's start.
+    let on_pc = state.companions.project(session_id);
+    let project = match &on_pc {
+        Some(p) => p.instructions.clone(),
+        None => PROJECT_FILES
+            .iter()
+            .find_map(|f| read_capped(&workspace.join(f)).map(|t| ((*f).to_owned(), t))),
+    };
+    if let Some((name, text)) = project {
         out.push_str(&format!("\n\n# Project instructions ({name})\n\n{text}"));
     }
-    let skills = thrall_tools::skills::discover(
+    let mut skills: Vec<(String, String)> = thrall_tools::skills::discover(
         state.my_dir().as_deref(),
         workspace,
         &state.config.skills.disabled,
-    );
+    )
+    .into_iter()
+    .map(|s| (s.name, s.description))
+    .collect();
+    for s in on_pc.iter().flat_map(|p| &p.skills) {
+        if !thrall_tools::skills::is_disabled(&s.name, &state.config.skills.disabled) {
+            skills.retain(|(n, _)| !n.eq_ignore_ascii_case(&s.name));
+            skills.push((s.name.clone(), s.description.clone()));
+        }
+    }
     if !skills.is_empty() {
         out.push_str(
             "\n\n# Skills\n\nUse one with the skill tool when the task matches its description:",
         );
-        for skill in skills {
-            out.push_str(&format!("\n- {}: {}", skill.name, skill.description));
+        for (name, description) in skills {
+            out.push_str(&format!("\n- {name}: {description}"));
         }
     }
     out

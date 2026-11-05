@@ -131,9 +131,20 @@ pub async fn create(state: &AppState, parent: &str, name: &str) -> Result<String
     if !allowed {
         return Err("New folders can only go in one of the folders offered.".to_owned());
     }
+    let own: Vec<&str> = own.into_iter().flatten().collect();
+    make_in(parent, name, &own)
+}
+
+/// Make the folder `name` in `parent` (already allowed); `own` are Thrall's own folders, made when
+/// first used (any other parent must already be there). Never replaces anything.
+pub fn make_in(parent: &str, name: &str, own: &[&str]) -> Result<String, String> {
+    let name = name.trim();
+    if let Some(why) = bad_name(name) {
+        return Err(why);
+    }
     let parent = Path::new(parent);
     // Thrall's own folders are made when first used; any other must already be there.
-    if own.contains(&Some(&*parent.display().to_string())) {
+    if own.contains(&&*parent.display().to_string()) {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Couldn't make `{}`: {e}", parent.display()))?;
     } else if !parent.is_dir() {

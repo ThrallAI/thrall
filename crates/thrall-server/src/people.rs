@@ -6,11 +6,15 @@
 use thrall_agent::AgentError;
 use thrall_core::constants::{PERSON_NAME_MAX_CHARS, id_prefix, person_role};
 use thrall_core::ids::{new_id, now_ms};
-use thrall_protocol::{PersonInfo, Reply};
+use thrall_protocol::{OverseenChat, PersonInfo, PersonRules, Reply};
 use thrall_store::PersonTerms;
 
 use crate::connection::Shared;
-use crate::constants::{MICROS_PER_DOLLAR, MODEL_ID_MAX_CHARS, MONTHLY_LIMIT_MAX_USD};
+use crate::constants::{
+    CHILD_BANDS, MICROS_PER_DOLLAR, MODEL_ID_MAX_CHARS, MONTHLY_LIMIT_MAX_USD,
+    OVERSIGHT_EVENTS_MAX, OVERSIGHT_EVENTS_PAGE, OVERSIGHT_FLAGGED, OVERSIGHT_FULL, OVERSIGHT_GATE,
+    OVERSIGHT_LEVELS, OVERSIGHT_LIST_MAX, OVERSIGHT_SUMMARY, UNTITLED_CHAT,
+};
 
 /// Why a people request was refused (shown to the owner as is).
 pub type Refusal = &'static str;
@@ -36,6 +40,7 @@ pub async fn listed(shared: &Shared, since: Option<i64>) -> Result<Reply, AgentE
             key_set,
             model: p.model,
             monthly_limit: p.monthly_limit_micros.map(|m| m as f64 / MICROS_PER_DOLLAR),
+            rules: serde_json::from_str(&p.rules).unwrap_or_default(),
             person: p.id,
             name: p.name,
             role: p.role,
@@ -111,6 +116,186 @@ pub async fn remove(shared: &Shared, person: &str) -> Result<Result<Reply, Refus
     crate::signin::sign_out_everywhere(shared, person).await?;
     tracing::info!(person, "person removed");
     Ok(Ok(listed(shared, None).await?))
+}
+
+/// Set what someone (never the owner) is allowed. Takes effect from their next step; their phones
+/// are disconnected straight away when phones are turned off.
+pub async fn set_rules(
+    shared: &Shared,
+    person: &str,
+    rules: PersonRules,
+) -> Result<Result<Reply, Refusal>, AgentError> {
+    let state = shared.hub.state();
+    match state.store.get_person(person).await? {
+        Some(p) if p.removed_at.is_none() && p.role == person_role::OWNER => {
+            return Ok(Err(
+                "The person who runs this Thrall is always allowed everything.",
+            ));
+        }
+        Some(p) if p.removed_at.is_none() => {}
+        _ => return Ok(Err("There's no such person.")),
+    }
+    if let Some(band) = &rules.child
+        && !CHILD_BANDS.contains(&band.as_str())
+    {
+        return Ok(Err("A child's age is under 13, 13 to 15, or 16 to 17."));
+    }
+    if let Some(level) = &rules.oversight
+        && !OVERSIGHT_LEVELS.contains(&level.as_str())
+    {
+        return Ok(Err(
+            "What you can see is their chats' titles, that and flagged chats, or everything.",
+        ));
+    }
+    let text = serde_json::to_string(&rules).unwrap_or_else(|_| "{}".to_owned());
+    state.store.set_person_rules(person, &text).await?;
+    state.companions.set_rules(person, rules.clone());
+    shared.remote.phones_allowed(person, !rules.no_phones);
+    tracing::info!(person, "a person's controls changed");
+    Ok(Ok(listed(shared, None).await?))
+}
+
+/// What the owner can see of `person`'s chats (`summary`, `flagged`, `full`), if anything. Never
+/// anything of the owner's own.
+pub fn oversight_of(person: &thrall_store::Person) -> Option<String> {
+    if person.role == person_role::OWNER {
+        return None;
+    }
+    serde_json::from_str::<PersonRules>(&person.rules)
+        .ok()
+        .and_then(|r| r.oversight)
+}
+
+/// The owner's name (who can see someone's chats).
+pub async fn owner_name(shared: &Shared) -> Option<String> {
+    let state = shared.hub.state();
+    state
+        .store
+        .get_person(&state.owner_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|p| p.name)
+}
+
+/// Whether the owner may read a chat at `level` (`flagged` chats too with `flagged`).
+fn readable(level: &str, flagged: bool) -> bool {
+    level == OVERSIGHT_FULL || (level == OVERSIGHT_FLAGGED && flagged)
+}
+
+/// `people.chats`: someone's chats, as far as their oversight lets the owner see them.
+pub async fn chats(shared: &Shared, person: &str) -> Result<Result<Reply, Refusal>, AgentError> {
+    let state = shared.hub.state();
+    let Some(p) = state
+        .store
+        .get_person(person)
+        .await?
+        .filter(|p| p.removed_at.is_none())
+    else {
+        return Ok(Err("There's no such person."));
+    };
+    let Some(level) = oversight_of(&p) else {
+        return Ok(Err(
+            "Their chats are their own: turn on what you can see in their Controls first.",
+        ));
+    };
+    let sessions = state
+        .store
+        .list_sessions(person, OVERSIGHT_LIST_MAX)
+        .await?;
+    let items = sessions
+        .into_iter()
+        .map(|s| OverseenChat {
+            readable: readable(&level, s.flagged.is_some()),
+            flagged: if level == OVERSIGHT_SUMMARY {
+                None
+            } else {
+                s.flagged
+            },
+            title: if s.title.is_empty() {
+                UNTITLED_CHAT.to_owned()
+            } else {
+                s.title
+            },
+            session: s.id,
+            created: s.created_at,
+            updated: s.updated_at,
+        })
+        .collect();
+    Ok(Ok(Reply::PeopleChats {
+        person: person.to_owned(),
+        level,
+        items,
+    }))
+}
+
+/// `people.chat`: one of someone's chats, when their oversight lets the owner read it. The view
+/// goes in the audit log.
+pub async fn chat(
+    shared: &Shared,
+    person: &str,
+    session: &str,
+) -> Result<Result<Reply, Refusal>, AgentError> {
+    let state = shared.hub.state();
+    let Some(p) = state
+        .store
+        .get_person(person)
+        .await?
+        .filter(|p| p.removed_at.is_none())
+    else {
+        return Ok(Err("There's no such person."));
+    };
+    let Some(level) = oversight_of(&p) else {
+        return Ok(Err("Their chats are their own."));
+    };
+    let Some(s) = state.store.get_session(person, session).await? else {
+        return Ok(Err("There's no such chat."));
+    };
+    if !readable(&level, s.flagged.is_some()) {
+        return Ok(Err("You can see this chat's title, not what's in it."));
+    }
+    let mut events = Vec::new();
+    let mut after = 0;
+    loop {
+        let page = state
+            .store
+            .events_after(person, session, after, OVERSIGHT_EVENTS_PAGE)
+            .await?;
+        let count = page.len();
+        for stored in page {
+            after = stored.seq;
+            if let Ok(event) = serde_json::from_str::<thrall_protocol::Event>(&stored.payload) {
+                events.push(thrall_protocol::EventFrame::new(
+                    session,
+                    Some(stored.seq),
+                    stored.at,
+                    event,
+                ));
+            }
+        }
+        if count < OVERSIGHT_EVENTS_PAGE as usize || events.len() >= OVERSIGHT_EVENTS_MAX {
+            break;
+        }
+    }
+    let _ = state
+        .store
+        .append_audit(thrall_store::AuditEntry {
+            id: new_id(id_prefix::AUDIT),
+            user_id: state.owner_id.clone(),
+            at: now_ms(),
+            gate: OVERSIGHT_GATE.to_owned(),
+            action: "people.chat".to_owned(),
+            decision: "viewed".to_owned(),
+            detail: serde_json::json!({ "person": person, "session": session }).to_string(),
+        })
+        .await;
+    tracing::info!(person, session, "the owner read a chat (oversight)");
+    Ok(Ok(Reply::PeopleChat {
+        person: person.to_owned(),
+        session: session.to_owned(),
+        title: s.title,
+        events,
+    }))
 }
 
 /// A model id as given: trimmed, `None` when empty; `Err` when it can't be one.

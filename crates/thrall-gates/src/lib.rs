@@ -17,7 +17,9 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use thrall_protocol::{Diff, Risk};
 
-use crate::constants::{INPUT_MAX_CHARS, REDACTED, SECRET_PATTERNS};
+use crate::constants::{
+    INPUT_MAX_CHARS, REDACTED, SECRET_PATTERNS, SHARED_USERS, SYSTEM_FOLDERS, USER_ROOTS,
+};
 
 // ---------- permission modes ----------
 
@@ -100,8 +102,10 @@ impl Mode {
 
 // ---------- tool gate ----------
 
-/// What a tool call would do, as the tool describes it.
-#[derive(Debug, Clone, PartialEq)]
+/// What a tool call would do, as the tool describes it. (Serialised when a companion PC works it
+/// out for a tool that runs there.)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Effect {
     /// Only reads (files, the web, memory).
     Read,
@@ -283,6 +287,58 @@ pub fn memory_gate(content: &str) -> Result<(), String> {
     }
 }
 
+// ---------- system folders ----------
+
+/// `path` (relative to `workspace`, or absolute) with `.` and `..` worked out, `\` for `/`, lower
+/// case: the same on Windows, Linux and macOS for comparing.
+fn plain_path(path: &str, workspace: &str) -> String {
+    let path = path.trim().replace('/', "\\");
+    let absolute = path.starts_with('\\') || path.get(1..2) == Some(":");
+    let full = if absolute {
+        path
+    } else {
+        format!(
+            "{}\\{path}",
+            workspace.trim().replace('/', "\\").trim_end_matches('\\')
+        )
+    };
+    let mut parts: Vec<&str> = Vec::new();
+    for part in full.split('\\') {
+        match part {
+            "" | "." if !parts.is_empty() => {}
+            ".." => {
+                if parts.len() > 1 {
+                    parts.pop();
+                }
+            }
+            p => parts.push(p),
+        }
+    }
+    parts.join("\\").to_lowercase()
+}
+
+/// The person's own user folder, from their working folder (`c:\users\you\documents\thrall` →
+/// `you`).
+fn user_of(path: &str) -> Option<&str> {
+    let rest = USER_ROOTS.iter().find_map(|root| path.strip_prefix(root))?;
+    rest.split('\\').next().filter(|u| !u.is_empty())
+}
+
+/// Whether `path` is in the system's folders (Windows, programs, the boot and system folders,
+/// someone else's user folder) for a person working in `workspace`.
+pub fn system_folder(path: &str, workspace: &str) -> bool {
+    let path = plain_path(path, workspace);
+    let starts = |prefix: &&str| path == *prefix || path.starts_with(&format!("{prefix}\\"));
+    if SYSTEM_FOLDERS.iter().any(starts) {
+        return true;
+    }
+    let mine = user_of(&plain_path("", workspace)).map(str::to_owned);
+    match user_of(&path) {
+        Some(theirs) => !SHARED_USERS.contains(&theirs) && mine.as_deref() != Some(theirs),
+        None => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -414,5 +470,31 @@ mod tests {
     fn memory_refuses_secrets() {
         assert!(memory_gate("prefers dark mode").is_ok());
         assert!(memory_gate("my key is sk-ant-abcdefghijklmnopqrstuvwxyz123456").is_err());
+    }
+}
+
+#[cfg(test)]
+mod system_folder_tests {
+    use super::system_folder;
+
+    #[test]
+    fn system_and_other_peoples_folders_are_out_of_bounds() {
+        let ws = r"C:\Users\you\Documents\Thrall";
+        assert!(!system_folder("notes.txt", ws));
+        assert!(!system_folder(r"C:\Users\you\Desktop\a.txt", ws));
+        assert!(!system_folder(r"C:\Users\Public\a.txt", ws));
+        assert!(system_folder(r"C:\Windows\System32\drivers\etc\hosts", ws));
+        assert!(system_folder(r"c:/program files/app/x.dll", ws));
+        assert!(system_folder(r"C:\Users\me\Documents\secret.txt", ws));
+        assert!(
+            system_folder(r"..\..\..\me\x.txt", ws),
+            "climbing out with .."
+        );
+        assert!(
+            !system_folder(r"C:\Windowsish\a.txt", ws),
+            "only the folder itself"
+        );
+        assert!(system_folder("/etc/passwd", "/home/you/Thrall"));
+        assert!(!system_folder("notes.txt", "/home/you/Thrall"));
     }
 }

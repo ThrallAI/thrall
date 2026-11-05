@@ -682,7 +682,10 @@ impl Hub {
         let Some(rebuild) = &self.rebuild else {
             return Err("reloading isn't available here".to_owned());
         };
-        let fresh = Arc::new(rebuild().await?);
+        let mut fresh = rebuild().await?;
+        // Companion PCs stay connected through a restart.
+        fresh.companions = self.state().companions.clone();
+        let fresh = Arc::new(fresh);
         let old = match self.state.write() {
             Ok(mut s) => std::mem::replace(&mut *s, fresh.clone()),
             Err(poisoned) => std::mem::replace(&mut *poisoned.into_inner(), fresh.clone()),
@@ -840,14 +843,20 @@ impl Hub {
         turn: &str,
     ) -> Result<Vec<crate::checkpoints::Planned>, AgentError> {
         let state = self.me(user);
-        let workspace = state
+        let session = state
             .store
             .get_session(&state.user_id, session_id)
             .await?
-            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_owned()))?
-            .workspace
-            .map(PathBuf::from);
-        crate::checkpoints::plan(&state, session_id, turn, workspace.as_deref()).await
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_owned()))?;
+        let workspace = session.workspace.map(PathBuf::from);
+        crate::checkpoints::plan(
+            &state,
+            session_id,
+            turn,
+            workspace.as_deref(),
+            session.pc.as_deref(),
+        )
+        .await
     }
 
     /// What rewinding to before `turn` would do: the message that started it, and the files.

@@ -770,3 +770,31 @@ pub const PROGRAM_PROBE_SECS: u64 = 3;
 
 /// LM Studio's usual address (Ollama's is the default local server).
 pub const LM_STUDIO_URL: &str = "http://localhost:1234/v1";
+
+/// Tools that run on a companion PC for a session that works there: everything that touches the
+/// PC's files or runs its programs. The rest (web, AI, memory, schedules) run here.
+pub const COMPANION_TOOLS: &[&str] = &[
+    "read_file",
+    "write_file",
+    "edit_file",
+    "list_dir",
+    "glob",
+    "grep",
+    "read_document",
+    "edit_spreadsheet",
+    "edit_word",
+    "edit_pdf",
+    "make_pdf",
+    "archive",
+    "style_check",
+    "shell",
+    "shell_output",
+    "shell_stop",
+    "git",
+    "system_info",
+    "clipboard",
+];
+
+/// Biggest file carried across a companion PC's link in one go (a picture a tool made, a file
+/// kept for rewinding or copied over).
+pub const COMPANION_FILE_MAX_BYTES: u64 = 16 * 1024 * 1024;

@@ -21,24 +21,146 @@ fn hash(bytes: &[u8]) -> String {
         .collect()
 }
 
+/// Where a session's files are: here, or on its companion PC (then they're read and written
+/// through the PC's runner).
+#[derive(Clone)]
+pub(crate) struct Place {
+    pc: Option<OnPc>,
+}
+
+#[derive(Clone)]
+struct OnPc {
+    companions: std::sync::Arc<crate::companions::Companions>,
+    device: String,
+    person: String,
+    session: String,
+    workspace: String,
+}
+
+/// What reading a file came to.
+enum Got {
+    Missing,
+    TooBig,
+    Bytes(Vec<u8>),
+    Unreadable(String),
+}
+
+impl Place {
+    /// Files on this computer.
+    pub(crate) fn here() -> Self {
+        Self { pc: None }
+    }
+
+    /// `session`'s files: on its PC (`pc`), else here.
+    pub(crate) fn of(state: &AppState, session: &str, workspace: &Path, pc: Option<&str>) -> Self {
+        Self {
+            pc: pc.map(|device| OnPc {
+                companions: state.companions.clone(),
+                device: device.to_owned(),
+                person: state.user_id.clone(),
+                session: session.to_owned(),
+                workspace: workspace.to_string_lossy().into_owned(),
+            }),
+        }
+    }
+
+    async fn call(
+        pc: &OnPc,
+        job: thrall_tools::companion::Call,
+    ) -> Result<serde_json::Value, String> {
+        pc.companions
+            .call(
+                &pc.device,
+                &pc.person,
+                &pc.session,
+                &pc.workspace,
+                job,
+                None,
+            )
+            .await
+    }
+
+    async fn read(&self, path: &Path) -> Got {
+        let Some(pc) = &self.pc else {
+            return match tokio::fs::metadata(path).await {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Got::Missing,
+                Err(e) => Got::Unreadable(e.to_string()),
+                Ok(meta) if !meta.is_file() => Got::Unreadable("not a file".to_owned()),
+                Ok(meta) if meta.len() > CHECKPOINT_MAX_FILE_BYTES => Got::TooBig,
+                Ok(_) => match tokio::fs::read(path).await {
+                    Ok(bytes) => Got::Bytes(bytes),
+                    Err(e) => Got::Unreadable(e.to_string()),
+                },
+            };
+        };
+        let job = thrall_tools::companion::Call::Read {
+            path: path.to_string_lossy().into_owned(),
+        };
+        match Self::call(pc, job).await {
+            Err(why) => Got::Unreadable(why),
+            Ok(v) if v["missing"] == true => Got::Missing,
+            Ok(v) if v["too_big"] == true => Got::TooBig,
+            Ok(v) => {
+                use base64::Engine as _;
+                match base64::engine::general_purpose::STANDARD
+                    .decode(v["data"].as_str().unwrap_or_default())
+                {
+                    Ok(bytes) if bytes.len() as u64 > CHECKPOINT_MAX_FILE_BYTES => Got::TooBig,
+                    Ok(bytes) => Got::Bytes(bytes),
+                    Err(e) => Got::Unreadable(e.to_string()),
+                }
+            }
+        }
+    }
+
+    async fn write(&self, path: &Path, bytes: Vec<u8>) -> Result<(), String> {
+        let Some(pc) = &self.pc else {
+            if let Some(parent) = path.parent() {
+                let _ = tokio::fs::create_dir_all(parent).await;
+            }
+            return tokio::fs::write(path, bytes)
+                .await
+                .map_err(|e| e.to_string());
+        };
+        use base64::Engine as _;
+        let job = thrall_tools::companion::Call::Write {
+            path: path.to_string_lossy().into_owned(),
+            data: base64::engine::general_purpose::STANDARD.encode(bytes),
+        };
+        Self::call(pc, job).await.map(|_| ())
+    }
+
+    async fn delete(&self, path: &Path) -> Result<(), String> {
+        let Some(pc) = &self.pc else {
+            return match tokio::fs::remove_file(path).await {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+                _ => Ok(()),
+            };
+        };
+        let job = thrall_tools::companion::Call::Delete {
+            path: path.to_string_lossy().into_owned(),
+        };
+        Self::call(pc, job).await.map(|_| ())
+    }
+}
+
 /// Keep `path` as it is now, if this turn hasn't already. Failing to keep it never stops the
 /// edit; it's logged.
-pub(crate) async fn before_edit(state: &AppState, session_id: &str, turn_id: &str, path: &Path) {
-    let (existed, content, too_big) = match tokio::fs::metadata(path).await {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => (false, None, false),
-        Err(e) => {
+pub(crate) async fn before_edit(
+    state: &AppState,
+    place: &Place,
+    session_id: &str,
+    turn_id: &str,
+    path: &Path,
+) {
+    let (existed, content, too_big) = match place.read(path).await {
+        Got::Missing => (false, None, false),
+        Got::TooBig => (true, None, true),
+        Got::Bytes(bytes) => (true, Some(bytes), false),
+        Got::Unreadable(e) => {
             tracing::warn!(path = %path.display(), %e, "couldn't keep a checkpoint");
             return;
         }
-        Ok(meta) if !meta.is_file() => return,
-        Ok(meta) if meta.len() > CHECKPOINT_MAX_FILE_BYTES => (true, None, true),
-        Ok(_) => match tokio::fs::read(path).await {
-            Ok(bytes) => (true, Some(bytes), false),
-            Err(e) => {
-                tracing::warn!(path = %path.display(), %e, "couldn't keep a checkpoint");
-                return;
-            }
-        },
     };
     let checkpoint = Checkpoint {
         session_id: session_id.to_owned(),
@@ -57,8 +179,14 @@ pub(crate) async fn before_edit(state: &AppState, session_id: &str, turn_id: &st
 }
 
 /// Note what the turn left in `path` after changing it.
-pub(crate) async fn after_edit(state: &AppState, session_id: &str, turn_id: &str, path: &Path) {
-    let Ok(bytes) = tokio::fs::read(path).await else {
+pub(crate) async fn after_edit(
+    state: &AppState,
+    place: &Place,
+    session_id: &str,
+    turn_id: &str,
+    path: &Path,
+) {
+    let Got::Bytes(bytes) = place.read(path).await else {
         return;
     };
     let shown = path.to_string_lossy();
@@ -79,16 +207,24 @@ pub struct Planned {
     pub file: RewindFile,
     /// Its content before (for `Restore`).
     content: Option<Vec<u8>>,
+    /// Here, or on the session's PC.
+    place: Place,
 }
 
 /// What rewinding to before `turn_id` would do to files, in the order they were first changed.
-/// Files the turns never managed to change are left out.
+/// Files the turns never managed to change are left out. A session on a companion PC (`pc`) has
+/// its files looked at there.
 pub async fn plan(
     state: &AppState,
     session_id: &str,
     turn_id: &str,
     workspace: Option<&Path>,
+    pc: Option<&str>,
 ) -> Result<Vec<Planned>, AgentError> {
+    let place = match (pc, workspace) {
+        (Some(pc), Some(ws)) => Place::of(state, session_id, ws, Some(pc)),
+        _ => Place::here(),
+    };
     let checkpoints = state
         .store
         .checkpoints_from(&state.user_id, session_id, turn_id)
@@ -113,7 +249,10 @@ pub async fn plan(
             continue;
         };
         let path = PathBuf::from(p);
-        let now = tokio::fs::read(&path).await.ok();
+        let now = match place.read(&path).await {
+            Got::Bytes(bytes) => Some(bytes),
+            _ => None,
+        };
         let changed = now.as_deref().map(hash).as_deref() != Some(left);
         let action = if !first.existed {
             RewindAction::Delete
@@ -138,6 +277,7 @@ pub async fn plan(
                 changed,
             },
             content: first.content.clone(),
+            place: place.clone(),
         });
     }
     Ok(out)
@@ -154,18 +294,8 @@ pub async fn restore(planned: Vec<Planned>, keep: &[String]) -> (Vec<String>, Ve
         }
         let done = match p.file.action {
             RewindAction::Unavailable => Err("it was too big to keep a copy of".to_owned()),
-            RewindAction::Delete => match tokio::fs::remove_file(&p.path).await {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
-                _ => Ok(()),
-            },
-            RewindAction::Restore => {
-                if let Some(parent) = p.path.parent() {
-                    let _ = tokio::fs::create_dir_all(parent).await;
-                }
-                tokio::fs::write(&p.path, p.content.unwrap_or_default())
-                    .await
-                    .map_err(|e| e.to_string())
-            }
+            RewindAction::Delete => p.place.delete(&p.path).await,
+            RewindAction::Restore => p.place.write(&p.path, p.content.unwrap_or_default()).await,
         };
         match done {
             Ok(()) => restored.push(p.file.path),
@@ -174,7 +304,6 @@ pub async fn restore(planned: Vec<Planned>, keep: &[String]) -> (Vec<String>, Ve
     }
     (restored, failed)
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

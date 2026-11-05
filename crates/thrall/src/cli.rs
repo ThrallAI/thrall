@@ -55,6 +55,23 @@ pub enum Command {
     /// Remove Thrall's data folder, keys and start-at-sign-in (asks first; your working folder
     /// stays). Uninstall the app itself afterwards.
     RemoveEverything,
+    /// Make this PC a companion of Thrall on another PC: find it on this network (or give its
+    /// name or address), ask to join, and wait for its owner to let this PC in.
+    Join {
+        /// The Thrall PC's name or address (`kids-pc`, `192.168.1.20:7420`); found on this
+        /// network when left out.
+        address: Option<String>,
+        /// Only list the Thralls on this network that let PCs join.
+        #[arg(long)]
+        find: bool,
+        /// Lines for the desktop app to read (`found`, `code`, `joined`, `declined`, `error`).
+        #[arg(long, hide = true)]
+        machine: bool,
+    },
+    /// Stay connected to the Thrall this PC joined, and do this PC's share of the work.
+    Runner,
+    /// Stop being a companion: forget the Thrall this PC joined.
+    Leave,
     /// Run the engine that the web app, desktop app and terminal connect to.
     #[command(alias = "serve")]
     Engine(EngineArgs),

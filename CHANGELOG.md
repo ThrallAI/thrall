@@ -7,6 +7,31 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ## [Unreleased]
 
+### Added
+
+- Companion PCs, first part: other PCs at home or at work can find this Thrall and ask to join as
+  someone's (Settings → PCs → Let PCs on this network connect, off by default). A card pops up
+  with the PC's name and a code that its screen shows too: Let in (as whose PC), Decline or
+  Block. Blocked PCs can't ask again until unblocked. Everything between the PCs is encrypted.
+- Companion PCs do their own work: a chat started on a family member's or a worker's PC (or by
+  them on their phone) works in that PC's folders, and its file, document and command steps run
+  on that PC. The AI, memory and the web stay on the Thrall PC. If that PC is off, Thrall says so
+  and does nothing on the Thrall PC instead. The phone's Files view shows the PC's files, and Home
+  moves to the PC once it's connected.
+- The desktop app can be a companion: on a new PC, "Connect to Thrall on another PC" finds Thrall
+  on the network (or takes its name over Tailscale), shows the code, and once let in it needs no
+  AI key of its own. In a terminal: `thrall join`, `thrall runner`, `thrall leave`.
+- Settings → People → Controls: for each person, switch off commands, file changes in system
+  folders, or their phones, or make it a child's account (answers fit for their age). Everything is
+  allowed until you switch it off.
+- Controls → "What you can see of their chats": nothing (the default), chat titles, titles and the
+  chats where something was blocked, or every chat. They see a note in every chat saying so, and
+  each time you read one it goes in the audit log.
+- One-off reminders: "remind me at 8:15", "in 20 minutes", "tomorrow at 7". Thrall uses its own
+  scheduler for every reminder and alarm, and says when it's time.
+- Rewinding a chat on a companion PC puts that PC's files back too, and a project's `THRALL.md`
+  and skills in a folder on that PC are read from there.
+
 ### Fixed
 
 - Text read from PDFs no longer comes out with stray gaps ("P romptly", "P P E"). The PDF
@@ -16,6 +41,8 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
   pages tall with blank space at the bottom.
 - On Windows, Thrall's engine (`thrall.exe`) shows its version and name in Task Manager and file
   properties, like the desktop app. It was blank, which looked like a second, different Thrall.
+- Installing, updating or uninstalling on Windows stops Thrall's engine first, so its files are
+  never locked mid-install.
 
 ## [0.2.2] - 2026-11-04
 

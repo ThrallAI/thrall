@@ -28,6 +28,7 @@ import { THEME_LABELS, type Theme } from "../theme";
 import { People } from "./People";
 import { Personality } from "./Personality";
 import { Phones } from "./Phones";
+import { PCs } from "./PCs";
 import { Providers } from "./Providers";
 import { SkillEditor } from "./SkillEditor";
 
@@ -1197,6 +1198,19 @@ export function Settings({
           Group={Group}
           Toggle={Toggle}
           Field={Field}
+        />
+      );
+    }
+    if (section === "pcs") {
+      return (
+        <PCs
+          engine={engine}
+          remote={obj(config.remote)}
+          onSave={save}
+          onStatus={setStatus}
+          Row={Row}
+          Group={Group}
+          Toggle={Toggle}
         />
       );
     }

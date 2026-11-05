@@ -474,6 +474,89 @@ pub enum Request {
         /// The phone's id.
         phone: String,
     },
+    /// PCs asking to join as someone's companion, and the PCs blocked from asking. The owner
+    /// only, not over a link. Answered by `pc.requests`.
+    #[serde(rename = "pc.requests")]
+    PcRequests {},
+    /// Let a PC that's asking join, as `person`'s. `code`, when given, must be the code the PC
+    /// shows (typed instead of compared by eye). Answered by `pc.requests`.
+    #[serde(rename = "pc.accept")]
+    PcAccept {
+        /// The request's id.
+        request: String,
+        /// Whose PC it is (a person's id).
+        person: String,
+        /// The code the PC shows, typed by the owner.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        code: Option<String>,
+    },
+    /// Turn a PC that's asking away; with `block`, it can't ask again. Answered by `pc.requests`.
+    #[serde(rename = "pc.decline")]
+    PcDecline {
+        /// The request's id.
+        request: String,
+        /// Block it from asking again.
+        #[serde(default)]
+        block: bool,
+    },
+    /// A companion PC's runner is ready: from now on this link gets `runner.call` events for the
+    /// sessions that work on this PC. Only on a joined PC's link. Answered by `ack`.
+    #[serde(rename = "runner.ready")]
+    RunnerReady {
+        /// The PC's Thrall folder (where its sessions work unless one picks another).
+        home: String,
+    },
+    /// Live output of a call the runner is running (a command's lines). Answered by `ack`.
+    #[serde(rename = "runner.output")]
+    RunnerOutput {
+        /// The call's id.
+        call: String,
+        /// The new text.
+        text: String,
+    },
+    /// What came of a call. Answered by `ack`.
+    #[serde(rename = "runner.done")]
+    RunnerDone {
+        /// The call's id.
+        call: String,
+        /// Its answer, when it worked.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        result: Option<serde_json::Value>,
+        /// Why it didn't, when it didn't.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+    /// Set what a person is allowed (the owner only; not the owner's own). Answered by
+    /// `people.listed`.
+    #[serde(rename = "people.rules")]
+    PeopleRules {
+        /// Their id.
+        person: String,
+        /// What's allowed.
+        rules: PersonRules,
+    },
+    /// Someone's chats, as far as their oversight lets the owner see them (owner only). Answered
+    /// by `people.chats`.
+    #[serde(rename = "people.chats")]
+    PeopleChats {
+        /// Their id.
+        person: String,
+    },
+    /// Read one of someone's chats (owner only; `full`, or `flagged` and the chat was). Answered by
+    /// `people.chat`. The view is noted in the audit log.
+    #[serde(rename = "people.chat")]
+    PeopleChat {
+        /// Their id.
+        person: String,
+        /// The chat.
+        session: String,
+    },
+    /// Let a blocked PC ask again. Answered by `pc.requests`.
+    #[serde(rename = "pc.unblock")]
+    PcUnblock {
+        /// The blocked PC's id.
+        blocked: String,
+    },
     /// The people who use this Thrall (anyone but the owner: only themselves). Answered by
     /// `people.listed`.
     #[serde(rename = "people.list")]
@@ -690,6 +773,16 @@ impl Request {
             Self::PhonePair { .. } => "phone.pair",
             Self::PhoneAssign { .. } => "phone.assign",
             Self::PhoneRemove { .. } => "phone.remove",
+            Self::PcRequests {} => "pc.requests",
+            Self::PcAccept { .. } => "pc.accept",
+            Self::PcDecline { .. } => "pc.decline",
+            Self::PcUnblock { .. } => "pc.unblock",
+            Self::PeopleRules { .. } => "people.rules",
+            Self::PeopleChats { .. } => "people.chats",
+            Self::PeopleChat { .. } => "people.chat",
+            Self::RunnerReady { .. } => "runner.ready",
+            Self::RunnerOutput { .. } => "runner.output",
+            Self::RunnerDone { .. } => "runner.done",
             Self::PeopleList { .. } => "people.list",
             Self::PeopleAdd { .. } => "people.add",
             Self::PeopleRename { .. } => "people.rename",
@@ -738,6 +831,8 @@ pub enum ClientKind {
     Telegram,
     /// Scripts (`thrall run`).
     Headless,
+    /// A companion PC's runner (`thrall runner`), doing that PC's share of the work.
+    Companion,
 }
 
 impl ClientKind {
@@ -750,6 +845,7 @@ impl ClientKind {
             Self::Android => "android",
             Self::Telegram => "telegram",
             Self::Headless => "headless",
+            Self::Companion => "companion",
         }
     }
 }
@@ -1018,6 +1114,38 @@ pub enum Reply {
         /// The phone link.
         remote: RemoteInfo,
     },
+    /// Answer to `people.chats`.
+    #[serde(rename = "people.chats")]
+    PeopleChats {
+        /// Whose.
+        person: String,
+        /// What the owner can see (`summary`, `flagged`, `full`).
+        level: String,
+        /// Their chats, most recently active first.
+        items: Vec<OverseenChat>,
+    },
+    /// Answer to `people.chat`: the chat's events, as `session.open` replays them.
+    #[serde(rename = "people.chat")]
+    PeopleChat {
+        /// Whose.
+        person: String,
+        /// The chat.
+        session: String,
+        /// Its title.
+        title: String,
+        /// Its events, oldest first.
+        events: Vec<crate::EventFrame>,
+    },
+    /// Answer to `pc.requests`, `pc.accept`, `pc.decline` and `pc.unblock`.
+    #[serde(rename = "pc.requests")]
+    PcRequests {
+        /// PCs asking to join now, oldest first.
+        items: Vec<PcRequestInfo>,
+        /// PCs blocked from asking, newest first.
+        blocked: Vec<BlockedPcInfo>,
+        /// The PC listener.
+        pcs: PcLinkInfo,
+    },
     /// Answer to `phone.pair`: what the phone scans.
     #[serde(rename = "phone.pairing")]
     PhonePairing {
@@ -1181,6 +1309,52 @@ pub struct PhoneInfo {
     /// Whose phone it is (a person's id).
     #[serde(default)]
     pub person: String,
+    /// `phone`, or `pc` for a companion PC.
+    #[serde(default = "phone_kind")]
+    pub kind: String,
+}
+
+fn phone_kind() -> String {
+    "phone".to_owned()
+}
+
+/// A PC asking to join as someone's companion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PcRequestInfo {
+    /// The request's id.
+    pub request: String,
+    /// The name the PC gave (its computer name).
+    pub name: String,
+    /// The code both screens show: if they match, nobody is in between.
+    pub code: String,
+    /// Where it's asking from (its network address).
+    pub address: String,
+    /// When it asked, Unix ms.
+    pub at: i64,
+}
+
+/// A PC blocked from asking to join.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BlockedPcInfo {
+    /// Its id.
+    pub blocked: String,
+    /// The name it gave.
+    pub name: String,
+    /// When it was blocked, Unix ms.
+    pub at: i64,
+}
+
+/// The PC listener's state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PcLinkInfo {
+    /// Switched on in settings (`remote.pcs`).
+    pub enabled: bool,
+    /// The listener is running.
+    pub listening: bool,
+    /// Its port, on every network this computer is on.
+    pub port: u16,
+    /// This computer's name, as companions see it.
+    pub name: String,
 }
 
 /// A person who uses this Thrall.
@@ -1213,6 +1387,51 @@ pub struct PersonInfo {
     /// Their monthly spending limit in US dollars, if they have one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub monthly_limit: Option<f64>,
+    /// What the owner allows them (everything, unless turned off).
+    #[serde(default)]
+    pub rules: PersonRules,
+}
+
+/// What the owner allows a person. Everything is allowed until the owner turns it off; the
+/// person can see what's off for them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PersonRules {
+    /// Thrall can't run commands for them (the shell and git).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_commands: bool,
+    /// Thrall's file tools keep out of the system's folders (Windows, programs, other people's
+    /// folders) for them.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_system_folders: bool,
+    /// Their phones can't connect.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_phones: bool,
+    /// A child's account, with answers fit for their age: `under_13`, `13_15` or `16_17`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child: Option<String>,
+    /// What the owner can see of their chats: `summary` (titles and when), `flagged` (that, and
+    /// the chats where something wasn't allowed) or `full` (every chat). They're always told.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oversight: Option<String>,
+}
+
+/// One of someone's chats, as the owner sees it with oversight.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct OverseenChat {
+    /// The session.
+    pub session: String,
+    /// Its title.
+    pub title: String,
+    /// When it started, Unix ms.
+    pub created: i64,
+    /// When it was last active, Unix ms.
+    pub updated: i64,
+    /// Why it was flagged (something wasn't allowed), if it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flagged: Option<String>,
+    /// The owner can read it at this level.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub readable: bool,
 }
 
 /// A browser or PC signed in as a person.
@@ -1440,6 +1659,13 @@ pub struct UserInfo {
     /// `owner` (runs this engine) or `member`.
     #[serde(default)]
     pub role: String,
+    /// What the owner can see of their chats (`summary`, `flagged`, `full`), when anything: shown
+    /// to them in every chat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oversight: Option<String>,
+    /// Who can see it (the owner's name).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overseer: Option<String>,
 }
 
 /// Limits a client must respect.

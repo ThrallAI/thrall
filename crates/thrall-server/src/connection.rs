@@ -3,6 +3,7 @@
 //! opened; a client that falls behind catches up from the event log, so nothing stored is lost.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
@@ -22,6 +23,7 @@ use thrall_protocol::{
     ClientKind, CommandItem, EngineInfo, ErrorCode, Event, EventFrame, Limits, Reply, ReplyFrame,
     Request, RequestFrame, ServerFrame, UserInfo,
 };
+use thrall_tools::companion::Call;
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::constants::{
@@ -128,17 +130,39 @@ where
         person,
         device,
         whose: HashMap::new(),
+        runner: None,
+        runner_calls: None,
     };
+    let mut calls: Option<
+        tokio::sync::mpsc::UnboundedReceiver<thrall_agent::companions::Outgoing>,
+    > = None;
     let mut bus = shared.hub.subscribe();
     let mut signed_out = shared.signins.signed_out.subscribe();
     let owners_desktop = kind == ClientKind::Desktop
         && conn.person.role == thrall_core::constants::person_role::OWNER;
     let _desktop = owners_desktop.then(|| Counted::new(&shared.desktops));
     let mut update_asked = shared.update_asked.subscribe();
+    // The owner's screens on this computer hear when PCs ask to join.
+    let owner_here =
+        conn.peer == Peer::Local && conn.person.role == thrall_core::constants::person_role::OWNER;
+    let mut pc_asked = shared.remote.asked.subscribe();
     let mut heard = Instant::now();
     let mut check = tokio::time::interval(SILENCE_CHECK);
     loop {
+        let mut calls_closed = false;
         let out = tokio::select! {
+            call = async {
+                match calls.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => match call {
+                Some(call) => conn.runner.as_mut().and_then(|r| r.send(call)).into_iter().collect(),
+                None => {
+                    calls_closed = true;
+                    Vec::new()
+                }
+            },
             msg = stream.next() => match msg {
                 Some(Incoming::Text(text)) => {
                     heard = Instant::now();
@@ -166,6 +190,14 @@ where
                     Event::UpdateRequested {},
                 ))]
             }
+            Ok(()) = pc_asked.changed(), if owner_here => {
+                vec![ServerFrame::Event(EventFrame::new(
+                    "",
+                    None,
+                    now_ms(),
+                    Event::PcAsked {},
+                ))]
+            }
             _ = signed_out.changed() => {
                 if !conn.still_signed_in().await {
                     tracing::info!(client = kind.as_str(), "browser signed out; closing");
@@ -181,9 +213,22 @@ where
                 Vec::new()
             }
         };
+        if calls_closed {
+            calls = None;
+        }
+        if let Some(rx) = conn.runner_calls.take() {
+            calls = Some(rx);
+        }
         if send_all(&mut sink, out).await.is_err() {
             break;
         }
+    }
+    if let Some(runner) = &conn.runner {
+        shared
+            .hub
+            .state()
+            .companions
+            .detach(&runner.device, runner.token);
     }
     let _ = sink.close().await;
     tracing::info!(client = kind.as_str(), "client disconnected");
@@ -265,9 +310,16 @@ async fn who(shared: &Shared, peer: &Peer) -> Option<thrall_store::Person> {
         Peer::Phone { id } => shared.remote.person_of(id),
     }
     .unwrap_or_else(|| state.user_id.clone());
+    let phone = matches!(peer, Peer::Phone { id } if !shared.remote.is_pc(id));
     match state.store.get_person(&user).await {
-        // Someone the owner removed can't come back in.
-        Ok(person) => person.filter(|p| p.removed_at.is_none()),
+        // Someone the owner removed can't come back in, nor a phone of someone whose phones are
+        // turned off.
+        Ok(person) => person.filter(|p| {
+            p.removed_at.is_none()
+                && !(phone
+                    && serde_json::from_str::<thrall_protocol::PersonRules>(&p.rules)
+                        .is_ok_and(|r| r.no_phones))
+        }),
         Err(e) => {
             tracing::warn!(%e, "couldn't look up who is connecting");
             None
@@ -390,6 +442,11 @@ where
                 id: person.id.clone(),
                 name: person.name.clone(),
                 role: person.role.clone(),
+                oversight: crate::people::oversight_of(&person),
+                overseer: match crate::people::oversight_of(&person) {
+                    Some(_) => crate::people::owner_name(shared).await,
+                    None => None,
+                },
             },
             capabilities: CAPABILITIES.iter().map(|c| (*c).to_owned()).collect(),
             limits: Limits {
@@ -418,12 +475,78 @@ struct Connection {
     person: thrall_store::Person,
     /// Sessions seen on the bus, and whether they're this person's (only theirs are sent).
     whose: HashMap<String, bool>,
+    /// A companion PC's runner on this link (after `runner.ready`).
+    runner: Option<crate::runner_link::RunnerSide>,
+    /// Its calls, handed over to the connection's loop.
+    runner_calls: Option<tokio::sync::mpsc::UnboundedReceiver<thrall_agent::companions::Outgoing>>,
 }
 
 impl Connection {
     /// The engine acting for this connection's person.
     fn me(&self) -> thrall_agent::AppState {
         self.shared.hub.state().for_user(&self.person.id)
+    }
+
+    /// Ask the companion PC `pc` to do `job` for this person's `session` (in `workspace`, there).
+    async fn on_pc(
+        &self,
+        pc: &str,
+        session: &str,
+        workspace: &Path,
+        job: Call,
+    ) -> Result<serde_json::Value, String> {
+        self.shared
+            .hub
+            .state()
+            .companions
+            .call(
+                pc,
+                &self.person.id,
+                session,
+                &workspace.to_string_lossy(),
+                job,
+                None,
+            )
+            .await
+    }
+
+    /// The folders this person's sessions on `pc` used, most recently active first.
+    async fn pc_folders(&self, pc: &str) -> Result<Vec<String>, thrall_agent::AgentError> {
+        let state = self.me();
+        let sessions = state
+            .store
+            .list_sessions(&state.user_id, crate::constants::PLACES_SCAN)
+            .await?;
+        let mut folders: Vec<String> = Vec::new();
+        for s in sessions {
+            if s.pc.as_deref() == Some(pc)
+                && let Some(w) = s.workspace
+                && !folders.contains(&w)
+            {
+                folders.push(w);
+            }
+        }
+        Ok(folders)
+    }
+
+    /// Where a session started on this connection works: on the companion PC it was started on;
+    /// for someone other than the owner whose PC joined, on that PC (the one connected now, else
+    /// the first); otherwise here.
+    fn session_pc(&self) -> Option<String> {
+        if let Peer::Phone { id } = &self.peer
+            && self.shared.remote.is_pc(id)
+        {
+            return Some(id.clone());
+        }
+        let state = self.shared.hub.state();
+        if self.person.id == state.owner_id {
+            return None;
+        }
+        let pcs = self.shared.remote.pcs_of(&self.person.id, &state.owner_id);
+        pcs.iter()
+            .find(|pc| state.companions.connected(pc))
+            .or(pcs.first())
+            .cloned()
     }
 
     /// Whether a signed-in browser hasn't been signed out (true for other connections).
@@ -535,10 +658,27 @@ impl Connection {
                         Some(m) => m,
                         None => None,
                     };
-                    if let Some(Err(why)) = workspace.as_deref().map(crate::folders::usable) {
-                        return Ok(vec![error(id, ErrorCode::Invalid, why)]);
+                    // Work on a companion PC uses the PC's folders: none of them is checked (or
+                    // made) on this computer.
+                    let pc = self.session_pc();
+                    let workspace = match &pc {
+                        Some(pc) => workspace.or_else(|| hub.state().companions.home(pc)),
+                        None => {
+                            if let Some(Err(why)) = workspace.as_deref().map(crate::folders::usable)
+                            {
+                                return Ok(vec![error(id, ErrorCode::Invalid, why)]);
+                            }
+                            workspace
+                        }
+                    };
+                    let mut s = hub.create(&self.person.id, workspace, title, mode).await?;
+                    if let Some(pc) = &pc {
+                        self.me()
+                            .store
+                            .set_session_pc(&self.person.id, &s.id, Some(pc))
+                            .await?;
+                        s.pc = Some(pc.clone());
                     }
-                    let s = hub.create(&self.person.id, workspace, title, mode).await?;
                     self.attached.insert(s.id.clone(), s.last_seq);
                     vec![reply(id, Reply::SessionOpened(hub.info(&s).await))]
                 }
@@ -1017,6 +1157,102 @@ impl Connection {
                         vec![error(id, ErrorCode::NotFound, "There's no such phone.")]
                     }
                 }
+                Request::PeopleChats { person } => {
+                    refused_or(id, crate::people::chats(&self.shared, &person).await?)
+                }
+                Request::PeopleChat { person, session } => {
+                    refused_or(id, crate::people::chat(&self.shared, &person, &session).await?)
+                }
+                Request::PeopleRules { person, rules } => {
+                    refused_or(id, crate::people::set_rules(&self.shared, &person, rules).await?)
+                }
+                Request::RunnerReady { home } => {
+                    let pc = match &self.peer {
+                        Peer::Phone { id } if self.shared.remote.is_pc(id) => id.clone(),
+                        _ => {
+                            return Ok(vec![error(
+                                id,
+                                ErrorCode::Unauthorized,
+                                "Only a PC that joined this Thrall can run its work.",
+                            )]);
+                        }
+                    };
+                    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                    let token = self
+                        .shared
+                        .hub
+                        .state()
+                        .companions
+                        .attach(&pc, &self.person.id, &home, tx);
+                    self.runner = Some(crate::runner_link::RunnerSide::new(pc, token));
+                    self.runner_calls = Some(rx);
+                    vec![reply(id, Reply::Ack {})]
+                }
+                Request::RunnerOutput { call, text } => {
+                    if let Some(runner) = &self.runner {
+                        runner.output(&call, text);
+                    }
+                    vec![reply(id, Reply::Ack {})]
+                }
+                Request::RunnerDone {
+                    call,
+                    result,
+                    error: why,
+                } => {
+                    if let Some(runner) = &mut self.runner {
+                        runner.done(&call, result, why);
+                    }
+                    vec![reply(id, Reply::Ack {})]
+                }
+                Request::PcRequests {}
+                | Request::PcAccept { .. }
+                | Request::PcDecline { .. }
+                | Request::PcUnblock { .. }
+                    if self.peer != Peer::Local =>
+                {
+                    vec![error(
+                        id,
+                        ErrorCode::Unauthorized,
+                        "PCs are let in on the computer Thrall runs on.",
+                    )]
+                }
+                Request::PcRequests {} => {
+                    vec![reply(id, self.shared.remote.requests(&self.me()))]
+                }
+                Request::PcAccept {
+                    request,
+                    person,
+                    code,
+                } => {
+                    let owner = self.shared.hub.state().owner_id.clone();
+                    if !self.is_person(&person).await? {
+                        vec![error(id, ErrorCode::NotFound, "There's no such person.")]
+                    } else {
+                        let person = (person != owner).then_some(person);
+                        match self
+                            .shared
+                            .remote
+                            .accept_pc(&request, person, code.as_deref())
+                        {
+                            Ok(()) => vec![reply(id, self.shared.remote.requests(&self.me()))],
+                            Err(why) => vec![error(id, ErrorCode::Invalid, why)],
+                        }
+                    }
+                }
+                Request::PcDecline { request, block } => {
+                    if self.shared.remote.decline_pc(&request, block) {
+                        vec![reply(id, self.shared.remote.requests(&self.me()))]
+                    } else {
+                        vec![error(id, ErrorCode::NotFound, "That PC isn't asking any more.")]
+                    }
+                }
+                Request::PcUnblock { blocked } => {
+                    if self.shared.remote.unblock_pc(&blocked) {
+                        vec![reply(id, self.shared.remote.requests(&self.me()))]
+                    } else {
+                        vec![error(id, ErrorCode::NotFound, "There's no such blocked PC.")]
+                    }
+                }
                 Request::PeopleList { since } => {
                     let mut listed = crate::people::listed(&self.shared, since).await?;
                     // Anyone else sees only themselves: their key, model, limit and spending.
@@ -1120,6 +1356,25 @@ impl Connection {
                     vec![self.file_put(id, upload, &name, &data).await]
                 }
                 Request::FolderPlaces {} => {
+                    if let Some(pc) = self.session_pc() {
+                        let recent = self.pc_folders(&pc).await?;
+                        let job = Call::Places { recent };
+                        return Ok(match self.on_pc(&pc, "", Path::new(""), job).await {
+                            Ok(v) => {
+                                let text = |k: &str| v[k].as_str().map(str::to_owned);
+                                vec![reply(
+                                    id,
+                                    Reply::FolderPlaces {
+                                        recent: serde_json::from_value(v["recent"].clone())
+                                            .unwrap_or_default(),
+                                        default: text("default"),
+                                        new_in: text("new_in"),
+                                    },
+                                )]
+                            }
+                            Err(why) => vec![error(id, ErrorCode::Invalid, why)],
+                        });
+                    }
                     let p = crate::folders::places(&self.me()).await?;
                     vec![reply(
                         id,
@@ -1131,6 +1386,18 @@ impl Connection {
                     )]
                 }
                 Request::FolderCreate { parent, name } => {
+                    if let Some(pc) = self.session_pc() {
+                        let job = Call::MakeFolder { parent, name };
+                        return Ok(match self.on_pc(&pc, "", Path::new(""), job).await {
+                            Ok(v) => vec![reply(
+                                id,
+                                Reply::FolderCreated {
+                                    path: v["path"].as_str().unwrap_or_default().to_owned(),
+                                },
+                            )],
+                            Err(why) => vec![error(id, ErrorCode::Invalid, why)],
+                        });
+                    }
                     match crate::folders::create(&self.me(), &parent, &name).await {
                         Ok(path) => vec![reply(id, Reply::FolderCreated { path })],
                         Err(why) => vec![error(id, ErrorCode::Invalid, why)],
@@ -1161,6 +1428,22 @@ impl Connection {
                 Request::FolderList { session, path } => {
                     let s = session::get(&self.me(), &session).await?;
                     let ws = session::folder_of(&s);
+                    if let Some(pc) = &s.pc {
+                        let job = Call::List { path };
+                        return Ok(match self.on_pc(pc, &session, &ws, job).await {
+                            Ok(v) => vec![reply(
+                                id,
+                                Reply::FolderListed {
+                                    session,
+                                    path: v["path"].as_str().unwrap_or_default().to_owned(),
+                                    items: serde_json::from_value(v["items"].clone())
+                                        .unwrap_or_default(),
+                                    more: v["more"].as_bool().unwrap_or(false),
+                                },
+                            )],
+                            Err(why) => vec![error(id, ErrorCode::NotFound, why)],
+                        });
+                    }
                     match crate::folders::list(&ws, &path) {
                         Ok((path, items, more)) => vec![reply(
                             id,
@@ -1181,6 +1464,22 @@ impl Connection {
                 } => {
                     let s = session::get(&self.me(), &session).await?;
                     let ws = session::folder_of(&s);
+                    if let Some(pc) = &s.pc {
+                        let job = Call::Part { path, offset };
+                        return Ok(match self.on_pc(pc, &session, &ws, job).await {
+                            Ok(v) => vec![reply(
+                                id,
+                                Reply::FolderPart {
+                                    session,
+                                    path: v["path"].as_str().unwrap_or_default().to_owned(),
+                                    offset: v["offset"].as_u64().unwrap_or(0),
+                                    size: v["size"].as_u64().unwrap_or(0),
+                                    data: v["data"].as_str().unwrap_or_default().to_owned(),
+                                },
+                            )],
+                            Err(why) => vec![error(id, ErrorCode::NotFound, why)],
+                        });
+                    }
                     match crate::folders::read(&ws, &path, offset).await {
                         Ok((path, offset, size, bytes)) => vec![reply(
                             id,
@@ -1471,10 +1770,17 @@ fn owner_only(request: &Request) -> bool {
         | Request::PhonePair { .. }
         | Request::PhoneAssign { .. }
         | Request::PhoneRemove { .. }
+        | Request::PcRequests {}
+        | Request::PcAccept { .. }
+        | Request::PcDecline { .. }
+        | Request::PcUnblock { .. }
         | Request::PeopleAdd { .. }
         | Request::PeopleRename { .. }
         | Request::PeopleRemove { .. }
         | Request::PeopleTerms { .. }
+        | Request::PeopleRules { .. }
+        | Request::PeopleChats { .. }
+        | Request::PeopleChat { .. }
         | Request::SigninCreate { .. } => true,
         Request::CommandRun { name, args, .. } => {
             let first = args.split_whitespace().next().unwrap_or_default();

@@ -10,7 +10,22 @@
 !define THRALL_NOTE_KEY "Software\Thrall"
 !define THRALL_NOTE_VALUE "StartAtSignIn"
 
+; The desktop app is closed by the installer itself, but the engine (or a companion PC's runner) it
+; started keeps running on its own, holding thrall.exe open. Stop this copy's one first, so its
+; files can be replaced or removed. (The installer is 32-bit: Get-Process can't see a 64-bit
+; process's path from there, the process list's ExecutablePath can.)
+!macro THRALL_STOP_ENGINE
+  nsExec::Exec `powershell.exe -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process | Where-Object { $$_.Name -eq 'thrall.exe' -and $$_.ExecutablePath -eq '$INSTDIR\thrall.exe' } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force }"`
+  Pop $0
+  Sleep 1000
+!macroend
+
+!macro NSIS_HOOK_PREINSTALL
+  !insertmacro THRALL_STOP_ENGINE
+!macroend
+
 !macro NSIS_HOOK_PREUNINSTALL
+  !insertmacro THRALL_STOP_ENGINE
   ReadRegStr $0 HKCU "${THRALL_RUN_KEY}" "${THRALL_RUN_VALUE}"
   StrCmp $0 '"$INSTDIR\thrall-desktop.exe" --hidden' 0 thrall_not_this_copy
     WriteRegDWORD HKCU "${THRALL_NOTE_KEY}" "${THRALL_NOTE_VALUE}" 1

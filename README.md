@@ -4,6 +4,11 @@
 Thrall reads and changes files, runs commands, browses the web and remembers what matters, while
 asking before anything changes. Use it from the desktop app, a browser, the terminal or your phone.
 
+**One Thrall for the whole household, or a small team.** Set it up once on one PC; everyone else's
+PC joins it in a minute. Each person gets their own chats and memory, their work happens on their
+own PC, and the AI key and the bill stay in one place. Controls per person (a child's account,
+commands off, what you can see) are there when you want them, and off until you do.
+
 > **Preview (0.x).** Early and actively changing; see the [changelog](CHANGELOG.md) for what's new. Windows is used day to day; Linux
 > (Ubuntu, Omarchy) is new; **macOS builds are made automatically but haven't been tested by hand
 > yet: Mac users, your feedback is very welcome** (see [Contributing](CONTRIBUTING.md)).
@@ -20,6 +25,13 @@ asking before anything changes. Use it from the desktop app, a browser, the term
   undone with a rewind, slash commands, skills, MCP servers, scheduled jobs and a personal Home
   conversation with daily check-ins.
 - **People:** a household can share one Thrall; each person has their own sessions and memory.
+- **Companion PCs:** the other PCs at home or at work join that Thrall. A PC finds it on the
+  network, asks to join, and both screens show a code; you let it in as someone's. From then on
+  their chats run their files and commands on their own PC (and from their phone too), with no AI
+  key of their own. Settings → PCs.
+- **Controls per person**, all off until you switch them on: no commands, no changes in system
+  folders, no phones, a child's account with answers fit for their age, and what you can see of
+  their chats (they're always told). Settings → People → Controls.
 
 ## Install
 
@@ -48,6 +60,9 @@ Prefer to build it yourself? See [BUILDING.md](BUILDING.md).
 2. A short welcome offers the **one-minute tour** of the screen (take it again any time from the
    command palette, Ctrl+K → "Take the tour").
 3. To use your phone: Settings → Phones → **Add a phone**, then scan the code with the Android app.
+4. To add another PC: on this one, Settings → PCs → **Let PCs on this network connect** (and
+   People → add the person). On the other PC, install Thrall, choose **Connect to Thrall on
+   another PC**, check the code matches, and let it in here. Over Tailscale, type this PC's name.
 
 ## Local models (no key, no cost)
 

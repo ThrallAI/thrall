@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import type { Engine, ReplyOf } from "../engine";
 import { dollars, monthStart, signInLink } from "../people";
 import { CopyButton } from "./CopyButton";
+import { apply, emptyView } from "../transcript";
 
 type Person = ReplyOf<"people.listed">["items"][number];
 type Devices = ReplyOf<"device.listed">;
@@ -124,6 +125,156 @@ function TermsEditor({
   );
 }
 
+type Rules = NonNullable<Person["rules"]>;
+
+/** How many of a person's controls are on (something turned off for them). */
+function controlsOn(rules: Rules | undefined): number {
+  if (!rules) return 0;
+  return [rules.no_commands, rules.no_system_folders, rules.no_phones, rules.child, rules.oversight].filter(Boolean).length;
+}
+
+type Chats = ReplyOf<"people.chats">;
+type Chat = ReplyOf<"people.chat">;
+
+/** What each oversight level lets the owner see, as the Controls menu says it. */
+const OVERSIGHT_CHOICES: ReadonlyArray<[string, string]> = [
+  ["", "Nothing: their chats are their own"],
+  ["summary", "Chat titles and when"],
+  ["flagged", "Titles, and chats where something was blocked"],
+  ["full", "Every chat"],
+];
+
+/** Someone's chats as their oversight allows, and one being read. */
+function ChatsPanel({ engine, person, onStatus }: { engine: Engine | null; person: Person; onStatus: Status }) {
+  const [chats, setChats] = useState<Chats | null>(null);
+  const [open, setOpen] = useState<Chat | null>(null);
+  useEffect(() => {
+    engine
+      ?.request<"people.chats">({ type: "people.chats", person: person.person })
+      .then(setChats)
+      .catch((e: unknown) => onStatus({ text: said(e), warn: true }));
+  }, [engine, person.person, onStatus]);
+  const read = (session: string) =>
+    engine
+      ?.request<"people.chat">({ type: "people.chat", person: person.person, session })
+      .then(setOpen)
+      .catch((e: unknown) => onStatus({ text: said(e), warn: true }));
+  if (!chats) return <p className="th-set-empty">Loading {person.name}'s chats…</p>;
+  return (
+    <div className="th-people-devices">
+      <p className="th-set-note">{person.name} sees a note in every chat saying what you can see.</p>
+      {chats.items.length === 0 ? <p className="th-set-empty">No chats yet.</p> : null}
+      {chats.items.map((c) => (
+        <div key={c.session} className="th-set-row">
+          <div className="th-set-label">
+            <span>{c.title}</span>
+            <small>
+              {[`Last active ${when(c.updated)}`, c.flagged ? `Flagged: ${c.flagged}` : null].filter(Boolean).join(" · ")}
+            </small>
+          </div>
+          <div className="th-set-value">
+            {c.flagged ? <span className="th-badge is-warn">Flagged</span> : null}
+            {c.readable ? (
+              <button type="button" className="th-btn th-btn-quiet" onClick={() => void read(c.session)}>
+                Read
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ))}
+      {open ? <ChatReader chat={open} name={person.name} onClose={() => setOpen(null)} /> : null}
+    </div>
+  );
+}
+
+/** One of someone's chats, read only: what was said, and the steps Thrall took. */
+function ChatReader({ chat, name, onClose }: { chat: Chat; name: string; onClose: () => void }) {
+  let view = emptyView();
+  for (const frame of chat.events) view = apply(view, frame, name, {});
+  return (
+    <div className="th-reader" role="dialog" aria-label={`${name}'s chat`}>
+      <div className="th-reader-head">
+        <strong>{chat.title || "New chat"}</strong>
+        <button type="button" className="th-btn th-btn-quiet" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      <div className="th-reader-body">
+        {view.items.map((item) =>
+          item.kind === "user" ? (
+            <p key={item.id} className="th-reader-user">
+              <span>{name}</span>
+              {item.text}
+            </p>
+          ) : item.kind === "assistant" ? (
+            <p key={item.id} className="th-reader-thrall">
+              <span>Thrall</span>
+              {item.text}
+            </p>
+          ) : item.kind === "step" ? (
+            <p key={item.id} className="th-reader-step">
+              {item.title}
+              {item.status === "denied" ? " (not allowed)" : ""}
+            </p>
+          ) : null,
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** What Thrall may do for someone, all allowed until switched off. Saved as each one changes. */
+function ControlsEditor({ person, onSave, onClose }: { person: Person; onSave: (rules: Rules) => void; onClose: () => void }) {
+  const rules: Rules = person.rules ?? {};
+  const set = (change: Partial<Rules>) => onSave({ ...rules, ...change });
+  return (
+    <div className="th-people-terms">
+      <p className="th-set-note">Everything is allowed until you switch it off. What's off shows beside {person.name}'s name.</p>
+      <label className="th-people-check">
+        <input type="checkbox" checked={!rules.no_commands} onChange={(e) => set({ no_commands: !e.target.checked })} /> Thrall can run
+        commands for them
+      </label>
+      <label className="th-people-check">
+        <input type="checkbox" checked={!rules.no_system_folders} onChange={(e) => set({ no_system_folders: !e.target.checked })} />{" "}
+        Thrall can change files in system folders for them (Windows, programs, other people's folders)
+      </label>
+      <label className="th-people-check">
+        <input type="checkbox" checked={!rules.no_phones} onChange={(e) => set({ no_phones: !e.target.checked })} /> Their phones can
+        connect
+      </label>
+      <label className="th-people-check">
+        <input type="checkbox" checked={Boolean(rules.child)} onChange={(e) => set({ child: e.target.checked ? "under_13" : undefined })} />{" "}
+        Child's account: answers fit for their age
+      </label>
+      <label className="th-people-field">
+        <span>What you can see of their chats</span>
+        <select className="th-input" value={rules.oversight ?? ""} onChange={(e) => set({ oversight: e.target.value || undefined })}>
+          {OVERSIGHT_CHOICES.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {rules.child ? (
+        <label className="th-people-field">
+          <span>Their age</span>
+          <select className="th-input" value={rules.child} onChange={(e) => set({ child: e.target.value })}>
+            <option value="under_13">Under 13</option>
+            <option value="13_15">13 to 15</option>
+            <option value="16_17">16 or 17</option>
+          </select>
+        </label>
+      ) : null}
+      <div className="th-set-add">
+        <button type="button" className="th-btn th-btn-quiet" onClick={onClose}>
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function People({
   engine,
   onStatus,
@@ -142,6 +293,8 @@ export function People({
   const [link, setLink] = useState<{ person: string; url: string; expires: number } | null>(null);
   const [devices, setDevices] = useState<Devices | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [controlling, setControlling] = useState<string | null>(null);
+  const [overseeing, setOverseeing] = useState<string | null>(null);
 
   const load = useCallback(
     () =>
@@ -203,6 +356,10 @@ export function People({
       },
       ownKey && !p.key_set ? `Saved. ${p.name}'s turns wait until their key is set.` : "Saved.",
     );
+  };
+
+  const saveRules = (p: Person, rules: Rules) => {
+    void change({ type: "people.rules", person: p.person, rules }, `Saved. It applies to ${p.name} from their next step.`);
   };
 
   const saveKey = (p: Person, key: string) => {
@@ -289,7 +446,7 @@ export function People({
     <>
       <Group
         title="People"
-        note="Everyone gets their own chats, files and memory. They use your key and model unless you give them their own, and their tool steps run on this computer. Spending is this month's, from the first; a limit stops their turns when it's reached."
+        note="Everyone gets their own chats, files and memory. They use your key and model unless you give them their own. Their work runs on this computer, or on their own PC once it joins (Settings → PCs). Spending is this month's, from the first; a limit stops their turns when it's reached."
       >
         {people.map((p) => {
           const owner = p.role === "owner";
@@ -300,6 +457,11 @@ export function People({
             p.monthly_limit != null ? `${dollars(spent)} of ${dollars(p.monthly_limit)} this month` : `${dollars(spent)} this month`,
             p.own_key ? (p.key_set ? "their own key" : "their own key (not set)") : null,
             p.model ? p.model : null,
+            p.rules?.no_commands ? "no commands" : null,
+            p.rules?.no_system_folders ? "no system folders" : null,
+            p.rules?.no_phones ? "no phones" : null,
+            p.rules?.child ? "child's account" : null,
+            p.rules?.oversight ? "you can see their chats" : null,
           ]
             .filter(Boolean)
             .join(" · ");
@@ -344,6 +506,26 @@ export function People({
                       >
                         Key & limit
                       </button>
+                      {owner ? null : (
+                        <button
+                          type="button"
+                          className="th-btn th-btn-quiet"
+                          aria-expanded={controlling === p.person}
+                          onClick={() => setControlling(controlling === p.person ? null : p.person)}
+                        >
+                          {controlsOn(p.rules) > 0 ? `Controls (${controlsOn(p.rules)} on)` : "Controls"}
+                        </button>
+                      )}
+                      {!owner && p.rules?.oversight ? (
+                        <button
+                          type="button"
+                          className="th-btn th-btn-quiet"
+                          aria-expanded={overseeing === p.person}
+                          onClick={() => setOverseeing(overseeing === p.person ? null : p.person)}
+                        >
+                          Chats
+                        </button>
+                      ) : null}
                       <button type="button" className="th-btn th-btn-quiet" onClick={() => makeLink(p)}>
                         Sign-in link
                       </button>
@@ -375,6 +557,12 @@ export function People({
                   onKey={(key) => saveKey(p, key)}
                   onClose={() => setEditing(null)}
                 />
+              ) : null}
+              {controlling === p.person && !owner ? (
+                <ControlsEditor person={p} onSave={(rules) => saveRules(p, rules)} onClose={() => setControlling(null)} />
+              ) : null}
+              {overseeing === p.person && !owner && p.rules?.oversight ? (
+                <ChatsPanel engine={engine} person={p} onStatus={onStatus} />
               ) : null}
               {linkFor(p)}
               {devicesFor(p)}

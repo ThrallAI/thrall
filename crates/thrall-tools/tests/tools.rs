@@ -45,6 +45,7 @@ async fn ctx(name: &str) -> (ToolContext, mpsc::UnboundedReceiver<String>) {
             memory: None,
             browser: Default::default(),
             disabled_skills: Vec::new(),
+            pc: None,
         },
         rx,
     )

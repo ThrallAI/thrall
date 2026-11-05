@@ -16,8 +16,8 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::constants::{
-    ENGINE_EXE, ENGINE_EXE_ENV, ENGINE_POLL, ENGINE_START_TIMEOUT, PING_INTERVAL, QUIT_MESSAGE,
-    QUIT_PHONES_ID, TITLE_LOOKUP,
+    ENGINE_ARG, ENGINE_EXE, ENGINE_EXE_ENV, ENGINE_POLL, ENGINE_START_TIMEOUT, PING_INTERVAL,
+    QUIT_MESSAGE, QUIT_PHONES_ID, RUNNER_ARG, TITLE_LOOKUP,
 };
 
 /// Thrall's data folder (honours THRALL_HOME, like every other part of Thrall).
@@ -87,12 +87,26 @@ pub fn quit_message(phones: usize) -> String {
     }
 }
 
-/// Connect to the running engine, starting one if there isn't one.
+/// Whether this PC is a companion of Thrall on another PC (it joined one): then `thrall runner`
+/// stands in for the engine.
+pub fn companion(paths: &Paths) -> bool {
+    paths
+        .home
+        .join(thrall_core::constants::COMPANION_FILE)
+        .exists()
+}
+
+/// Connect to the running engine (or, on a companion PC, its runner), starting it if it isn't
+/// running.
 pub async fn connect_or_start(paths: &Paths) -> anyhow::Result<Connection> {
     if let Ok(conn) = connect(paths).await {
         return Ok(conn);
     }
-    start_engine()?;
+    start_engine(if companion(paths) {
+        RUNNER_ARG
+    } else {
+        ENGINE_ARG
+    })?;
     let started = Instant::now();
     loop {
         tokio::time::sleep(ENGINE_POLL).await;
@@ -106,9 +120,9 @@ pub async fn connect_or_start(paths: &Paths) -> anyhow::Result<Connection> {
     }
 }
 
-/// Start `thrall engine` beside this program, detached so it can outlive the app.
-fn start_engine() -> anyhow::Result<()> {
-    let exe = std::env::var_os(ENGINE_EXE_ENV)
+/// The `thrall` program beside this one.
+pub fn engine_exe() -> PathBuf {
+    std::env::var_os(ENGINE_EXE_ENV)
         .map(PathBuf::from)
         .or_else(|| {
             std::env::current_exe()
@@ -116,13 +130,19 @@ fn start_engine() -> anyhow::Result<()> {
                 .and_then(|p| p.parent().map(|d| d.join(ENGINE_EXE)))
                 .filter(|p| p.exists())
         })
-        .unwrap_or_else(|| PathBuf::from(ENGINE_EXE));
+        .unwrap_or_else(|| PathBuf::from(ENGINE_EXE))
+}
+
+/// Start `thrall <what>` (the engine, or a companion's runner) beside this program, detached so it
+/// can outlive the app.
+fn start_engine(what: &str) -> anyhow::Result<()> {
+    let exe = engine_exe();
     let mut command = std::process::Command::new(&exe);
     if let Some(home) = Paths::user_home() {
         command.current_dir(home);
     }
     command
-        .arg("engine")
+        .arg(what)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());

@@ -3,6 +3,7 @@
 pub mod agents;
 pub mod background;
 pub mod browser;
+pub mod companion;
 pub mod constants;
 pub mod diff;
 pub mod documents;

@@ -385,6 +385,60 @@ turns work in (the one the engine was started in).
 | `folder.list {session, path}` | `folder.listed {session, path, items: [{name, folder?, size, modified}], more?}`: folders first, then files, each newest first; at most 500 entries (`more` when some were left out). `path` "" is the folder itself |
 | `folder.read {session, path, offset}` | `folder.part {session, path, offset, size, data}`: like `file.part`, up to 512 KiB of base64 from `offset`. A file that isn't at `path` is looked for a few folders down (Thrall often names a file without the folder it made it in): one match is read and its real `path` returned; several is a `not_found` error naming them |
 
+## 13a1. Companion PCs
+
+A companion is a PC at home or at work that joins this Thrall as someone's: the person uses Thrall
+there, and (with the runner, coming next) their work runs on that PC. Only while `remote.pcs` is on
+(off by default) the engine listens on every network this computer is on (`remote.pc_port`, 7420),
+on the same path and with the same encrypted link as phones, and answers companions looking for it.
+
+**Finding Thrall.** A companion broadcasts the bytes `thrall-find-v1` to UDP port 7421; the engine
+answers `{"thrall": 1, "name": "<computer name>", "port": <PC port>}`. Over Tailscale (where
+broadcasts don't reach) the companion is given the computer's name instead.
+
+**Asking to join.** The companion's first binary message is `3`, then
+`Noise_XX_25519_ChaChaPoly_BLAKE2s` message 1 (prologue `thrall-remote-v1`). The engine answers
+with message 2, and the companion's message 3 carries `{"name": "<computer name>"}`. Both sides
+then show the same 6-digit code: the first 4 bytes of the handshake hash, big-endian, mod
+1,000,000, as `483 912`. A man in the middle makes two different handshakes, so the codes wouldn't
+match. The link stays open while the owner decides (up to 10 minutes); the answer is one encrypted
+frame, `{"approved": true, "device": "<id>"}` or `{"approved": false}`, and the link closes. An
+accepted PC then connects like a paired phone (`2`, `Noise_IK`), as the person it was given to.
+A PC that already joined is answered `approved` straight away; a blocked one `false` without the
+owner being asked. At most 5 PCs wait at once; the phone listener never takes requests to join.
+
+Owner only, on this computer (anything else: `unauthorized`):
+
+| Request | Reply |
+|---|---|
+| `pc.requests {}` | `pc.requests {items: [{request, name, code, address, at}], blocked: [{blocked, name, at}], pcs: {enabled, listening, port, name}}` |
+| `pc.accept {request, person, code?}` | `pc.requests`; the PC joins as `person`'s. `code`, when given, must be the one the PC shows (spaces don't matter): else `invalid` |
+| `pc.decline {request, block?}` | `pc.requests`; the PC is told no. With `block` it can't ask again |
+| `pc.unblock {blocked}` | `pc.requests`; that PC may ask again |
+
+`pc.asked {}` (an event with an empty `session`) tells the owner's clients on this computer that
+the list changed. Joined PCs are listed by `phone.list` with `kind: "pc"`, and given to someone else
+or removed with `phone.assign` and `phone.remove`.
+**The runner.** A joined PC runs `thrall runner`: it connects like a paired phone (`hello` with
+kind `companion`), then sends `runner.ready {home}` (its Thrall folder). Sessions started on that
+PC, or by someone (not the owner) whose PC joined, remember the PC (`pc`) and work in its folders.
+Their file, document and command tools (read and write files, list, search, documents, Office,
+PDFs, archives, the shell, git, system info, the clipboard) go to the PC as `runner.call` events
+(empty `session`) with `{call, person, in_session, workspace, job}`; `job.phase` is `check` (why it
+can't work, and what it would do: `{precheck?, effect}`), `run` (the tool's output, with any files
+it made carried as base64), `stop`, `read`, `write`, `list`, `part`, `places` or `make_folder`
+(the Files view and folder picker). The runner answers each with `runner.done {call, result? |
+error?}` and streams a command's lines with `runner.output {call, text}`. Everything else (the AI,
+the web, memory, pictures, speech, schedules) runs on the Thrall PC. When the PC isn't connected
+those tools fail with a plain reason; nothing runs on the Thrall PC instead. Home for someone whose
+PC is connected moves to `Home` in the PC's Thrall folder.
+
+On the PC, the runner also stands in for the local engine: it serves the web app on 127.0.0.1,
+writes `engine.json` and an access token, and carries each window's connection to the Thrall PC
+(uploads and downloads too). `signin.create`, `engine.stop` and `phone.list` are answered on the
+PC. `thrall join [name]` (the desktop app's "Connect to Thrall on another PC") finds Thrall on the
+network and asks to join; `thrall leave` forgets it.
+
 ## 13b. People
 
 Owner only (anyone else gets `unauthorized`). Each answer is the whole list again.
@@ -396,6 +450,9 @@ Owner only (anyone else gets `unauthorized`). Each answer is the whole list agai
 | `people.rename {person, name}` | `people.listed` |
 | `people.remove {person}` | `people.listed`; they can't connect again and their phones are forgotten (their links close). Their sessions and files are kept. The owner can't be removed |
 | `people.terms {person, own_key, model?, monthly_limit?}` | `people.listed`. Owner only. `own_key`: their turns use their own AI key, not the owner's; `model`: their own model; `monthly_limit`: the most their turns may cost in a calendar month (US$). The owner can set only a limit on themselves (a guard against runaway spending) |
+| `people.rules {person, rules: {no_commands?, no_system_folders?, no_phones?, child?}}` | `people.listed`. Owner only, never the owner's own. Everything is allowed until switched off: commands that are off never run or ask; edits into the system's folders (Windows, programs, other people's user folders) are refused; that person's phones are disconnected and refused; `child` (`under_13`, `13_15`, `16_17`) adds age guidance to their turns. Each person's `rules` are in `people.listed` |
+| `people.chats {person}` | `people.chats {person, level, items: [{session, title, created, updated, flagged?, readable?}]}`. Owner only, and only when that person's `rules.oversight` is set (`summary`: titles and when; `flagged`: those, and chats flagged because something wasn't allowed are readable; `full`: every chat is readable). Never the owner's own |
+| `people.chat {person, session}` | `people.chat {person, session, title, events}`: the chat's stored events, as `session.open` replays them, when `readable`. Each read goes in the audit log (`oversight`). The person's `welcome` carries `user.oversight` and `user.overseer`, and clients show it in every chat |
 | `people.key {person?, key?}` | `ack`. Keeps (or, without `key`, forgets) a person's own AI key: your own, or anyone's for the owner (others: `unauthorized`). Write-only; `people.listed` says only `key_set`. The owner's key is set with `thrall key set` |
 
 A turn by someone on their own key before it's set fails with `provider_key_missing`; at their

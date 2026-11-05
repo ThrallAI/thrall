@@ -89,9 +89,34 @@
         color: var(--ink);
         user-select: all;
       }
-      #why {
+      #why,
+      #join-why {
         color: var(--danger);
         min-height: 24px;
+      }
+      .quiet {
+        background: transparent;
+        color: var(--accent);
+        border: 1px solid var(--line);
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+      }
+      .row input {
+        flex: 1;
+        min-width: 0;
+      }
+      #found {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      #code {
+        font: 600 32px/40px "Cascadia Mono", Consolas, ui-monospace, monospace;
+        letter-spacing: 0.08em;
+        color: var(--ink);
+        text-align: center;
       }
     </style>
   </head>
@@ -109,6 +134,27 @@
       <p>It's kept in this computer's keychain, never in a file, and only sent to OpenRouter.</p>
       <button id="save" type="submit">Start Thrall</button>
       <p id="why" role="alert"></p>
+      <button id="to-join" class="quiet" type="button">Or connect to Thrall on another PC</button>
+    </form>
+    <form id="join" hidden>
+      <p>
+        Thrall already set up on another PC at home or at work? This PC can join it: you use Thrall
+        here, your work happens on this PC, and no key is needed here.
+      </p>
+      <button id="look" type="button">Look for Thrall</button>
+      <div id="found"></div>
+      <label for="where">Or its PC's name or address</label>
+      <div class="row">
+        <input id="where" autocomplete="off" spellcheck="false" placeholder="living-room-pc" />
+        <button id="ask" type="submit">Join</button>
+      </div>
+      <p id="waiting" hidden>
+        Asking… The owner sees this code on the Thrall PC. Check it's the same there, then they let
+        this PC in.
+      </p>
+      <p id="code" hidden></p>
+      <p id="join-why" role="alert"></p>
+      <button id="to-key" class="quiet" type="button">Back</button>
     </form>
     <script>
       // First run: the desktop app asks for this when there's no AI key yet (the engine can't
@@ -120,6 +166,102 @@
         form.hidden = false;
         document.getElementById("key").focus();
       };
+      var invokeApp = function () {
+        return window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
+      };
+      function swap(from, to) {
+        document.getElementById(from).hidden = true;
+        document.getElementById(to).hidden = false;
+      }
+      document.getElementById("to-join").addEventListener("click", function () {
+        swap("setup", "join");
+        document.getElementById("msg").textContent = "Connect to Thrall on another PC";
+      });
+      document.getElementById("to-key").addEventListener("click", function () {
+        swap("join", "setup");
+        document.getElementById("msg").textContent = "Welcome. One thing first:";
+      });
+      // The Thrall this PC joined doesn't let it in any more: leave it, then join again.
+      var leaving = false;
+      window.thrallRejoin = function (message) {
+        if (!document.getElementById("join").hidden) return;
+        leaving = true;
+        document.getElementById("setup").hidden = true;
+        document.getElementById("join").hidden = false;
+        document.getElementById("msg").textContent = message + ". Join it again:";
+      };
+      // While this PC asks to join, the app shows the code it and the Thrall PC both show.
+      window.thrallJoinCode = function (code) {
+        document.getElementById("waiting").hidden = false;
+        var shown = document.getElementById("code");
+        shown.textContent = code;
+        shown.hidden = false;
+      };
+      function join(address) {
+        var invoke = invokeApp();
+        var why = document.getElementById("join-why");
+        if (!invoke) {
+          why.textContent = "This page can only join inside Thrall's desktop app.";
+          return;
+        }
+        why.textContent = "";
+        document.getElementById("ask").disabled = true;
+        var first = leaving ? invoke("companion_leave") : Promise.resolve();
+        first
+          .then(function () {
+            leaving = false;
+            return invoke("companion_join", { address: address });
+          })
+          .then(function () {
+            document.getElementById("join").hidden = true;
+            document.getElementById("msg").textContent = "Joined. Starting Thrall…";
+          })
+          .catch(function (err) {
+            why.textContent = String(err);
+            document.getElementById("waiting").hidden = true;
+            document.getElementById("code").hidden = true;
+            document.getElementById("ask").disabled = false;
+          });
+      }
+      document.getElementById("look").addEventListener("click", function () {
+        var invoke = invokeApp();
+        var look = document.getElementById("look");
+        var found = document.getElementById("found");
+        var why = document.getElementById("join-why");
+        if (!invoke) return;
+        look.disabled = true;
+        look.textContent = "Looking…";
+        why.textContent = "";
+        invoke("companion_find")
+          .then(function (list) {
+            found.textContent = "";
+            if (!list.length) {
+              why.textContent =
+                "No Thrall here lets PCs join yet. On the Thrall PC: Settings → PCs → Let PCs on this network connect. Over Tailscale, type its name below.";
+            }
+            list.forEach(function (f) {
+              var b = document.createElement("button");
+              b.type = "button";
+              b.textContent = "Join Thrall on " + f.name;
+              b.addEventListener("click", function () {
+                join(f.address);
+              });
+              found.appendChild(b);
+            });
+          })
+          .catch(function (err) {
+            why.textContent = String(err);
+          })
+          .finally(function () {
+            look.disabled = false;
+            look.textContent = "Look again";
+          });
+      });
+      document.getElementById("join").addEventListener("submit", function (e) {
+        e.preventDefault();
+        var where = document.getElementById("where").value.trim();
+        if (where) join(where);
+      });
       document.getElementById("setup").addEventListener("submit", function (e) {
         e.preventDefault();
         var save = document.getElementById("save");

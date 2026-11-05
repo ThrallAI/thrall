@@ -34,11 +34,12 @@ use tauri_plugin_notification::NotificationExt;
 use tokio::sync::mpsc;
 
 use crate::constants::{
-    DEFAULT_LOG_LEVEL, DESKTOP_QUERY, DONE_HOLD, HIDDEN_ARG, LOG_FILE_PREFIX, LOG_LEVEL_ENV,
-    MAIN_WINDOW, MENU_AUTOSTART, MENU_OPEN, MENU_QUIT, MENU_UPDATE, NOTE_TAP, NOTES_REMEMBERED,
-    OPEN_SESSION_JS, QUIT_CANCEL, QUIT_KEEP, QUIT_PHONES_WAIT, QUIT_STOP, RECONNECT_DELAY,
-    SETUP_RECHECK, SHORTCUT_RECHECK, SHORTCUT_TAKEN, SHORTCUT_TAKEN_TITLE, SHOW_SETUP_JS,
-    TITLE_LOOKUP, TRAY_FRAME, TRAY_ID, TRAY_PX, UPDATE_CHECK_LABEL,
+    DEFAULT_LOG_LEVEL, DESKTOP_QUERY, DONE_HOLD, HIDDEN_ARG, JOIN_CODE_JS, LOG_FILE_PREFIX,
+    LOG_LEVEL_ENV, MAIN_WINDOW, MENU_AUTOSTART, MENU_OPEN, MENU_QUIT, MENU_UPDATE, NOTE_TAP,
+    NOTES_REMEMBERED, OPEN_SESSION_JS, QUIT_CANCEL, QUIT_KEEP, QUIT_PHONES_WAIT, QUIT_STOP,
+    RECONNECT_DELAY, REJOIN_JS, SETUP_RECHECK, SHORTCUT_RECHECK, SHORTCUT_TAKEN,
+    SHORTCUT_TAKEN_TITLE, SHOW_SETUP_JS, TITLE_LOOKUP, TRAY_FRAME, TRAY_ID, TRAY_PX,
+    UPDATE_CHECK_LABEL,
 };
 use crate::engine::Incoming;
 use crate::mark::Activity;
@@ -69,6 +70,8 @@ struct Shared {
     update_offered: Mutex<Option<String>>,
     /// An update is downloading or installing: the engine isn't started again meanwhile.
     updating: AtomicBool,
+    /// The app's own loading page, to go back to when a companion PC has to join again.
+    loading_page: Mutex<Option<tauri::Url>>,
 }
 
 /// Whether the AI key Thrall needs is there (in the environment or the system keychain).
@@ -95,6 +98,131 @@ fn save_key(app: AppHandle, key: String) -> Result<(), String> {
     tracing::info!("AI key saved from the first-run setup");
     app.state::<Shared>().key_saved.notify_one();
     Ok(())
+}
+
+/// `thrall join …` with plain-line output, run without a console window.
+fn join_command(args: &[&str]) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(engine::engine_exe());
+    command
+        .arg("join")
+        .args(args)
+        .arg("--machine")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+    #[cfg(windows)]
+    command.creation_flags(thrall_core::constants::CREATE_NO_WINDOW);
+    command
+}
+
+/// First run, from the loading page: the Thralls on this network that let PCs join, as
+/// `[{address, name}]`.
+#[tauri::command]
+async fn companion_find() -> Result<Vec<serde_json::Value>, String> {
+    let out = join_command(&["--find"])
+        .output()
+        .await
+        .map_err(|e| format!("Couldn't look for Thrall: {e}"))?;
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.strip_prefix("found "))
+        .filter_map(|l| l.split_once('\t'))
+        .map(|(address, name)| serde_json::json!({ "address": address, "name": name }))
+        .collect())
+}
+
+/// First run, from the loading page: ask the Thrall at `address` to let this PC join, showing the
+/// code on the page while its owner decides. Once in, this PC starts as its companion.
+#[tauri::command]
+async fn companion_join(app: AppHandle, address: String) -> Result<(), String> {
+    use tokio::io::AsyncBufReadExt;
+    let mut child = join_command(&[address.trim()])
+        .spawn()
+        .map_err(|e| format!("Couldn't ask to join: {e}"))?;
+    let stdout = child.stdout.take().ok_or("Couldn't ask to join.")?;
+    let mut lines = tokio::io::BufReader::new(stdout).lines();
+    let mut outcome = Err("Thrall stopped asking before an answer came.".to_owned());
+    while let Ok(Some(line)) = lines.next_line().await {
+        if let Some(code) = line.strip_prefix("code ") {
+            if let (Some(w), Ok(js)) = (
+                app.get_webview_window(MAIN_WINDOW),
+                serde_json::to_string(code),
+            ) {
+                let _ = w.eval(format!(
+                    "window.{JOIN_CODE_JS} && window.{JOIN_CODE_JS}({js});"
+                ));
+            }
+        } else if line == "joined" {
+            outcome = Ok(());
+        } else if line == "declined" {
+            outcome = Err("The owner said no.".to_owned());
+        } else if let Some(why) = line.strip_prefix("error ") {
+            outcome = Err(why.to_owned());
+        }
+    }
+    let _ = child.wait().await;
+    if outcome.is_ok() {
+        tracing::info!("this PC joined Thrall on another PC");
+        app.state::<Shared>().key_saved.notify_one();
+    }
+    outcome
+}
+
+/// From the loading page, before joining again: stop being a companion of the Thrall that no
+/// longer lets this PC in (`thrall leave` stops the runner and forgets it).
+#[tauri::command]
+async fn companion_leave() -> Result<(), String> {
+    let mut command = tokio::process::Command::new(engine::engine_exe());
+    command
+        .arg("leave")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    #[cfg(windows)]
+    command.creation_flags(thrall_core::constants::CREATE_NO_WINDOW);
+    let out = command
+        .output()
+        .await
+        .map_err(|e| format!("Couldn't leave: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_owned())
+    }
+}
+
+/// A companion PC that isn't let in any more: back to the loading page, offering to join again,
+/// until it has.
+async fn offer_rejoin(app: &AppHandle, why: &str) {
+    if let Some(w) = app.get_webview_window(MAIN_WINDOW) {
+        let home = app
+            .state::<Shared>()
+            .loading_page
+            .lock()
+            .ok()
+            .and_then(|p| p.clone());
+        if let Some(home) = home
+            && w.url().is_ok_and(|now| now.origin() != home.origin())
+        {
+            let _ = w.navigate(home);
+        }
+    }
+    show(app);
+    let Ok(js) = serde_json::to_string(why) else {
+        return;
+    };
+    loop {
+        if let Some(w) = app.get_webview_window(MAIN_WINDOW) {
+            let _ = w.eval(format!("window.{REJOIN_JS} && window.{REJOIN_JS}({js});"));
+        }
+        let shared = app.state::<Shared>();
+        tokio::select! {
+            () = shared.key_saved.notified() => return,
+            () = tokio::time::sleep(SETUP_RECHECK) => {}
+        }
+    }
 }
 
 /// The startup entry for this app, from beside it (`None` where Windows can't start it).
@@ -223,9 +351,20 @@ fn main() {
                 .build(),
         )
         .manage(Shared::default())
-        .invoke_handler(tauri::generate_handler![save_key])
+        .invoke_handler(tauri::generate_handler![
+            save_key,
+            companion_find,
+            companion_join,
+            companion_leave
+        ])
         .setup(|app| {
             build_tray(app.handle())?;
+            if let Some(w) = app.get_webview_window(MAIN_WINDOW)
+                && let Ok(url) = w.url()
+                && let Ok(mut page) = app.state::<Shared>().loading_page.lock()
+            {
+                *page = Some(url);
+            }
             let clicked = app.handle().clone();
             let _ = app.notification().on_action(move |performed| {
                 if performed.action_id() == NOTE_TAP
@@ -468,7 +607,12 @@ async fn run_engine(app: AppHandle) {
         .provider
         .model
         .starts_with(thrall_core::constants::LOCAL_MODEL_PREFIX);
-    while !local && !has_key() && engine::connect(&paths).await.is_err() {
+    // A companion PC uses the AI of the Thrall it joined: it needs no key of its own.
+    while !local
+        && !has_key()
+        && !engine::companion(&paths)
+        && engine::connect(&paths).await.is_err()
+    {
         if !shown {
             show(&app);
             shown = true;
@@ -586,6 +730,15 @@ async fn run_engine(app: AppHandle) {
                 if let Some(tray) = app.tray_by_id(TRAY_ID) {
                     let _ = tray.set_tooltip(Some("Thrall · Reconnecting"));
                 }
+            }
+            // A companion PC its Thrall doesn't let in any more: offer to join again instead of
+            // trying the same thing over and over.
+            Err(e)
+                if engine::companion(&paths)
+                    && e.to_string().contains(thrall_core::constants::NOT_JOINED) =>
+            {
+                tracing::warn!(%e, "the Thrall this PC joined doesn't let it in");
+                offer_rejoin(&app, thrall_core::constants::NOT_JOINED).await;
             }
             Err(e) => {
                 loading_message(&app, &format!("{e}. Trying again…"));

@@ -39,6 +39,10 @@ pub trait Store: Send + Sync {
         terms: &'a PersonTerms,
     ) -> StoreFuture<'a, bool>;
 
+    /// Set what the owner allows a person (`rules`: JSON). `false` when there's no such person (or
+    /// they were removed).
+    fn set_person_rules<'a>(&'a self, user_id: &'a str, rules: &'a str) -> StoreFuture<'a, bool>;
+
     /// Remove a person: they can't connect any more, but everything they made is kept. `false`
     /// when there's no such person (or they were already removed).
     fn remove_person<'a>(&'a self, user_id: &'a str, at: i64) -> StoreFuture<'a, bool>;
@@ -315,6 +319,22 @@ pub trait Store: Send + Sync {
         topic: &'a str,
         content: &'a str,
         at: i64,
+    ) -> StoreFuture<'a, ()>;
+
+    /// Flag a session for the owner: its person tried something their controls don't allow.
+    fn flag_session<'a>(
+        &'a self,
+        user_id: &'a str,
+        session_id: &'a str,
+        why: &'a str,
+    ) -> StoreFuture<'a, ()>;
+
+    /// Set the companion PC a session's tools run on (`None`: this computer).
+    fn set_session_pc<'a>(
+        &'a self,
+        user_id: &'a str,
+        session_id: &'a str,
+        pc: Option<&'a str>,
     ) -> StoreFuture<'a, ()>;
 
     /// Set a session's permission mode.

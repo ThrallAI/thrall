@@ -610,9 +610,22 @@ async fn run_turn(
     // Their own key is there if they use one, and they're under their monthly limit; refused
     // before anything is recorded.
     let warning = crate::people::before_turn(state).await?;
+    crate::people::load_rules(state).await?;
+    // Home for someone whose PC is connected works on that PC.
+    let moved = crate::companions::home_on_pc(state, session).await?;
+    let session = moved.as_ref().unwrap_or(session);
     let session_id = session.id.as_str();
     let user_id = state.user_id.as_str();
     let workspace = crate::session::folder_of(session);
+    // A session that works on a companion PC sends its PC tools there, and its project
+    // instructions and skills come from there.
+    state.companions.bind(session_id, session.pc.as_deref());
+    if let Some(pc) = &session.pc {
+        state
+            .companions
+            .load_project(pc, user_id, session_id, &workspace.to_string_lossy())
+            .await;
+    }
     let mut mode = Mode::parse(&session.mode).unwrap_or_default();
     let turn_id = new_id(id_prefix::TURN);
     let emitter = Emitter::new(state, session_id, &turn_id, sink, true);
@@ -1384,7 +1397,9 @@ async fn context(
         system.push_str("\n\n");
         system.push_str(&rules);
     }
-    system.push_str(&crate::extras::standing_instructions(state, workspace));
+    system.push_str(&crate::extras::standing_instructions(
+        state, session_id, workspace,
+    ));
     system.push_str(&crate::extras::helper_types(state, workspace));
     messages.push(ChatMessage::new(ChatRole::System, system));
     // Old big tool results go shortened when trimming is on (the stored ones keep everything).

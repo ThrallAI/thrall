@@ -74,7 +74,7 @@ fn dollars_to_micros(cost: Option<f64>) -> Option<i64> {
 /// The columns `session_from_row` reads, as a literal so queries stay compile-time strings.
 macro_rules! session_columns {
     () => {
-        "id, user_id, title, workspace, mode, state, last_seq, created_at, updated_at, group_id, pinned_at, home_day"
+        "id, user_id, title, workspace, mode, state, last_seq, created_at, updated_at, group_id, pinned_at, home_day, pc, flagged"
     };
 }
 
@@ -89,6 +89,7 @@ fn person_from_row(row: &SqliteRow) -> Result<Person, StoreError> {
         own_key: row.try_get("own_key")?,
         model: row.try_get("model")?,
         monthly_limit_micros: row.try_get("monthly_limit_micros")?,
+        rules: row.try_get("rules")?,
     })
 }
 
@@ -116,6 +117,8 @@ fn session_from_row(row: &SqliteRow) -> Result<Session, StoreError> {
         group_id: row.try_get("group_id")?,
         pinned_at: row.try_get("pinned_at")?,
         home_day: row.try_get("home_day")?,
+        pc: row.try_get("pc")?,
+        flagged: row.try_get("flagged")?,
     })
 }
 
@@ -159,7 +162,7 @@ impl Store for SqliteStore {
     fn get_person<'a>(&'a self, user_id: &'a str) -> StoreFuture<'a, Option<Person>> {
         Box::pin(async move {
             let row = sqlx::query(
-                "SELECT id, name, role, plan, created_at, removed_at, own_key, model, \n                 monthly_limit_micros FROM users WHERE id = ?",
+                "SELECT id, name, role, plan, created_at, removed_at, own_key, model, \n                 monthly_limit_micros, rules FROM users WHERE id = ?",
             )
             .bind(user_id)
             .fetch_optional(&self.pool)
@@ -171,7 +174,7 @@ impl Store for SqliteStore {
     fn list_people(&self) -> StoreFuture<'_, Vec<Person>> {
         Box::pin(async move {
             let rows = sqlx::query(
-                "SELECT id, name, role, plan, created_at, removed_at, own_key, model, \n                 monthly_limit_micros FROM users \
+                "SELECT id, name, role, plan, created_at, removed_at, own_key, model, \n                 monthly_limit_micros, rules FROM users \
                  WHERE removed_at IS NULL ORDER BY created_at, id",
             )
             .fetch_all(&self.pool)
@@ -217,6 +220,18 @@ impl Store for SqliteStore {
             .bind(user_id)
             .execute(&self.pool)
             .await?;
+            Ok(done.rows_affected() > 0)
+        })
+    }
+
+    fn set_person_rules<'a>(&'a self, user_id: &'a str, rules: &'a str) -> StoreFuture<'a, bool> {
+        Box::pin(async move {
+            let done =
+                sqlx::query("UPDATE users SET rules = ? WHERE id = ? AND removed_at IS NULL")
+                    .bind(rules)
+                    .bind(user_id)
+                    .execute(&self.pool)
+                    .await?;
             Ok(done.rows_affected() > 0)
         })
     }
@@ -1239,6 +1254,43 @@ impl Store for SqliteStore {
             .bind(at)
             .execute(&self.pool)
             .await?;
+            Ok(())
+        })
+    }
+
+    fn flag_session<'a>(
+        &'a self,
+        user_id: &'a str,
+        session_id: &'a str,
+        why: &'a str,
+    ) -> StoreFuture<'a, ()> {
+        Box::pin(async move {
+            sqlx::query("UPDATE sessions SET flagged = ? WHERE id = ? AND user_id = ?")
+                .bind(why)
+                .bind(session_id)
+                .bind(user_id)
+                .execute(&self.pool)
+                .await?;
+            Ok(())
+        })
+    }
+
+    fn set_session_pc<'a>(
+        &'a self,
+        user_id: &'a str,
+        session_id: &'a str,
+        pc: Option<&'a str>,
+    ) -> StoreFuture<'a, ()> {
+        Box::pin(async move {
+            let done = sqlx::query("UPDATE sessions SET pc = ? WHERE id = ? AND user_id = ?")
+                .bind(pc)
+                .bind(session_id)
+                .bind(user_id)
+                .execute(&self.pool)
+                .await?;
+            if done.rows_affected() == 0 {
+                return Err(StoreError::NotFound("session"));
+            }
             Ok(())
         })
     }

@@ -3,6 +3,7 @@
 
 mod attach;
 mod cli;
+mod companion;
 mod constants;
 mod discover;
 mod engine;
@@ -92,6 +93,13 @@ async fn dispatch(cli: Cli) -> anyhow::Result<ExitCode> {
         Some(Command::Key(KeyCommand::Status)) => key::status(&config),
         Some(Command::Sessions { limit }) => sessions::list(&paths, limit).await,
         Some(Command::Open) => open::run(&paths, &config).await,
+        Some(Command::Join {
+            address,
+            find,
+            machine,
+        }) => companion::join(&paths, address, find, machine).await,
+        Some(Command::Runner) => companion::runner(&paths, &config.folders.new_in).await,
+        Some(Command::Leave) => companion::leave(&paths).await,
         Some(Command::RemoveEverything) => remove::run(&paths, &config).await,
         Some(Command::Paths) => {
             println!("{} {}", constants::APP_NAME, env!("CARGO_PKG_VERSION"));

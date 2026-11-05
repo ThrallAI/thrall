@@ -6,6 +6,7 @@ pub mod checkpoints;
 pub mod checks;
 pub mod commands;
 pub mod compaction;
+pub mod companions;
 pub mod constants;
 pub mod error;
 pub mod experience;

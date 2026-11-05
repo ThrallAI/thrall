@@ -502,6 +502,103 @@ export type RequestFrame = {
       type: "phone.remove";
     }
   | {
+      type: "pc.requests";
+    }
+  | {
+      /**
+       * The code the PC shows, typed by the owner.
+       */
+      code?: string | null;
+      /**
+       * Whose PC it is (a person's id).
+       */
+      person: string;
+      /**
+       * The request's id.
+       */
+      request: string;
+      type: "pc.accept";
+    }
+  | {
+      /**
+       * Block it from asking again.
+       */
+      block?: boolean;
+      /**
+       * The request's id.
+       */
+      request: string;
+      type: "pc.decline";
+    }
+  | {
+      /**
+       * The PC's Thrall folder (where its sessions work unless one picks another).
+       */
+      home: string;
+      type: "runner.ready";
+    }
+  | {
+      /**
+       * The call's id.
+       */
+      call: string;
+      /**
+       * The new text.
+       */
+      text: string;
+      type: "runner.output";
+    }
+  | {
+      /**
+       * The call's id.
+       */
+      call: string;
+      /**
+       * Why it didn't, when it didn't.
+       */
+      error?: string | null;
+      /**
+       * Its answer, when it worked.
+       */
+      result?: {
+        [k: string]: unknown;
+      };
+      type: "runner.done";
+    }
+  | {
+      /**
+       * Their id.
+       */
+      person: string;
+      rules: PersonRules;
+      type: "people.rules";
+    }
+  | {
+      /**
+       * Their id.
+       */
+      person: string;
+      type: "people.chats";
+    }
+  | {
+      /**
+       * Their id.
+       */
+      person: string;
+      /**
+       * The chat.
+       */
+      session: string;
+      type: "people.chat";
+    }
+  | {
+      /**
+       * The blocked PC's id.
+       */
+      blocked: string;
+      type: "pc.unblock";
+    }
+  | {
       /**
        * Count each person's spending from this moment (Unix ms), e.g. the start of this month
        * where the asker is; absent: all of it.
@@ -982,6 +1079,52 @@ export type ReplyFrame = {
     }
   | {
       /**
+       * Their chats, most recently active first.
+       */
+      items: OverseenChat[];
+      /**
+       * What the owner can see (`summary`, `flagged`, `full`).
+       */
+      level: string;
+      /**
+       * Whose.
+       */
+      person: string;
+      type: "people.chats";
+    }
+  | {
+      /**
+       * Its events, oldest first.
+       */
+      events: EventFrame[];
+      /**
+       * Whose.
+       */
+      person: string;
+      /**
+       * The chat.
+       */
+      session: string;
+      /**
+       * Its title.
+       */
+      title: string;
+      type: "people.chat";
+    }
+  | {
+      /**
+       * PCs blocked from asking, newest first.
+       */
+      blocked: BlockedPcInfo[];
+      /**
+       * PCs asking to join now, oldest first.
+       */
+      items: PcRequestInfo[];
+      pcs: PcLinkInfo;
+      type: "pc.requests";
+    }
+  | {
+      /**
        * When the code stops working, Unix ms.
        */
       expires: number;
@@ -1140,9 +1283,440 @@ export type ReplyFrame = {
     }
 );
 /**
- * Something that happened in a session.
+ * One frame the engine sends about a session: the envelope fields plus the event itself.
  */
 export type EventFrame = {
+  /**
+   * When it happened, Unix milliseconds.
+   */
+  at: number;
+  /**
+   * Position in the session's event log. Absent on live-only events (deltas), which are never
+   * stored: after a reconnect the client gets the matching `message.completed` instead.
+   */
+  seq?: number | null;
+  /**
+   * Session the event belongs to.
+   */
+  session: string;
+  /**
+   * Protocol major version.
+   */
+  v: number;
+} & EventFrame1;
+export type EventFrame1 =
+  | {
+      /**
+       * Nobody started it: a scheduled job or a check-in (clients don't announce it as the
+       * person's own work finishing).
+       */
+      scheduled?: boolean;
+      /**
+       * Turn id.
+       */
+      turn: string;
+      type: "turn.started";
+    }
+  | {
+      /**
+       * How it ended.
+       */
+      status: "done" | "interrupted" | "failed";
+      /**
+       * Turn id.
+       */
+      turn: string;
+      type: "turn.completed";
+      usage: Usage;
+    }
+  | {
+      /**
+       * Turn id.
+       */
+      turn: string;
+      type: "turn.retracted";
+    }
+  | {
+      /**
+       * Message id.
+       */
+      message: string;
+      /**
+       * Who wrote it.
+       */
+      role: "user" | "assistant";
+      /**
+       * Turn id.
+       */
+      turn: string;
+      type: "message.started";
+    }
+  | {
+      /**
+       * Message id.
+       */
+      message: string;
+      /**
+       * Text to append.
+       */
+      text: string;
+      type: "message.delta";
+    }
+  | {
+      /**
+       * Message id.
+       */
+      message: string;
+      /**
+       * Text to append.
+       */
+      text: string;
+      type: "reasoning.delta";
+    }
+  | {
+      /**
+       * Files attached to it (user messages).
+       */
+      files?: FileRef[];
+      /**
+       * Message id.
+       */
+      message: string;
+      /**
+       * Full text; clients replace what they streamed with this.
+       */
+      text: string;
+      type: "message.completed";
+    }
+  | {
+      /**
+       * The helper's own step when a helper took this step: clients list it under that one.
+       * Several helpers can run at once, so their steps interleave.
+       */
+      helper?: string | null;
+      /**
+       * Step id.
+       */
+      step: string;
+      /**
+       * Plain-language title: "Reading src/main.rs".
+       */
+      title: string;
+      /**
+       * Tool name.
+       */
+      tool: string;
+      /**
+       * Turn id.
+       */
+      turn: string;
+      type: "step.started";
+    }
+  | {
+      /**
+       * Step id.
+       */
+      step: string;
+      /**
+       * Text to append.
+       */
+      text: string;
+      type: "step.output";
+    }
+  | {
+      /**
+       * The change, for file edits.
+       */
+      diff?: Diff | null;
+      /**
+       * Files the step made (pictures), fetched with `GET /v1/files/{file}`.
+       */
+      files?: FileRef[];
+      /**
+       * How it went.
+       */
+      status: "ok" | "error" | "warn" | "denied" | "cancelled";
+      /**
+       * Step id.
+       */
+      step: string;
+      /**
+       * One-line plain-language result.
+       */
+      summary: string;
+      type: "step.completed";
+    }
+  | {
+      /**
+       * The tasks, in order.
+       */
+      items: TaskItem[];
+      type: "tasks.updated";
+    }
+  | {
+      /**
+       * The answers on offer.
+       */
+      choices: PermissionChoice[];
+      /**
+       * The change, for file edits (accept is `yes`, reject is `no`).
+       */
+      diff?: Diff | null;
+      /**
+       * Request id; answers quote it.
+       */
+      request: string;
+      /**
+       * How risky.
+       */
+      risk: "low" | "medium" | "high";
+      /**
+       * The step waiting on the answer.
+       */
+      step: string;
+      /**
+       * Plain language: "Run `cargo test`".
+       */
+      summary: string;
+      /**
+       * Tool name.
+       */
+      tool: string;
+      /**
+       * Turn id.
+       */
+      turn: string;
+      type: "permission.request";
+    }
+  | {
+      /**
+       * The plan.
+       */
+      markdown: string;
+      /**
+       * Plan id; decisions quote it.
+       */
+      plan: string;
+      type: "plan.proposed";
+    }
+  | {
+      /**
+       * Which client decided.
+       */
+      answered_by: string;
+      /**
+       * Whether it was approved.
+       */
+      approved: boolean;
+      /**
+       * Plan id.
+       */
+      plan: string;
+      type: "plan.resolved";
+    }
+  | {
+      /**
+       * When Thrall goes ahead with its recommended answers, Unix ms.
+       */
+      expires_at: number;
+      /**
+       * The questions, in order.
+       */
+      items: QuestionItem[];
+      /**
+       * Question id; answers quote it.
+       */
+      question: string;
+      type: "question.ask";
+      /**
+       * Why Thrall is asking instead of deciding, in a sentence.
+       */
+      why?: string;
+    }
+  | {
+      /**
+       * Which client answered; `timeout` when nobody did and the recommended answers were used.
+       */
+      answered_by: string;
+      /**
+       * One answer per question, in order.
+       */
+      answers: string[];
+      /**
+       * Question id.
+       */
+      question: string;
+      type: "question.resolved";
+    }
+  | {
+      /**
+       * Which client answered.
+       */
+      answered_by: string;
+      /**
+       * An answer to a permission request.
+       */
+      choice: "yes" | "no" | "always";
+      /**
+       * Request id.
+       */
+      request: string;
+      type: "permission.resolved";
+    }
+  | {
+      /**
+       * New permission mode (`ask` · `auto_edits` · `plan` · `full_auto`).
+       */
+      mode?: string | null;
+      /**
+       * How long Full auto lasts (sent with `mode: full_auto`).
+       */
+      mode_limit?: ModeLimit | null;
+      /**
+       * New title.
+       */
+      title?: string | null;
+      type: "session.updated";
+      /**
+       * New folder the session works in.
+       */
+      workspace?: string | null;
+    }
+  | {
+      /**
+       * Helper id.
+       */
+      agent: string;
+      /**
+       * What it's doing.
+       */
+      title: string;
+      type: "agent.started";
+    }
+  | {
+      /**
+       * Helper id.
+       */
+      agent: string;
+      /**
+       * `done` · `failed`.
+       */
+      status: string;
+      /**
+       * One line about the result.
+       */
+      summary: string;
+      /**
+       * What it was doing.
+       */
+      title: string;
+      type: "agent.completed";
+    }
+  | {
+      /**
+       * Model the session's turns use.
+       */
+      model: string;
+      /**
+       * Idle, working, or waiting for an answer.
+       */
+      state: "idle" | "working" | "waiting_for_you";
+      type: "status";
+    }
+  | {
+      /**
+       * The fact.
+       */
+      content: string;
+      /**
+       * The fact's id.
+       */
+      fact: string;
+      /**
+       * Its topic.
+       */
+      topic: string;
+      type: "memory.saved";
+    }
+  | {
+      /**
+       * How prominent.
+       */
+      level: "info" | "warning";
+      /**
+       * Plain-language text.
+       */
+      text: string;
+      type: "notice";
+    }
+  | {
+      type: "update.requested";
+    }
+  | {
+      type: "pc.asked";
+    }
+  | {
+      /**
+       * The call's id.
+       */
+      call: string;
+      /**
+       * The session.
+       */
+      in_session: string;
+      /**
+       * What to do.
+       */
+      job: {
+        [k: string]: unknown;
+      };
+      /**
+       * Whose session it is.
+       */
+      person: string;
+      type: "runner.call";
+      /**
+       * Its folder, on the PC.
+       */
+      workspace: string;
+    }
+  | {
+      /**
+       * Stable code clients switch on.
+       */
+      code:
+        | "unauthorized"
+        | "unsupported"
+        | "invalid"
+        | "not_found"
+        | "busy"
+        | "already_answered"
+        | "unknown_command"
+        | "rate_limited"
+        | "provider_unavailable"
+        | "provider_key_missing"
+        | "provider_key_rejected"
+        | "provider_rejected"
+        | "too_large"
+        | "internal";
+      /**
+       * Plain-language explanation and what to do.
+       */
+      message: string;
+      /**
+       * Whether trying again may work.
+       */
+      retry: boolean;
+      type: "error";
+    };
+/**
+ * An answer to a permission request.
+ */
+export type PermissionChoice = "yes" | "no" | "always";
+/**
+ * One frame the engine sends about a session: the envelope fields plus the event itself.
+ */
+export type EventFrame2 = {
   /**
    * When it happened, Unix milliseconds.
    */
@@ -1509,6 +2083,34 @@ export type EventFrame = {
       type: "update.requested";
     }
   | {
+      type: "pc.asked";
+    }
+  | {
+      /**
+       * The call's id.
+       */
+      call: string;
+      /**
+       * The session.
+       */
+      in_session: string;
+      /**
+       * What to do.
+       */
+      job: {
+        [k: string]: unknown;
+      };
+      /**
+       * Whose session it is.
+       */
+      person: string;
+      type: "runner.call";
+      /**
+       * Its folder, on the PC.
+       */
+      workspace: string;
+    }
+  | {
       /**
        * Stable code clients switch on.
        */
@@ -1538,10 +2140,6 @@ export type EventFrame = {
       type: "error";
     }
 );
-/**
- * An answer to a permission request.
- */
-export type PermissionChoice = "yes" | "no" | "always";
 
 /**
  * Every frame in both directions, as one schema root (for generating client types).
@@ -1551,7 +2149,7 @@ export interface Protocol {
   /**
    * Frames the engine sends.
    */
-  server: ReplyFrame | EventFrame;
+  server: ReplyFrame | EventFrame2;
 }
 /**
  * Who is connecting.
@@ -1560,7 +2158,7 @@ export interface ClientInfo {
   /**
    * What sort of client.
    */
-  kind: "tui" | "web" | "desktop" | "android" | "telegram" | "headless";
+  kind: "tui" | "web" | "desktop" | "android" | "telegram" | "headless" | "companion";
   /**
    * Display name ("Thrall Terminal").
    */
@@ -1569,6 +2167,33 @@ export interface ClientInfo {
    * Client version.
    */
   version: string;
+}
+/**
+ * What's allowed.
+ */
+export interface PersonRules {
+  /**
+   * A child's account, with answers fit for their age: `under_13`, `13_15` or `16_17`.
+   */
+  child?: string | null;
+  /**
+   * Thrall can't run commands for them (the shell and git).
+   */
+  no_commands?: boolean;
+  /**
+   * Their phones can't connect.
+   */
+  no_phones?: boolean;
+  /**
+   * Thrall's file tools keep out of the system's folders (Windows, programs, other people's
+   * folders) for them.
+   */
+  no_system_folders?: boolean;
+  /**
+   * What the owner can see of their chats: `summary` (titles and when), `flagged` (that, and
+   * the chats where something wasn't allowed) or `full` (every chat). They're always told.
+   */
+  oversight?: string | null;
 }
 /**
  * About the engine.
@@ -1608,6 +2233,15 @@ export interface UserInfo {
    * Display name.
    */
   name: string;
+  /**
+   * Who can see it (the owner's name).
+   */
+  overseer?: string | null;
+  /**
+   * What the owner can see of their chats (`summary`, `flagged`, `full`), when anything: shown
+   * to them in every chat.
+   */
+  oversight?: string | null;
   /**
    * `owner` (runs this engine) or `member`.
    */
@@ -1985,6 +2619,10 @@ export interface PhoneInfo {
    */
   connected?: boolean;
   /**
+   * `phone`, or `pc` for a companion PC.
+   */
+  kind?: string;
+  /**
    * When it last connected, Unix ms (absent if never since pairing).
    */
   last_seen?: number | null;
@@ -2023,121 +2661,33 @@ export interface RemoteInfo {
   port: number;
 }
 /**
- * A person who uses this Thrall.
+ * One of someone's chats, as the owner sees it with oversight.
  */
-export interface PersonInfo {
+export interface OverseenChat {
   /**
-   * When they were added, Unix ms.
+   * When it started, Unix ms.
    */
-  added: number;
+  created: number;
   /**
-   * Their own AI key is set (it's never shown).
+   * Why it was flagged (something wasn't allowed), if it was.
    */
-  key_set?: boolean;
+  flagged?: string | null;
   /**
-   * Their own model, if they have one.
+   * The owner can read it at this level.
    */
-  model?: string | null;
+  readable?: boolean;
   /**
-   * Their monthly spending limit in US dollars, if they have one.
+   * The session.
    */
-  monthly_limit?: number | null;
+  session: string;
   /**
-   * Their name.
+   * Its title.
    */
-  name: string;
+  title: string;
   /**
-   * Their turns use their own AI key.
+   * When it was last active, Unix ms.
    */
-  own_key?: boolean;
-  /**
-   * Their id.
-   */
-  person: string;
-  /**
-   * How many phones are paired to them.
-   */
-  phones?: number;
-  /**
-   * `owner` (runs this engine) or `member`.
-   */
-  role: string;
-  /**
-   * What their turns have cost (USD) since `people.list`'s `since`. Only what was recorded
-   * with a price counts.
-   */
-  spent?: number;
-}
-/**
- * A browser or PC signed in as a person.
- */
-export interface DeviceInfo {
-  /**
-   * When it signed in, Unix ms.
-   */
-  added: number;
-  /**
-   * The one asking.
-   */
-  current?: boolean;
-  /**
-   * Its id.
-   */
-  device: string;
-  /**
-   * When it last connected, Unix ms.
-   */
-  last_seen?: number | null;
-  /**
-   * The name it signed in under.
-   */
-  name: string;
-}
-/**
- * A build of the phone app, offered as an update.
- */
-export interface AppRelease {
-  /**
-   * What's new, a line or a few.
-   */
-  notes?: string;
-  /**
-   * The APK's SHA-256, hex, to check the download.
-   */
-  sha256: string;
-  /**
-   * The APK's size in bytes.
-   */
-  size: number;
-  /**
-   * Android's version number: higher is newer.
-   */
-  version_code: number;
-  /**
-   * The version people see ("0.2.0").
-   */
-  version_name: string;
-}
-/**
- * One entry in a folder listing.
- */
-export interface FolderEntry {
-  /**
-   * It's a folder.
-   */
-  folder?: boolean;
-  /**
-   * Last changed, Unix ms.
-   */
-  modified?: number;
-  /**
-   * Its name.
-   */
-  name: string;
-  /**
-   * Size in bytes (0 for folders).
-   */
-  size?: number;
+  updated: number;
 }
 /**
  * Tokens and cost.
@@ -2235,4 +2785,212 @@ export interface QuestionItem {
    * The question, in plain words.
    */
   text: string;
+}
+/**
+ * A PC blocked from asking to join.
+ */
+export interface BlockedPcInfo {
+  /**
+   * When it was blocked, Unix ms.
+   */
+  at: number;
+  /**
+   * Its id.
+   */
+  blocked: string;
+  /**
+   * The name it gave.
+   */
+  name: string;
+}
+/**
+ * A PC asking to join as someone's companion.
+ */
+export interface PcRequestInfo {
+  /**
+   * Where it's asking from (its network address).
+   */
+  address: string;
+  /**
+   * When it asked, Unix ms.
+   */
+  at: number;
+  /**
+   * The code both screens show: if they match, nobody is in between.
+   */
+  code: string;
+  /**
+   * The name the PC gave (its computer name).
+   */
+  name: string;
+  /**
+   * The request's id.
+   */
+  request: string;
+}
+/**
+ * The PC listener.
+ */
+export interface PcLinkInfo {
+  /**
+   * Switched on in settings (`remote.pcs`).
+   */
+  enabled: boolean;
+  /**
+   * The listener is running.
+   */
+  listening: boolean;
+  /**
+   * This computer's name, as companions see it.
+   */
+  name: string;
+  /**
+   * Its port, on every network this computer is on.
+   */
+  port: number;
+}
+/**
+ * A person who uses this Thrall.
+ */
+export interface PersonInfo {
+  /**
+   * When they were added, Unix ms.
+   */
+  added: number;
+  /**
+   * Their own AI key is set (it's never shown).
+   */
+  key_set?: boolean;
+  /**
+   * Their own model, if they have one.
+   */
+  model?: string | null;
+  /**
+   * Their monthly spending limit in US dollars, if they have one.
+   */
+  monthly_limit?: number | null;
+  /**
+   * Their name.
+   */
+  name: string;
+  /**
+   * Their turns use their own AI key.
+   */
+  own_key?: boolean;
+  /**
+   * Their id.
+   */
+  person: string;
+  /**
+   * How many phones are paired to them.
+   */
+  phones?: number;
+  /**
+   * `owner` (runs this engine) or `member`.
+   */
+  role: string;
+  rules?: PersonRules1;
+  /**
+   * What their turns have cost (USD) since `people.list`'s `since`. Only what was recorded
+   * with a price counts.
+   */
+  spent?: number;
+}
+/**
+ * What the owner allows them (everything, unless turned off).
+ */
+export interface PersonRules1 {
+  /**
+   * A child's account, with answers fit for their age: `under_13`, `13_15` or `16_17`.
+   */
+  child?: string | null;
+  /**
+   * Thrall can't run commands for them (the shell and git).
+   */
+  no_commands?: boolean;
+  /**
+   * Their phones can't connect.
+   */
+  no_phones?: boolean;
+  /**
+   * Thrall's file tools keep out of the system's folders (Windows, programs, other people's
+   * folders) for them.
+   */
+  no_system_folders?: boolean;
+  /**
+   * What the owner can see of their chats: `summary` (titles and when), `flagged` (that, and
+   * the chats where something wasn't allowed) or `full` (every chat). They're always told.
+   */
+  oversight?: string | null;
+}
+/**
+ * A browser or PC signed in as a person.
+ */
+export interface DeviceInfo {
+  /**
+   * When it signed in, Unix ms.
+   */
+  added: number;
+  /**
+   * The one asking.
+   */
+  current?: boolean;
+  /**
+   * Its id.
+   */
+  device: string;
+  /**
+   * When it last connected, Unix ms.
+   */
+  last_seen?: number | null;
+  /**
+   * The name it signed in under.
+   */
+  name: string;
+}
+/**
+ * A build of the phone app, offered as an update.
+ */
+export interface AppRelease {
+  /**
+   * What's new, a line or a few.
+   */
+  notes?: string;
+  /**
+   * The APK's SHA-256, hex, to check the download.
+   */
+  sha256: string;
+  /**
+   * The APK's size in bytes.
+   */
+  size: number;
+  /**
+   * Android's version number: higher is newer.
+   */
+  version_code: number;
+  /**
+   * The version people see ("0.2.0").
+   */
+  version_name: string;
+}
+/**
+ * One entry in a folder listing.
+ */
+export interface FolderEntry {
+  /**
+   * It's a folder.
+   */
+  folder?: boolean;
+  /**
+   * Last changed, Unix ms.
+   */
+  modified?: number;
+  /**
+   * Its name.
+   */
+  name: string;
+  /**
+   * Size in bytes (0 for folders).
+   */
+  size?: number;
 }

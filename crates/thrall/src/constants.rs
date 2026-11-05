@@ -83,3 +83,18 @@ pub const HIDDEN_CONSOLE_FLAGS: u32 = 0x0800_0000 | 0x0000_0200;
 
 /// What `thrall remove-everything` asks the person to type before it removes anything.
 pub const REMOVE_CONFIRM: &str = "remove everything";
+
+/// How long `thrall join` listens for Thrall answering on the network.
+pub const COMPANION_FIND_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// A companion's first wait before reconnecting after its link drops.
+pub const COMPANION_RETRY_MIN: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Its longest wait between tries (it doubles up to this while Thrall can't be reached).
+pub const COMPANION_RETRY_MAX: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How many times `thrall leave` checks that the companion's runner has stopped.
+pub const COMPANION_STOP_TRIES: u32 = 20;
+
+/// How long between those checks.
+pub const COMPANION_STOP_POLL: std::time::Duration = std::time::Duration::from_millis(250);

@@ -94,6 +94,9 @@ pub struct ToolContext {
     pub browser: Arc<crate::browser::Browsers>,
     /// Skills the person turned off (config `skills.disabled`).
     pub disabled_skills: Vec<String>,
+    /// The companion PC the session works on (`None`: this computer). A job it schedules works
+    /// there too.
+    pub pc: Option<String>,
 }
 
 impl ToolContext {

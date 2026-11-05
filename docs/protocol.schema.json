@@ -55,6 +55,30 @@
         "sha256"
       ]
     },
+    "BlockedPcInfo": {
+      "description": "A PC blocked from asking to join.",
+      "type": "object",
+      "properties": {
+        "at": {
+          "description": "When it was blocked, Unix ms.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "blocked": {
+          "description": "Its id.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name it gave.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "blocked",
+        "name",
+        "at"
+      ]
+    },
     "ClientInfo": {
       "description": "Who is connecting.",
       "type": "object",
@@ -110,6 +134,11 @@
           "description": "Scripts (`thrall run`).",
           "type": "string",
           "const": "headless"
+        },
+        {
+          "description": "A companion PC's runner (`thrall runner`), doing that PC's share of the work.",
+          "type": "string",
+          "const": "companion"
         }
       ]
     },
@@ -1060,6 +1089,56 @@
           ]
         },
         {
+          "description": "The PCs asking to join changed (one asked, or its request ended): ask `pc.requests` for\nthe list. Sent only to the owner's clients on this computer, with an empty `session`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "pc.asked"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Work for a companion PC's runner (sent only to its link, with an empty `session`): run\n`job` (`{\"phase\": \"check\" | \"run\" | \"stop\" | \"read\" | \"write\", ...}`) in `workspace` for\n`person`'s `in_session`, and answer with `runner.done {call}`.",
+          "type": "object",
+          "properties": {
+            "call": {
+              "description": "The call's id.",
+              "type": "string"
+            },
+            "in_session": {
+              "description": "The session.",
+              "type": "string"
+            },
+            "job": {
+              "description": "What to do."
+            },
+            "person": {
+              "description": "Whose session it is.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "runner.call"
+            },
+            "workspace": {
+              "description": "Its folder, on the PC.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "call",
+            "person",
+            "in_session",
+            "workspace",
+            "job"
+          ]
+        },
+        {
           "description": "Something failed.",
           "type": "object",
           "properties": {
@@ -1369,6 +1448,112 @@
         }
       ]
     },
+    "OverseenChat": {
+      "description": "One of someone's chats, as the owner sees it with oversight.",
+      "type": "object",
+      "properties": {
+        "created": {
+          "description": "When it started, Unix ms.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "flagged": {
+          "description": "Why it was flagged (something wasn't allowed), if it was.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "readable": {
+          "description": "The owner can read it at this level.",
+          "type": "boolean"
+        },
+        "session": {
+          "description": "The session.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Its title.",
+          "type": "string"
+        },
+        "updated": {
+          "description": "When it was last active, Unix ms.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "session",
+        "title",
+        "created",
+        "updated"
+      ]
+    },
+    "PcLinkInfo": {
+      "description": "The PC listener's state.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Switched on in settings (`remote.pcs`).",
+          "type": "boolean"
+        },
+        "listening": {
+          "description": "The listener is running.",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "This computer's name, as companions see it.",
+          "type": "string"
+        },
+        "port": {
+          "description": "Its port, on every network this computer is on.",
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "required": [
+        "enabled",
+        "listening",
+        "port",
+        "name"
+      ]
+    },
+    "PcRequestInfo": {
+      "description": "A PC asking to join as someone's companion.",
+      "type": "object",
+      "properties": {
+        "address": {
+          "description": "Where it's asking from (its network address).",
+          "type": "string"
+        },
+        "at": {
+          "description": "When it asked, Unix ms.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "code": {
+          "description": "The code both screens show: if they match, nobody is in between.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name the PC gave (its computer name).",
+          "type": "string"
+        },
+        "request": {
+          "description": "The request's id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request",
+        "name",
+        "code",
+        "address",
+        "at"
+      ]
+    },
     "PermissionChoice": {
       "description": "An answer to a permission request.",
       "oneOf": [
@@ -1442,6 +1627,11 @@
           "description": "`owner` (runs this engine) or `member`.",
           "type": "string"
         },
+        "rules": {
+          "description": "What the owner allows them (everything, unless turned off).",
+          "$ref": "#/$defs/PersonRules",
+          "default": {}
+        },
         "spent": {
           "description": "What their turns have cost (USD) since `people.list`'s `since`. Only what was recorded\nwith a price counts.",
           "type": "number",
@@ -1455,6 +1645,38 @@
         "role",
         "added"
       ]
+    },
+    "PersonRules": {
+      "description": "What the owner allows a person. Everything is allowed until the owner turns it off; the\nperson can see what's off for them.",
+      "type": "object",
+      "properties": {
+        "child": {
+          "description": "A child's account, with answers fit for their age: `under_13`, `13_15` or `16_17`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "no_commands": {
+          "description": "Thrall can't run commands for them (the shell and git).",
+          "type": "boolean"
+        },
+        "no_phones": {
+          "description": "Their phones can't connect.",
+          "type": "boolean"
+        },
+        "no_system_folders": {
+          "description": "Thrall's file tools keep out of the system's folders (Windows, programs, other people's\nfolders) for them.",
+          "type": "boolean"
+        },
+        "oversight": {
+          "description": "What the owner can see of their chats: `summary` (titles and when), `flagged` (that, and\nthe chats where something wasn't allowed) or `full` (every chat). They're always told.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     },
     "PersonalityPreset": {
       "description": "A personality preset, for the settings screen.",
@@ -1491,6 +1713,11 @@
         "connected": {
           "description": "Connected right now.",
           "type": "boolean"
+        },
+        "kind": {
+          "description": "`phone`, or `pc` for a companion PC.",
+          "type": "string",
+          "default": "phone"
         },
         "last_seen": {
           "description": "When it last connected, Unix ms (absent if never since pairing).",
@@ -2260,6 +2487,107 @@
             "type",
             "items",
             "remote"
+          ]
+        },
+        {
+          "description": "Answer to `people.chats`.",
+          "type": "object",
+          "properties": {
+            "items": {
+              "description": "Their chats, most recently active first.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/OverseenChat"
+              }
+            },
+            "level": {
+              "description": "What the owner can see (`summary`, `flagged`, `full`).",
+              "type": "string"
+            },
+            "person": {
+              "description": "Whose.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "people.chats"
+            }
+          },
+          "required": [
+            "type",
+            "person",
+            "level",
+            "items"
+          ]
+        },
+        {
+          "description": "Answer to `people.chat`: the chat's events, as `session.open` replays them.",
+          "type": "object",
+          "properties": {
+            "events": {
+              "description": "Its events, oldest first.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/EventFrame"
+              }
+            },
+            "person": {
+              "description": "Whose.",
+              "type": "string"
+            },
+            "session": {
+              "description": "The chat.",
+              "type": "string"
+            },
+            "title": {
+              "description": "Its title.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "people.chat"
+            }
+          },
+          "required": [
+            "type",
+            "person",
+            "session",
+            "title",
+            "events"
+          ]
+        },
+        {
+          "description": "Answer to `pc.requests`, `pc.accept`, `pc.decline` and `pc.unblock`.",
+          "type": "object",
+          "properties": {
+            "blocked": {
+              "description": "PCs blocked from asking, newest first.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/BlockedPcInfo"
+              }
+            },
+            "items": {
+              "description": "PCs asking to join now, oldest first.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PcRequestInfo"
+              }
+            },
+            "pcs": {
+              "description": "The PC listener.",
+              "$ref": "#/$defs/PcLinkInfo"
+            },
+            "type": {
+              "type": "string",
+              "const": "pc.requests"
+            }
+          },
+          "required": [
+            "type",
+            "items",
+            "blocked",
+            "pcs"
           ]
         },
         {
@@ -3825,6 +4153,223 @@
           ]
         },
         {
+          "description": "PCs asking to join as someone's companion, and the PCs blocked from asking. The owner\nonly, not over a link. Answered by `pc.requests`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "pc.requests"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Let a PC that's asking join, as `person`'s. `code`, when given, must be the code the PC\nshows (typed instead of compared by eye). Answered by `pc.requests`.",
+          "type": "object",
+          "properties": {
+            "code": {
+              "description": "The code the PC shows, typed by the owner.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "person": {
+              "description": "Whose PC it is (a person's id).",
+              "type": "string"
+            },
+            "request": {
+              "description": "The request's id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "pc.accept"
+            }
+          },
+          "required": [
+            "type",
+            "request",
+            "person"
+          ]
+        },
+        {
+          "description": "Turn a PC that's asking away; with `block`, it can't ask again. Answered by `pc.requests`.",
+          "type": "object",
+          "properties": {
+            "block": {
+              "description": "Block it from asking again.",
+              "type": "boolean",
+              "default": false
+            },
+            "request": {
+              "description": "The request's id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "pc.decline"
+            }
+          },
+          "required": [
+            "type",
+            "request"
+          ]
+        },
+        {
+          "description": "A companion PC's runner is ready: from now on this link gets `runner.call` events for the\nsessions that work on this PC. Only on a joined PC's link. Answered by `ack`.",
+          "type": "object",
+          "properties": {
+            "home": {
+              "description": "The PC's Thrall folder (where its sessions work unless one picks another).",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "runner.ready"
+            }
+          },
+          "required": [
+            "type",
+            "home"
+          ]
+        },
+        {
+          "description": "Live output of a call the runner is running (a command's lines). Answered by `ack`.",
+          "type": "object",
+          "properties": {
+            "call": {
+              "description": "The call's id.",
+              "type": "string"
+            },
+            "text": {
+              "description": "The new text.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "runner.output"
+            }
+          },
+          "required": [
+            "type",
+            "call",
+            "text"
+          ]
+        },
+        {
+          "description": "What came of a call. Answered by `ack`.",
+          "type": "object",
+          "properties": {
+            "call": {
+              "description": "The call's id.",
+              "type": "string"
+            },
+            "error": {
+              "description": "Why it didn't, when it didn't.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "result": {
+              "description": "Its answer, when it worked."
+            },
+            "type": {
+              "type": "string",
+              "const": "runner.done"
+            }
+          },
+          "required": [
+            "type",
+            "call"
+          ]
+        },
+        {
+          "description": "Set what a person is allowed (the owner only; not the owner's own). Answered by\n`people.listed`.",
+          "type": "object",
+          "properties": {
+            "person": {
+              "description": "Their id.",
+              "type": "string"
+            },
+            "rules": {
+              "description": "What's allowed.",
+              "$ref": "#/$defs/PersonRules"
+            },
+            "type": {
+              "type": "string",
+              "const": "people.rules"
+            }
+          },
+          "required": [
+            "type",
+            "person",
+            "rules"
+          ]
+        },
+        {
+          "description": "Someone's chats, as far as their oversight lets the owner see them (owner only). Answered\nby `people.chats`.",
+          "type": "object",
+          "properties": {
+            "person": {
+              "description": "Their id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "people.chats"
+            }
+          },
+          "required": [
+            "type",
+            "person"
+          ]
+        },
+        {
+          "description": "Read one of someone's chats (owner only; `full`, or `flagged` and the chat was). Answered by\n`people.chat`. The view is noted in the audit log.",
+          "type": "object",
+          "properties": {
+            "person": {
+              "description": "Their id.",
+              "type": "string"
+            },
+            "session": {
+              "description": "The chat.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "people.chat"
+            }
+          },
+          "required": [
+            "type",
+            "person",
+            "session"
+          ]
+        },
+        {
+          "description": "Let a blocked PC ask again. Answered by `pc.requests`.",
+          "type": "object",
+          "properties": {
+            "blocked": {
+              "description": "The blocked PC's id.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "pc.unblock"
+            }
+          },
+          "required": [
+            "type",
+            "blocked"
+          ]
+        },
+        {
           "description": "The people who use this Thrall (anyone but the owner: only themselves). Answered by\n`people.listed`.",
           "type": "object",
           "properties": {
@@ -4652,6 +5197,20 @@
         "name": {
           "description": "Display name.",
           "type": "string"
+        },
+        "overseer": {
+          "description": "Who can see it (the owner's name).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "oversight": {
+          "description": "What the owner can see of their chats (`summary`, `flagged`, `full`), when anything: shown\nto them in every chat.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "role": {
           "description": "`owner` (runs this engine) or `member`.",

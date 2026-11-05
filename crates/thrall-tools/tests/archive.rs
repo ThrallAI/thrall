@@ -31,6 +31,7 @@ async fn ctx(name: &str) -> ToolContext {
         memory: None,
         browser: Default::default(),
         disabled_skills: Vec::new(),
+        pc: None,
     }
 }
 

@@ -153,6 +153,7 @@ export const SETTINGS_SECTIONS = [
   { id: "tools", label: "Tools & integrations" },
   { id: "people", label: "People" },
   { id: "phones", label: "Phones" },
+  { id: "pcs", label: "PCs" },
   { id: "keys", label: "Keys" },
   { id: "advanced", label: "Advanced" },
 ] as const;
@@ -255,6 +256,9 @@ export const SIGN_IN_POLL_MS = 2000;
 
 /** How often Settings → Phones re-reads the phone list while a pairing code is showing. */
 export const PHONE_POLL_MS = 2000;
+
+/** How long the line saying what came of a PC asking to join stays up. */
+export const ASK_NOTE_MS = 6000;
 
 /** How long it keeps checking (the engine waits five minutes for the browser). */
 export const SIGN_IN_WATCH_MS = 5 * 60 * 1000 + 10_000;
