@@ -7,6 +7,10 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-11-06
+
+One Thrall for the whole household or a small team: companion PCs, and controls per person.
+
 ### Added
 
 - Companion PCs, first part: other PCs at home or at work can find this Thrall and ask to join as
@@ -190,7 +194,8 @@ The first public preview.
 - First-run key setup in the desktop app, a welcome screen and a one-minute tour.
 - Installers built by CI for every release, with `SHA256SUMS.txt`.
 
-[Unreleased]: https://github.com/ThrallAI/thrall/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/ThrallAI/thrall/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/ThrallAI/thrall/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/ThrallAI/thrall/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/ThrallAI/thrall/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ThrallAI/thrall/compare/v0.1.0...v0.2.0
