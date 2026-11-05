@@ -5,6 +5,7 @@
 //! ([`remote`]), on its own listener, only while remote access is on.
 
 pub mod app_release;
+pub mod companion_bridge;
 pub mod companion_client;
 pub mod connection;
 pub mod constants;
@@ -245,7 +246,7 @@ async fn health(State(app): State<App>) -> impl IntoResponse {
 
 /// Only requests addressed to this engine by its own name. A page on another site that rebinds
 /// its domain to 127.0.0.1 still sends its own name as `Host`, so it's turned away.
-fn host_allowed(headers: &HeaderMap, allowed: &[String]) -> bool {
+pub(crate) fn host_allowed(headers: &HeaderMap, allowed: &[String]) -> bool {
     headers
         .get(header::HOST)
         .and_then(|h| h.to_str().ok())
@@ -254,7 +255,7 @@ fn host_allowed(headers: &HeaderMap, allowed: &[String]) -> bool {
 
 /// Browsers send `Origin`; other clients (terminal, desktop shell, scripts) don't. A browser
 /// connection is accepted only from Thrall's own pages.
-fn origin_allowed(headers: &HeaderMap, allowed: &[String]) -> bool {
+pub(crate) fn origin_allowed(headers: &HeaderMap, allowed: &[String]) -> bool {
     match headers.get(header::ORIGIN) {
         None => true,
         Some(value) => value

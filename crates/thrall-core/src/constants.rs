@@ -330,6 +330,10 @@ pub const STARTUP_LABEL: &str = if cfg!(windows) {
 /// Port of the phone listener on 127.0.0.1 unless `[remote] port` says otherwise.
 pub const DEFAULT_REMOTE_PORT: u16 = 7419;
 
+/// On a companion PC, the Thrall it joined and its own key pair, in the data folder (the desktop
+/// app starts `thrall runner` instead of the engine while it's there).
+pub const COMPANION_FILE: &str = "companion.json";
+
 /// Port PCs reach this Thrall on to join as companions unless `[remote] pc_port` says otherwise.
 pub const DEFAULT_PC_PORT: u16 = 7420;
 

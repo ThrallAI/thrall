@@ -1681,3 +1681,107 @@ async fn a_joined_pcs_sessions_work_in_its_folder_and_its_runner_does_the_work()
         .await;
     assert!(away.unwrap_err().contains("isn't connected"));
 }
+
+#[tokio::test]
+async fn a_companion_window_uses_thrall_through_its_pc() {
+    use thrall_server::companion_bridge;
+    use thrall_server::companion_client;
+
+    let running = engine_running("pc-bridge", None).await;
+    let mut desk = desktop(&format!("ws://{}/v1/ws", running.addr)).await;
+    let port = pc_port(&mut desk).await;
+    let (code_tx, code_rx) = tokio::sync::oneshot::channel();
+    let asking = tokio::spawn(async move {
+        companion_client::ask(&format!("127.0.0.1:{port}"), "SAMS-PC", move |code| {
+            let _ = code_tx.send(code.to_owned());
+        })
+        .await
+    });
+    let code = code_rx.await.unwrap();
+    let request = first_request(&mut desk).await;
+    ask(
+        &mut desk,
+        "a",
+        Request::PcAccept {
+            request: request.request,
+            person: "u_sam".into(),
+            code: Some(code),
+        },
+    )
+    .await;
+    let mut joined = asking.await.unwrap().unwrap().expect("let in");
+    joined.name = "THRALL-PC".into();
+
+    // The PC's own data folder: the bridge describes itself there like an engine.
+    let home = std::env::temp_dir().join(format!("thrall-pc-data-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    let paths = thrall_core::Paths::under(&home);
+    let bridge = companion_bridge::start(joined, &paths, "0").await.unwrap();
+    let file = thrall_core::EngineFile::read(&paths.engine_file).expect("engine.json");
+    assert_eq!(file.port, bridge.addr.port());
+    let token = std::fs::read_to_string(&paths.token_file).unwrap();
+
+    // Without the token: turned away. With it: welcomed as Sam, by the Thrall PC.
+    let (mut stranger, _) = tokio_tungstenite::connect_async(&file.ws_url)
+        .await
+        .unwrap();
+    assert!(matches!(
+        ask(&mut stranger, "h", hello("wrong")).await,
+        Reply::Error { .. }
+    ));
+    let (mut window, _) = tokio_tungstenite::connect_async(&file.ws_url)
+        .await
+        .unwrap();
+    match ask(&mut window, "h", hello(token.trim())).await {
+        Reply::Welcome { user, .. } => assert_eq!(user.id, "u_sam"),
+        other => panic!("expected welcome, got {other:?}"),
+    }
+
+    // A window's sign-in link is the PC's own, and the code trades for the PC's token once.
+    let Reply::SigninCode { code, .. } = ask(
+        &mut window,
+        "s",
+        Request::SigninCreate {
+            person: "u_sam".into(),
+        },
+    )
+    .await
+    else {
+        panic!("no sign-in code");
+    };
+    let client = reqwest::Client::new();
+    let signin = format!("http://127.0.0.1:{}/v1/signin", bridge.addr.port());
+    let first: serde_json::Value = client
+        .post(&signin)
+        .json(&serde_json::json!({ "code": code, "name": "Thrall Desktop" }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(first["token"].as_str(), Some(token.trim()));
+    let again = client
+        .post(&signin)
+        .json(&serde_json::json!({ "code": code }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(again.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    // Requests go on to the Thrall PC: Sam's sessions are Sam's.
+    assert!(matches!(
+        ask(
+            &mut window,
+            "l",
+            Request::SessionList {
+                limit: None,
+                archived: false
+            }
+        )
+        .await,
+        Reply::SessionListed { .. }
+    ));
+    companion_bridge::stopped(&paths);
+    assert!(!paths.engine_file.exists());
+}

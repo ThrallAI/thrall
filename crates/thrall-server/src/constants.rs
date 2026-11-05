@@ -109,10 +109,13 @@ pub const MASTER_FALLBACK_NAME: &str = "Thrall";
 pub const ANY_HOST: &str = "0.0.0.0";
 
 /// A companion PC's joined Thrall and its own key pair, in its data folder.
-pub const COMPANION_FILE: &str = "companion.json";
+pub use thrall_core::constants::COMPANION_FILE;
 
 /// How often a companion PC's runner shows it's still there.
 pub const COMPANION_PING: Duration = Duration::from_secs(20);
+
+/// How long a companion window's one-time sign-in code works.
+pub const BRIDGE_CODE_LIFETIME: Duration = Duration::from_secs(5 * 60);
 
 /// How long a finished call's last output lines get to go out before its answer.
 pub const OUTPUT_FLUSH: Duration = Duration::from_secs(1);

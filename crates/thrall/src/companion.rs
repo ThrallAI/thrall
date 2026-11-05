@@ -6,6 +6,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use thrall_core::Paths;
+use thrall_server::companion_bridge;
 use thrall_server::companion_client::{self, Joined};
 use thrall_tools::companion::{Base, Runner};
 
@@ -17,64 +18,114 @@ fn this_pc() -> String {
 }
 
 /// `thrall join [address]`: find Thrall on the network (or use `address`), ask to join, show the
-/// code, and wait for the owner.
-pub async fn join(paths: &Paths, address: Option<String>) -> anyhow::Result<ExitCode> {
+/// code, and wait for the owner. With `find`, only list what's there. With `machine`, print plain
+/// lines for the desktop app instead of sentences.
+pub async fn join(
+    paths: &Paths,
+    address: Option<String>,
+    find: bool,
+    machine: bool,
+) -> anyhow::Result<ExitCode> {
+    let say = |human: &str, line: &str| {
+        if machine {
+            println!("{line}");
+        } else {
+            println!("{human}");
+        }
+    };
+    if find {
+        let found = companion_client::find(COMPANION_FIND_WAIT).await;
+        for f in &found {
+            say(
+                &format!("{} ({})", f.name, f.address),
+                &format!("found {}\t{}", f.address, f.name),
+            );
+        }
+        if found.is_empty() && !machine {
+            println!("No Thrall on this network lets PCs join.");
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
     if let Some(joined) = Joined::load(&paths.home) {
-        println!(
-            "This PC already joined Thrall on {} ({}). Run `thrall leave` first to join another.",
-            joined.name, joined.address
+        say(
+            &format!(
+                "This PC already joined Thrall on {} ({}). Run `thrall leave` first to join another.",
+                joined.name, joined.address
+            ),
+            "joined",
         );
-        return Ok(ExitCode::FAILURE);
+        return Ok(ExitCode::SUCCESS);
     }
     let (name, address) = match address {
-        Some(a) => (a.clone(), companion_client::with_port(&a)),
+        Some(a) => {
+            let address = companion_client::with_port(&a);
+            let name = a.rsplit_once(':').map_or(a.as_str(), |(h, _)| h).to_owned();
+            (name, address)
+        }
         None => {
-            println!("Looking for Thrall on this network…");
+            if !machine {
+                println!("Looking for Thrall on this network…");
+            }
             let found = companion_client::find(COMPANION_FIND_WAIT).await;
             match found.as_slice() {
                 [] => {
-                    println!(
+                    say(
                         "No Thrall here lets PCs join. On the Thrall PC: Settings → PCs → Let PCs \
-                         on this network connect. Over Tailscale, give its name: thrall join <name>"
+                         on this network connect. Over Tailscale, give its name: thrall join <name>",
+                        "error No Thrall on this network lets PCs join.",
                     );
                     return Ok(ExitCode::FAILURE);
                 }
                 [one] => (one.name.clone(), one.address.clone()),
                 many => {
-                    println!("Found more than one; pick with `thrall join <address>`:");
+                    if !machine {
+                        println!("Found more than one; pick with `thrall join <address>`:");
+                    }
                     for f in many {
-                        println!("  {} ({})", f.name, f.address);
+                        say(
+                            &format!("  {} ({})", f.name, f.address),
+                            &format!("found {}\t{}", f.address, f.name),
+                        );
                     }
                     return Ok(ExitCode::FAILURE);
                 }
             }
         }
     };
-    println!("Asking Thrall on {name} to let {} join…", this_pc());
+    if !machine {
+        println!("Asking Thrall on {name} to let {} join…", this_pc());
+    }
     let answer = companion_client::ask(&address, &this_pc(), |code| {
-        println!();
-        println!("  Code: {code}");
-        println!();
-        println!("Check it's the code on the Thrall PC, where the owner lets this PC in.");
+        if machine {
+            println!("code {code}");
+        } else {
+            println!();
+            println!("  Code: {code}");
+            println!();
+            println!("Check it's the code on the Thrall PC, where the owner lets this PC in.");
+        }
     })
-    .await
-    .map_err(anyhow::Error::msg)?;
+    .await;
     match answer {
-        Some(mut joined) => {
+        Ok(Some(mut joined)) => {
             joined.name = name;
             joined.save(&paths.home)?;
-            println!(
-                "Joined. Start the companion with `thrall runner` (the desktop app does it by itself)."
+            say(
+                "Joined. Start the companion with `thrall runner` (the desktop app does it by itself).",
+                "joined",
             );
             Ok(ExitCode::SUCCESS)
         }
-        None => {
-            println!("The owner said no.");
+        Ok(None) => {
+            say("The owner said no.", "declined");
+            Ok(ExitCode::FAILURE)
+        }
+        Err(why) => {
+            say(&why, &format!("error {why}"));
             Ok(ExitCode::FAILURE)
         }
     }
 }
-
 /// `thrall leave`: forget the joined Thrall (the owner can remove this PC there too).
 pub fn leave(paths: &Paths) -> anyhow::Result<ExitCode> {
     Joined::forget(&paths.home)?;
@@ -102,18 +153,29 @@ pub async fn runner(paths: &Paths, work_folder: &str) -> anyhow::Result<ExitCode
     let runner = Arc::new(Runner::new(base));
     let home = home.to_string_lossy().into_owned();
     let version = env!("CARGO_PKG_VERSION");
-    let mut wait = COMPANION_RETRY_MIN;
-    loop {
-        match companion_client::run_once(&joined, runner.clone(), &home, version).await {
-            Ok(()) => {
-                tracing::info!("the link to Thrall closed; reconnecting");
-                wait = COMPANION_RETRY_MIN;
+    // The desktop app (and the terminal) find it like an engine, and use Thrall through it.
+    let bridge = companion_bridge::start(joined.clone(), paths, version).await?;
+    let work = async {
+        let mut wait = COMPANION_RETRY_MIN;
+        loop {
+            match companion_client::run_once(&joined, runner.clone(), &home, version).await {
+                Ok(()) => {
+                    tracing::info!("the link to Thrall closed; reconnecting");
+                    wait = COMPANION_RETRY_MIN;
+                }
+                Err(e) => {
+                    tracing::warn!(%e, "couldn't stay connected to Thrall");
+                    wait = (wait * 2).min(COMPANION_RETRY_MAX);
+                }
             }
-            Err(e) => {
-                tracing::warn!(%e, "couldn't stay connected to Thrall");
-                wait = (wait * 2).min(COMPANION_RETRY_MAX);
-            }
+            tokio::time::sleep(wait).await;
         }
-        tokio::time::sleep(wait).await;
+    };
+    tokio::select! {
+        () = work => {}
+        () = bridge.stop.notified() => tracing::info!("asked to stop"),
+        _ = tokio::signal::ctrl_c() => {}
     }
+    companion_bridge::stopped(paths);
+    Ok(ExitCode::SUCCESS)
 }

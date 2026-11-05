@@ -133,3 +133,12 @@ pub const OK: [u8; 3] = [0x4a, 0xde, 0x80];
 pub const DANGER: [u8; 3] = [0xff, 0x6b, 0x6b];
 pub const INK: [u8; 3] = [0xc8, 0xc6, 0xd4];
 pub const UNLIT: [u8; 4] = [0x8c, 0x8c, 0x9b, 0x55];
+
+/// `thrall engine`: the engine on the Thrall PC.
+pub const ENGINE_ARG: &str = "engine";
+
+/// `thrall runner`: on a companion PC, stands in for the engine.
+pub const RUNNER_ARG: &str = "runner";
+
+/// The loading page's function that shows the code while a companion asks to join.
+pub const JOIN_CODE_JS: &str = "thrallJoinCode";

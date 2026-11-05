@@ -61,6 +61,12 @@ pub enum Command {
         /// The Thrall PC's name or address (`kids-pc`, `192.168.1.20:7420`); found on this
         /// network when left out.
         address: Option<String>,
+        /// Only list the Thralls on this network that let PCs join.
+        #[arg(long)]
+        find: bool,
+        /// Lines for the desktop app to read (`found`, `code`, `joined`, `declined`, `error`).
+        #[arg(long, hide = true)]
+        machine: bool,
     },
     /// Stay connected to the Thrall this PC joined, and do this PC's share of the work.
     Runner,

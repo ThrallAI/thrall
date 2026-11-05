@@ -34,11 +34,11 @@ use tauri_plugin_notification::NotificationExt;
 use tokio::sync::mpsc;
 
 use crate::constants::{
-    DEFAULT_LOG_LEVEL, DESKTOP_QUERY, DONE_HOLD, HIDDEN_ARG, LOG_FILE_PREFIX, LOG_LEVEL_ENV,
-    MAIN_WINDOW, MENU_AUTOSTART, MENU_OPEN, MENU_QUIT, MENU_UPDATE, NOTE_TAP, NOTES_REMEMBERED,
-    OPEN_SESSION_JS, QUIT_CANCEL, QUIT_KEEP, QUIT_PHONES_WAIT, QUIT_STOP, RECONNECT_DELAY,
-    SETUP_RECHECK, SHORTCUT_RECHECK, SHORTCUT_TAKEN, SHORTCUT_TAKEN_TITLE, SHOW_SETUP_JS,
-    TITLE_LOOKUP, TRAY_FRAME, TRAY_ID, TRAY_PX, UPDATE_CHECK_LABEL,
+    DEFAULT_LOG_LEVEL, DESKTOP_QUERY, DONE_HOLD, HIDDEN_ARG, JOIN_CODE_JS, LOG_FILE_PREFIX,
+    LOG_LEVEL_ENV, MAIN_WINDOW, MENU_AUTOSTART, MENU_OPEN, MENU_QUIT, MENU_UPDATE, NOTE_TAP,
+    NOTES_REMEMBERED, OPEN_SESSION_JS, QUIT_CANCEL, QUIT_KEEP, QUIT_PHONES_WAIT, QUIT_STOP,
+    RECONNECT_DELAY, SETUP_RECHECK, SHORTCUT_RECHECK, SHORTCUT_TAKEN, SHORTCUT_TAKEN_TITLE,
+    SHOW_SETUP_JS, TITLE_LOOKUP, TRAY_FRAME, TRAY_ID, TRAY_PX, UPDATE_CHECK_LABEL,
 };
 use crate::engine::Incoming;
 use crate::mark::Activity;
@@ -95,6 +95,75 @@ fn save_key(app: AppHandle, key: String) -> Result<(), String> {
     tracing::info!("AI key saved from the first-run setup");
     app.state::<Shared>().key_saved.notify_one();
     Ok(())
+}
+
+/// `thrall join …` with plain-line output, run without a console window.
+fn join_command(args: &[&str]) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(engine::engine_exe());
+    command
+        .arg("join")
+        .args(args)
+        .arg("--machine")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+    #[cfg(windows)]
+    command.creation_flags(thrall_core::constants::CREATE_NO_WINDOW);
+    command
+}
+
+/// First run, from the loading page: the Thralls on this network that let PCs join, as
+/// `[{address, name}]`.
+#[tauri::command]
+async fn companion_find() -> Result<Vec<serde_json::Value>, String> {
+    let out = join_command(&["--find"])
+        .output()
+        .await
+        .map_err(|e| format!("Couldn't look for Thrall: {e}"))?;
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.strip_prefix("found "))
+        .filter_map(|l| l.split_once('\t'))
+        .map(|(address, name)| serde_json::json!({ "address": address, "name": name }))
+        .collect())
+}
+
+/// First run, from the loading page: ask the Thrall at `address` to let this PC join, showing the
+/// code on the page while its owner decides. Once in, this PC starts as its companion.
+#[tauri::command]
+async fn companion_join(app: AppHandle, address: String) -> Result<(), String> {
+    use tokio::io::AsyncBufReadExt;
+    let mut child = join_command(&[address.trim()])
+        .spawn()
+        .map_err(|e| format!("Couldn't ask to join: {e}"))?;
+    let stdout = child.stdout.take().ok_or("Couldn't ask to join.")?;
+    let mut lines = tokio::io::BufReader::new(stdout).lines();
+    let mut outcome = Err("Thrall stopped asking before an answer came.".to_owned());
+    while let Ok(Some(line)) = lines.next_line().await {
+        if let Some(code) = line.strip_prefix("code ") {
+            if let (Some(w), Ok(js)) = (
+                app.get_webview_window(MAIN_WINDOW),
+                serde_json::to_string(code),
+            ) {
+                let _ = w.eval(format!(
+                    "window.{JOIN_CODE_JS} && window.{JOIN_CODE_JS}({js});"
+                ));
+            }
+        } else if line == "joined" {
+            outcome = Ok(());
+        } else if line == "declined" {
+            outcome = Err("The owner said no.".to_owned());
+        } else if let Some(why) = line.strip_prefix("error ") {
+            outcome = Err(why.to_owned());
+        }
+    }
+    let _ = child.wait().await;
+    if outcome.is_ok() {
+        tracing::info!("this PC joined Thrall on another PC");
+        app.state::<Shared>().key_saved.notify_one();
+    }
+    outcome
 }
 
 /// The startup entry for this app, from beside it (`None` where Windows can't start it).
@@ -223,7 +292,11 @@ fn main() {
                 .build(),
         )
         .manage(Shared::default())
-        .invoke_handler(tauri::generate_handler![save_key])
+        .invoke_handler(tauri::generate_handler![
+            save_key,
+            companion_find,
+            companion_join
+        ])
         .setup(|app| {
             build_tray(app.handle())?;
             let clicked = app.handle().clone();
@@ -468,7 +541,12 @@ async fn run_engine(app: AppHandle) {
         .provider
         .model
         .starts_with(thrall_core::constants::LOCAL_MODEL_PREFIX);
-    while !local && !has_key() && engine::connect(&paths).await.is_err() {
+    // A companion PC uses the AI of the Thrall it joined: it needs no key of its own.
+    while !local
+        && !has_key()
+        && !engine::companion(&paths)
+        && engine::connect(&paths).await.is_err()
+    {
         if !shown {
             show(&app);
             shown = true;

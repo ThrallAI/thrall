@@ -30,6 +30,7 @@ tokio-tungstenite.workspace = true
 
 [dev-dependencies]
 thrall-llm = { path = "../thrall-llm" }
+reqwest.workspace = true
 
 [lints]
 workspace = true
