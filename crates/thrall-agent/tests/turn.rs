@@ -734,6 +734,88 @@ async fn full_auto_goes_with_thralls_own_answers() {
         Event::StepCompleted { status: StepStatus::Ok, summary, .. } if summary == "Went with its own answers"
     )));
 }
+/// Run a turn; at the first permission request switch the session to `to`, then answer yes to
+/// every request. Returns how many requests were asked.
+async fn run_switching(
+    state: &AppState,
+    session_id: &str,
+    text: &str,
+    to: thrall_agent::Mode,
+) -> usize {
+    let (tx, mut rx) = mpsc::channel::<EventFrame>(1024);
+    let collect = async {
+        let mut asked = 0;
+        while let Some(frame) = rx.recv().await {
+            if let Event::PermissionRequest { request, .. } = &frame.event {
+                if asked == 0 {
+                    session::set_mode(state, session_id, to).await.unwrap();
+                }
+                asked += 1;
+                state.prompts.answer(request, &state.user_id, yes(), "test");
+            }
+        }
+        asked
+    };
+    let go = async move {
+        turn::run(state, session_id, text, &tx).await.unwrap();
+        drop(tx);
+    };
+    tokio::join!(go, collect).1
+}
+
+#[tokio::test]
+async fn full_auto_switched_on_mid_task_stops_the_questions() {
+    let (mut state, _) = setup(vec![
+        tool_call("c1", "shell", r#"{"command": "echo one"}"#),
+        tool_call("c2", "shell", r#"{"command": "echo two"}"#),
+        tool_call("c3", "shell", r#"{"command": "echo three"}"#),
+        reply(&["Done."]),
+        reply(&["Echoing"]),
+    ])
+    .await;
+    checks_off(&mut state);
+    let s = session::create(&state, Some(workspace("mid-full")))
+        .await
+        .unwrap();
+    let asked = run_switching(&state, &s.id, "go", thrall_agent::Mode::FullAuto).await;
+    assert_eq!(asked, 1, "only the command asked before Full auto went on");
+}
+
+#[tokio::test]
+async fn a_mode_changed_mid_task_counts_from_the_next_step() {
+    let (mut state, _) = setup(vec![
+        tool_call("c1", "shell", r#"{"command": "echo one"}"#),
+        tool_call("c2", "write_file", r#"{"path": "x.txt", "content": "x"}"#),
+        tool_call("c3", "shell", r#"{"command": "echo two"}"#),
+        reply(&["Done."]),
+        reply(&["Writing"]),
+    ])
+    .await;
+    checks_off(&mut state);
+    let s = session::create(&state, Some(workspace("mid-edits")))
+        .await
+        .unwrap();
+    let asked = run_switching(&state, &s.id, "go", thrall_agent::Mode::AutoEdits).await;
+    assert_eq!(asked, 2, "the edit went ahead; both commands asked");
+}
+
+#[test]
+fn full_auto_lengths_from_the_mode_command() {
+    use thrall_agent::hub::full_auto_from_words;
+    let limit = full_auto_from_words("full 30m").unwrap();
+    assert_eq!(limit.until, "time");
+    let left = limit.ends_at.unwrap() - thrall_core::ids::now_ms();
+    assert!((29 * 60_000..=30 * 60_000).contains(&left));
+    let two_hours = full_auto_from_words("full auto 2h").unwrap();
+    assert!(two_hours.ends_at.unwrap() - thrall_core::ids::now_ms() > 119 * 60_000);
+    assert_eq!(full_auto_from_words("full 45").unwrap().until, "time");
+    assert_eq!(full_auto_from_words("full on").unwrap().until, "manual");
+    assert_eq!(full_auto_from_words("full task").unwrap().until, "task_end");
+    assert!(full_auto_from_words("plan 30m").is_none());
+    assert!(full_auto_from_words("full soon").is_none());
+    assert!(full_auto_from_words("full").is_none());
+}
+
 #[tokio::test]
 async fn a_noted_lesson_is_kept_and_followed_from_then_on() {
     let (mut state, provider) = setup(vec![
@@ -1755,11 +1837,9 @@ async fn compact_summarises_the_older_conversation() {
     assert!(reply.contains("Summarised"), "{reply}");
     let after = state.store.context_messages("u_test", &s.id).await.unwrap();
     assert!(after.len() < before);
-    assert!(
-        after[0]
-            .content
-            .contains("[Summary of the earlier conversation]")
-    );
+    // Labelled as Thrall's own notes, so he never takes them as the person asking for something.
+    assert!(after[0].content.contains("Thrall's own notes"));
+    assert!(after[0].content.contains("Not a request from the person"));
     // The most recent messages are untouched and still in order after the summary.
     assert!(after.last().unwrap().content.contains("ok"));
     // The summary, then (facts are saved without asking by default) the facts call.

@@ -90,8 +90,8 @@ pub const COMMANDS: &[CommandInfo] = &[
     },
     CommandInfo {
         name: "mode",
-        summary: "Show or set the permission mode: ask, auto, plan, full",
-        args_hint: "[mode]",
+        summary: "Show or set the permission mode: ask, auto, plan, full (full 30m, full on)",
+        args_hint: "[mode] [30m | 2h | on]",
     },
 ];
 
@@ -226,7 +226,8 @@ async fn mode(state: &AppState, session_id: &str, args: &str) -> Result<String, 
         return Ok(format!(
             "Mode: **{}**\n\n- `ask`: ask before edits and commands\n- `auto`: edits go ahead, \
              commands ask\n- `plan`: read-only until you approve a plan\n- `full`: no questions \
-             (restarts still ask)\n\nShift+Tab switches between ask, auto and plan.",
+             (restarts still ask) until the task ends; `full 30m` or `full 2h` for a while, \
+             `full on` until you switch it off\n\nShift+Tab switches between ask, auto and plan.",
             current.label()
         ));
     }

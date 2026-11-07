@@ -81,10 +81,9 @@ impl Tool for ReadFile {
                 Ok(b) => b,
                 Err(e) => return ToolOutput::error(format!("can't read {shown}: {e}")),
             };
-            if bytes.contains(&0) {
+            let Some(text) = text_of(&bytes) else {
                 return ToolOutput::error(format!("{shown} looks like a binary file"));
-            }
-            let text = String::from_utf8_lossy(&bytes);
+            };
             let total = text.lines().count();
             let start = a.offset.unwrap_or(1).max(1);
             let limit = a.limit.unwrap_or(READ_DEFAULT_LINES).max(1);
@@ -110,6 +109,22 @@ impl Tool for ReadFile {
                 format!("{shown_lines} of {total} lines"),
             )
         })
+    }
+}
+
+/// A file's text: UTF-8, or UTF-16 with its byte-order mark (what Windows PowerShell's `>`
+/// writes). `None` for anything else holding zero bytes (a binary file).
+fn text_of(bytes: &[u8]) -> Option<String> {
+    let utf16 = |rest: &[u8], from: fn([u8; 2]) -> u16| {
+        let units: Vec<u16> = rest.as_chunks::<2>().0.iter().map(|c| from(*c)).collect();
+        String::from_utf16_lossy(&units)
+    };
+    match bytes {
+        [0xFF, 0xFE, rest @ ..] => Some(utf16(rest, u16::from_le_bytes)),
+        [0xFE, 0xFF, rest @ ..] => Some(utf16(rest, u16::from_be_bytes)),
+        _ if bytes.contains(&0) => None,
+        [0xEF, 0xBB, 0xBF, rest @ ..] => Some(String::from_utf8_lossy(rest).into_owned()),
+        _ => Some(String::from_utf8_lossy(bytes).into_owned()),
     }
 }
 
@@ -400,5 +415,27 @@ impl Tool for ListDir {
             }
             ToolOutput::ok(out, format!("{total} entries"))
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::text_of;
+
+    #[test]
+    fn reads_utf16_with_its_mark_and_refuses_other_zero_bytes() {
+        let le: Vec<u8> = [0xFF, 0xFE]
+            .into_iter()
+            .chain("hi\r\nthere".encode_utf16().flat_map(u16::to_le_bytes))
+            .collect();
+        assert_eq!(text_of(&le).unwrap(), "hi\r\nthere");
+        let be: Vec<u8> = [0xFE, 0xFF]
+            .into_iter()
+            .chain("hé".encode_utf16().flat_map(u16::to_be_bytes))
+            .collect();
+        assert_eq!(text_of(&be).unwrap(), "hé");
+        assert_eq!(text_of(b"\xEF\xBB\xBFplain").unwrap(), "plain");
+        assert_eq!(text_of(b"plain").unwrap(), "plain");
+        assert!(text_of(b"PK\x03\x04\x00\x00").is_none());
     }
 }

@@ -66,6 +66,14 @@ describe("modes", () => {
     expect(v.mode).toBe("full_auto");
     expect(v.modeLimit).toEqual({ until: "manual" });
   });
+  it("replaying an old Full auto switch leaves the chat's saved mode alone", () => {
+    // Thrall restarted: the chat is saved as Ask, but its history still says Full auto.
+    const v = run(openedView(info({ mode: "ask", last_seq: seq + 10 }), "m"), [
+      ev({ type: "session.updated", mode: "full_auto", mode_limit: { until: "manual" } }),
+    ]);
+    expect(v.mode).toBe("ask");
+    expect(v.modeLimit).toBeNull();
+  });
 });
 
 describe("apply", () => {

@@ -38,9 +38,10 @@ use crate::constants::{
     EPISODE_SOURCE_MAX_CHARS, FINISH_LENGTH, HAND_OFF, HOME_NOTE, LOW_CREDIT_NOTICE,
     LOW_CREDIT_USD, MAX_MODEL_CALLS_PER_TURN, PICTURE_FAILED_MARK, PICTURE_MAX_BYTES,
     PICTURES_PER_REQUEST, PLAN_QUESTION_MAX_CHARS, SCANNED_PDF_MAX_BYTES, SESSION_TITLE_MAX_CHARS,
-    SKIPPED_INTERRUPTED, SYSTEM_PROMPT, TITLE_MAX_TOKENS, TITLE_MAX_WORDS, TITLE_PROMPT,
-    TITLE_SOURCE_MAX_CHARS, TRANSCRIBE_MAX_TOKENS, TRANSCRIBE_PROMPT, TRANSCRIPT_MAX_CHARS,
-    VISION_MAX_TOKENS, VISION_MODEL_HINT, VISION_PROMPT, VISION_TOOL, role, turn_status,
+    SKIPPED_INTERRUPTED, SUMMARY_PREFIX, SUMMARY_PREFIX_OLD, SYSTEM_PROMPT, TITLE_MAX_TOKENS,
+    TITLE_MAX_WORDS, TITLE_PROMPT, TITLE_SOURCE_MAX_CHARS, TRANSCRIBE_MAX_TOKENS,
+    TRANSCRIBE_PROMPT, TRANSCRIPT_MAX_CHARS, VISION_MAX_TOKENS, VISION_MODEL_HINT, VISION_PROMPT,
+    VISION_TOOL, role, turn_status,
 };
 use crate::error::AgentError;
 use crate::hooks;
@@ -579,6 +580,17 @@ pub async fn run_with_files(
     })
 }
 
+/// The session's mode as it is now. It can change while Thrall works (Full auto switched on or
+/// off, or its time running out), so it's read again before every step.
+async fn current_mode(state: &AppState, session_id: &str, mode: Mode) -> Result<Mode, AgentError> {
+    Ok(state
+        .store
+        .get_session(&state.user_id, session_id)
+        .await?
+        .and_then(|s| Mode::parse(&s.mode))
+        .unwrap_or(mode))
+}
+
 /// A session's place as "running a turn". Released once: as soon as the turn is finished (so the
 /// user can retry or send while the title and memory are written), or when it fails. A second
 /// release does nothing, so it never frees a turn that started since.
@@ -707,6 +719,7 @@ async fn run_turn(
                 emitter.user_message(&extra, &workspace, "", &[]).await?;
             }
         }
+        mode = current_mode(state, session_id, mode).await?;
         if calls >= MAX_MODEL_CALLS_PER_TURN {
             emitter
                 .emit(Event::Notice {
@@ -927,6 +940,7 @@ async fn run_turn(
         let mut next = 0;
         while next < calls.len() {
             let call = &calls[next];
+            mode = current_mode(state, session_id, mode).await?;
             // Helpers asked for one after another in this reply work side by side (up to the
             // setting); each gets its own copy of the mode and its own checks, and their results
             // are saved in the order they were asked for.
@@ -1446,6 +1460,11 @@ async fn context(
         let mut content: StoredContent = serde_json::from_str(&message.content)?;
         if trim.contains(&index) {
             content.text = thrall_memory::trim::trimmed(&content.text);
+        }
+        // Summaries made before 0.2.4 carry the old heading, which read like the person's own
+        // message; give them the current one so Thrall doesn't take his notes as a request.
+        if let Some(rest) = content.text.strip_prefix(SUMMARY_PREFIX_OLD) {
+            content.text = format!("{SUMMARY_PREFIX}{rest}");
         }
         if role == ChatRole::User {
             let pictures: Vec<PathBuf> = content
