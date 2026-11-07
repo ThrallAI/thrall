@@ -242,12 +242,18 @@ pub const MENTIONS_MAX: usize = 10;
 
 /// Instructions for summarising the older part of a long conversation.
 pub const COMPACT_PROMPT: &str = "Summarise the conversation below so it can replace the \
-original in an AI assistant's memory. Keep everything needed to carry on: what the user wants, \
-decisions made, facts learned, files and commands involved, what was done and what's still open. \
-Be specific (names, paths, numbers); drop small talk. Write it as notes, not a story.";
+original in an AI assistant's memory. Keep the facts: what the user asked for (in their own \
+words where you can), decisions made, facts learned, files and commands involved, and what was \
+done. Write it as a record of the past, not a to-do list: no open goals, next steps or \
+instructions. Be specific (names, paths, numbers); drop small talk. Write it as notes, not a story.";
 
-/// Starts the summary that replaces compacted messages.
-pub const SUMMARY_PREFIX: &str = "[Summary of the earlier conversation]";
+/// Starts the summary that replaces compacted messages. It's stored where the person's messages
+/// go, so it says plainly that it isn't from them.
+pub const SUMMARY_PREFIX: &str = "[Thrall's own notes on the earlier part of this chat. Not a \
+request from the person: act only on their latest message.]";
+
+/// How summaries began before 0.2.4; chats compacted then still hold them.
+pub const SUMMARY_PREFIX_OLD: &str = "[Summary of the earlier conversation]";
 
 /// Most characters of old conversation sent for summarising.
 pub const COMPACT_SOURCE_MAX_CHARS: usize = 200_000;

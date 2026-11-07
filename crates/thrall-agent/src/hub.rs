@@ -112,6 +112,32 @@ pub fn mode_limit_from(until: Option<&str>, minutes: Option<u32>) -> Option<Mode
     }
 }
 
+/// `/mode` with a length for Full auto: `full 30m`, `full 2h`, `full 45` (minutes), `full on`
+/// (until switched off) or `full task`. `None` when the words aren't a Full auto length.
+pub fn full_auto_from_words(args: &str) -> Option<ModeLimit> {
+    let (head, tail) = args.trim().rsplit_once(char::is_whitespace)?;
+    if Mode::parse(head)? != Mode::FullAuto {
+        return None;
+    }
+    let tail = tail.to_ascii_lowercase();
+    match tail.as_str() {
+        "on" | "manual" | "always" => return mode_limit_from(Some(MODE_UNTIL_MANUAL), None),
+        "task" => return mode_limit_from(Some(MODE_UNTIL_TASK_END), None),
+        _ => {}
+    }
+    let (number, per) = match tail.strip_suffix('h') {
+        Some(n) => (n, 60),
+        None => (
+            tail.strip_suffix("min")
+                .or_else(|| tail.strip_suffix('m'))
+                .unwrap_or(&tail),
+            1,
+        ),
+    };
+    let minutes = number.parse::<u32>().ok()?.checked_mul(per)?;
+    mode_limit_from(Some(MODE_UNTIL_TIME), Some(minutes))
+}
+
 impl Hub {
     /// Start the hub on `state`, with its background runners and scheduler.
     pub fn new(state: AppState, rebuild: Option<Rebuild>) -> Arc<Self> {
@@ -1302,13 +1328,13 @@ impl Hub {
                     continue;
                 }
             };
+            // Through back_to_ask, so the change and the reason are recorded in the chat too.
             for s in sessions
                 .iter()
                 .filter(|s| session::mode_of(s) == Mode::FullAuto)
             {
-                if let Err(e) = session::set_mode(&mine, &s.id, Mode::Ask).await {
-                    tracing::warn!(%e, session = s.id, "couldn't end Full auto");
-                }
+                self.back_to_ask(&person.id, &s.id, FULL_AUTO_ENDED_RESTART)
+                    .await;
             }
         }
     }
@@ -1506,8 +1532,12 @@ impl Hub {
             }
             // Through set_mode, so Full auto is the owner's only and gets its time limit.
             "mode" if !session_id.is_empty() => {
-                if let Some(mode) = Mode::parse(args) {
-                    return match self.set_mode(user, session_id, mode, None).await {
+                let wanted = match Mode::parse(args) {
+                    Some(mode) => Some((mode, None)),
+                    None => full_auto_from_words(args).map(|l| (Mode::FullAuto, Some(l))),
+                };
+                if let Some((mode, limit)) = wanted {
+                    return match self.set_mode(user, session_id, mode, limit).await {
                         Ok(()) => commands::mode_changed(mode),
                         Err(AgentError::InputRefused(why)) => Ok(why),
                         Err(e) => Err(e),
