@@ -16,7 +16,7 @@ use thrall_store::NewMessage;
 
 use crate::constants::{
     COMPACT_PROMPT, COMPACT_SOURCE_MAX_CHARS, COMPACT_SUMMARY_MAX_TOKENS, FACTS_MAX,
-    FACTS_MAX_TOKENS, FACTS_PROMPT, SUMMARY_PREFIX, role,
+    FACTS_MAX_TOKENS, FACTS_PROMPT, SUMMARY_PREFIX, SUMMARY_PREFIX_OLD, role,
 };
 use crate::error::AgentError;
 use crate::state::AppState;
@@ -112,12 +112,13 @@ async fn summarise(
             continue;
         }
         let who = match m.role.as_str() {
+            role::USER if is_summary(&text) => "Thrall's earlier notes",
             role::USER => "User",
             role::ASSISTANT => "Thrall",
             _ => "Tool result",
         };
         transcript.push_str(&format!("{who}: {text}\n\n"));
-        if m.role == role::USER && !text.starts_with(SUMMARY_PREFIX) {
+        if m.role == role::USER && !is_summary(&text) {
             said.push_str(&format!("- {text}\n"));
         }
     }
@@ -192,6 +193,11 @@ async fn summarise(
         remember_facts(state, session_id, turn_id, &said).await?;
     }
     Ok(Some(Compacted { messages: cut }))
+}
+
+/// Whether a stored user-role message is a compaction summary rather than the person's words.
+pub fn is_summary(text: &str) -> bool {
+    text.starts_with(SUMMARY_PREFIX) || text.starts_with(SUMMARY_PREFIX_OLD)
 }
 
 /// A fact the model drew from the person's messages.

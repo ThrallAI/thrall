@@ -478,14 +478,18 @@ export function App() {
   );
 
   const setMode = useCallback(
-    async (mode: string) => {
+    async (mode: string, until?: string, minutes?: number) => {
       const before = viewRef.current.mode;
+      const id = currentId.current;
+      if (!id && mode === "full_auto") {
+        note("Send a message first; then Full auto can be switched on for this chat.");
+        return;
+      }
       dispatch({ type: "patch", patch: { mode, offerAsk: false } });
       if (mode !== before) note(`${MODE_LABELS[mode] ?? mode}: ${MODE_COVERS[mode] ?? ""}`);
-      const id = currentId.current;
       if (!id) return;
       try {
-        await engine.current?.request({ type: "session.set_mode", session: id, mode });
+        await engine.current?.request({ type: "session.set_mode", session: id, mode, until, minutes });
       } catch (err) {
         dispatch({ type: "patch", patch: { mode: before } });
         fail(err);
@@ -999,7 +1003,14 @@ export function App() {
               editing={editing}
               onCancelEdit={() => setEditing(false)}
             />
-            <StatusBar mode={view.mode} workspace={workspace} model={view.model} cost={view.cost} onCycleMode={cycleMode} />
+            <StatusBar
+              mode={view.mode}
+              workspace={workspace}
+              model={view.model}
+              cost={view.cost}
+              canFullAuto={(me?.role ?? "owner") === "owner"}
+              onSetMode={(m, until, minutes) => void setMode(m, until, minutes)}
+            />
           </div>
         </div>
       </main>

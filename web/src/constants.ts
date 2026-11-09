@@ -131,6 +131,15 @@ export const MODE_UNTIL_TASK_END = "task_end";
 export const MODE_UNTIL_TIME = "time";
 export const MODE_UNTIL_MANUAL = "manual";
 
+/** Full auto's lengths in the mode chip's menu. */
+export const FULL_AUTO_LENGTHS: { label: string; until: string; minutes?: number }[] = [
+  { label: "Until this task ends", until: MODE_UNTIL_TASK_END },
+  { label: "For 30 minutes", until: MODE_UNTIL_TIME, minutes: 30 },
+  { label: "For 1 hour", until: MODE_UNTIL_TIME, minutes: 60 },
+  { label: "For 2 hours", until: MODE_UNTIL_TIME, minutes: 120 },
+  { label: "Until I switch it off", until: MODE_UNTIL_MANUAL },
+];
+
 /** Who answered, in plain words. */
 export const CLIENT_LABELS: Record<string, string> = {
   tui: "in the terminal",

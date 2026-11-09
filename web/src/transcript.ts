@@ -382,7 +382,8 @@ export function apply(view: View, frame: EventFrame, by: string, labels: Record<
     }
     case "session.updated":
       v = { ...v, title: frame.title ?? v.title };
-      if (frame.mode)
+      // Replayed mode changes are history: the saved mode the chat opened with is the real one.
+      if (frame.mode && !v.replay)
         v = {
           ...v,
           mode: frame.mode,
