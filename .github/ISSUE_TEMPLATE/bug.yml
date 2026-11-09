@@ -21,7 +21,7 @@ body:
     attributes:
       label: Thrall version
       description: Settings → Help shows it (on the phone, Settings → About).
-      placeholder: 0.2.3
+      placeholder: 0.2.4
     validations:
       required: true
   - type: dropdown
