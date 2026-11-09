@@ -7,6 +7,26 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-11-09
+
+Mode changes take hold while Thrall is working, and Full auto is easier to set.
+
+### Added
+
+- `/mode full 30m`, `/mode full 2h` or `/mode full on`: Full auto for a while, or until you
+  switch it off. The desktop app's mode chip opens a menu with the same choices (owner only).
+
+### Fixed
+
+- Changing the mode while Thrall is working takes effect from his next step, not his next
+  message. Switching Full auto on mid-task stops the questions; switching it off brings them back.
+- Thrall no longer takes the summary of a long chat as a new request and picks old tasks back up
+  by himself after the chat is summarised.
+- A chat left in Full auto when Thrall restarts goes back to Ask and says so in the chat, and the
+  app no longer keeps showing the Full auto banner for it.
+- Files saved as UTF-16 (what PowerShell's `>` writes) can be read.
+- An unknown mode in `/mode` now lists the Full auto choices too.
+
 ## [0.2.3] - 2026-11-06
 
 One Thrall for the whole household or a small team: companion PCs, and controls per person.
@@ -194,7 +214,8 @@ The first public preview.
 - First-run key setup in the desktop app, a welcome screen and a one-minute tour.
 - Installers built by CI for every release, with `SHA256SUMS.txt`.
 
-[Unreleased]: https://github.com/ThrallAI/thrall/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/ThrallAI/thrall/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/ThrallAI/thrall/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/ThrallAI/thrall/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/ThrallAI/thrall/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/ThrallAI/thrall/compare/v0.2.0...v0.2.1

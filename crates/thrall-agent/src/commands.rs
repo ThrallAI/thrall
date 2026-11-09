@@ -233,7 +233,8 @@ async fn mode(state: &AppState, session_id: &str, args: &str) -> Result<String, 
     }
     let Some(next) = Mode::parse(args) else {
         return Ok(format!(
-            "There's no `{args}` mode. Use ask, auto, plan or full."
+            "There's no `{args}` mode. Use ask, auto, plan or full (`full 30m`, `full 2h`, \
+             `full on`)."
         ));
     };
     session::set_mode(state, session_id, next).await?;
