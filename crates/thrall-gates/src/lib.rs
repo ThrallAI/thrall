@@ -336,10 +336,19 @@ fn user_of(path: &str) -> Option<&str> {
 }
 
 /// Whether `path` is in the system's folders (Windows, programs, the boot and system folders,
-/// someone else's user folder) for a person working in `workspace`.
+/// someone else's user folder) for a person working in `workspace`. The working folder itself is
+/// the person's, wherever it is (macOS keeps temporary folders under `/var`), unless a system
+/// folder is inside it (a whole drive as the working folder).
 pub fn system_folder(path: &str, workspace: &str) -> bool {
     let path = plain_path(path, workspace);
     let starts = |prefix: &&str| path == *prefix || path.starts_with(&format!("{prefix}\\"));
+    let own = plain_path("", workspace);
+    let holds_system = SYSTEM_FOLDERS
+        .iter()
+        .any(|s| s.starts_with(&format!("{own}\\")));
+    if !holds_system && starts(&own.as_str()) {
+        return false;
+    }
     if SYSTEM_FOLDERS.iter().any(starts) {
         return true;
     }
@@ -540,5 +549,19 @@ mod system_folder_tests {
         );
         assert!(system_folder("/etc/passwd", "/home/you/Thrall"));
         assert!(!system_folder("notes.txt", "/home/you/Thrall"));
+        // A working folder under a system folder is still the person's (macOS temp folders).
+        let mac_tmp = "/var/folders/ab/xyz/T/thrall-ws";
+        assert!(!system_folder("x.txt", mac_tmp));
+        assert!(!system_folder(
+            "/var/folders/ab/xyz/T/thrall-ws/a/b.txt",
+            mac_tmp
+        ));
+        assert!(
+            system_folder("../../../../log/x", mac_tmp),
+            "climbing out with .."
+        );
+        // A whole drive as the working folder doesn't make the system's folders the person's.
+        assert!(system_folder(r"C:\Windows\x.dll", r"C:\"));
+        assert!(system_folder("/etc/passwd", "/"));
     }
 }
