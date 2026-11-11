@@ -202,6 +202,7 @@ impl Tool for Schedule {
             ),
             risk: Risk::Medium,
             grant: None,
+            everyday: false,
         }
     }
     fn run<'a>(&'a self, ctx: &'a ToolContext, args: Value) -> BoxFuture<'a, ToolOutput> {
@@ -353,6 +354,7 @@ impl Tool for ScheduleRemove {
             summary: format!("Delete scheduled job {}", arg_str(args, "id")),
             risk: Risk::Medium,
             grant: None,
+            everyday: false,
         }
     }
     fn run<'a>(&'a self, ctx: &'a ToolContext, args: Value) -> BoxFuture<'a, ToolOutput> {

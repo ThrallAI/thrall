@@ -13,6 +13,8 @@ pub struct Sized {
     pub is_user: bool,
     /// Estimated tokens.
     pub tokens: usize,
+    /// Part of the task in progress (the turn running now).
+    pub in_task: bool,
 }
 
 /// Rough token count of some text.
@@ -42,18 +44,31 @@ pub fn scaled(tokens: usize, scale_percent: usize) -> usize {
 /// never separated from its result. Returns `None` rather than a cut that would summarise nothing,
 /// or (unless forced: `limit` 0) one that would summarise less than [`COMPACT_MIN_GAIN_PERCENT`]
 /// of the context, such as only the previous summary when the recent messages alone are big.
+///
+/// It cuts no later than the start of the task in progress when it can, so the request being
+/// worked on (and anything typed since) stays word for word: summarised, it reads as done and the
+/// newest message as the whole job. Only a task too big on its own is cut into.
 pub fn plan(messages: &[Sized], extra_tokens: usize, limit: usize) -> Option<usize> {
     let total: usize = extra_tokens + messages.iter().map(|m| m.tokens).sum::<usize>();
     if total * 100 < limit * COMPACT_AT_PERCENT {
         return None;
     }
     let latest_cut = messages.len().checked_sub(KEEP_RECENT_MESSAGES)?;
-    let cut = (1..=latest_cut).rev().find(|&i| messages[i].is_user)?;
-    let summarised: usize = messages[..cut].iter().map(|m| m.tokens).sum();
-    if limit > 0 && summarised * 100 < total * COMPACT_MIN_GAIN_PERCENT {
-        return None;
-    }
-    Some(cut)
+    let task_start = messages
+        .iter()
+        .position(|m| m.in_task)
+        .unwrap_or(messages.len());
+    let worth_it = |cut: usize| {
+        let summarised: usize = messages[..cut].iter().map(|m| m.tokens).sum();
+        limit == 0 || summarised * 100 >= total * COMPACT_MIN_GAIN_PERCENT
+    };
+    let last_user_up_to = |end: usize| {
+        (1..=end)
+            .rev()
+            .find(|&i| messages[i].is_user)
+            .filter(|&c| worth_it(c))
+    };
+    last_user_up_to(latest_cut.min(task_start)).or_else(|| last_user_up_to(latest_cut))
 }
 
 #[cfg(test)]
@@ -66,8 +81,32 @@ mod tests {
             .map(|c| Sized {
                 is_user: c == 'u',
                 tokens,
+                in_task: false,
             })
             .collect()
+    }
+
+    /// `before` done earlier, then the task in progress, `task`.
+    fn with_task(before: &str, task: &str, tokens: usize) -> Vec<Sized> {
+        let mut msgs = conv(before, tokens);
+        msgs.extend(
+            conv(task, tokens)
+                .into_iter()
+                .map(|m| Sized { in_task: true, ..m }),
+        );
+        msgs
+    }
+
+    #[test]
+    fn the_task_in_progress_stays_word_for_word() {
+        // Earlier chat, then a task whose run has user-role messages in it (a message typed
+        // mid-task, Thrall's checks): the cut lands at the task's start, not inside it.
+        let msgs = with_task("uauauauaua", "uatatuatatuatat", 1000);
+        assert_eq!(plan(&msgs, 0, 10_000), Some(10));
+        // A task too big on its own is still cut into rather than overflowing.
+        let msgs = with_task("ua", "uatatatatuatatatatuatatatat", 1000);
+        let cut = plan(&msgs, 0, 10_000).unwrap();
+        assert!(cut > 2 && msgs[cut].is_user, "{cut}");
     }
 
     #[test]
@@ -140,6 +179,7 @@ mod tests {
         let mut msgs = vec![Sized {
             is_user: true,
             tokens: 2000,
+            in_task: false,
         }];
         msgs.extend(conv("uattttttt", 10_000));
         assert_eq!(plan(&msgs, 3000, 100_000), None);

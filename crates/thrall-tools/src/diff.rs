@@ -41,9 +41,68 @@ pub fn make(path: &str, old: Option<&str>, new: &str) -> Diff {
     }
 }
 
+/// The new side of a unified diff as numbered lines, like `read_file` shows them: each changed
+/// part with its context, parts separated by `…`, at most `max_lines` lines.
+pub fn new_lines(unified: &str, max_lines: usize) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut line = 0usize;
+    let mut shown = 0usize;
+    let mut left = 0usize;
+    for row in unified.lines() {
+        if let Some(header) = row.strip_prefix("@@") {
+            // "@@ -a,b +c,d @@": the new side starts at line c.
+            line = header
+                .split_whitespace()
+                .find_map(|part| part.strip_prefix('+'))
+                .and_then(|range| range.split(',').next())
+                .and_then(|start| start.parse().ok())
+                .unwrap_or(1);
+            if !out.is_empty() && shown < max_lines {
+                out.push("     …".to_owned());
+            }
+            continue;
+        }
+        if row.starts_with("+++") || row.starts_with("---") || row.starts_with('\\') {
+            continue;
+        }
+        let text = match row.chars().next() {
+            Some(' ' | '+') => &row[1..],
+            Some('-') => continue,
+            _ => row,
+        };
+        if shown < max_lines {
+            out.push(format!("{line:>6}\t{text}"));
+            shown += 1;
+        } else {
+            left += 1;
+        }
+        line += 1;
+    }
+    if left > 0 {
+        out.push(format!(
+            "({left} more lines not shown; read the file if you need them)"
+        ));
+    }
+    out.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_lines_are_numbered_as_the_file_now_reads() {
+        let old = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\n";
+        let new = "a\nB\nc\nd\ne\nf\ng\nh\ni\nj\nK\nl\n";
+        let d = make("x.txt", Some(old), new);
+        let shown = new_lines(&d.unified, 80);
+        assert!(shown.contains("     2\tB"), "{shown}");
+        assert!(shown.contains("    11\tK"), "{shown}");
+        assert!(shown.contains('…'), "{shown}");
+        assert!(!shown.lines().any(|l| l.ends_with("\tb")), "{shown}");
+        let short = new_lines(&d.unified, 2);
+        assert!(short.contains("more lines not shown"), "{short}");
+    }
 
     #[test]
     fn counts_lines() {

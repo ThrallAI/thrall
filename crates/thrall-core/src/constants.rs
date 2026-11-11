@@ -37,6 +37,19 @@ pub const MAX_HELPERS_AT_ONCE: u32 = 8;
 /// helper_cost_limit_cents` says otherwise (0: no limit).
 pub const DEFAULT_HELPER_COST_LIMIT_CENTS: u32 = 100;
 
+/// Most steps (model calls) in one turn, unless `[agent] max_steps` says otherwise. Each step can
+/// run several tools.
+pub const DEFAULT_MAX_STEPS: u32 = 100;
+
+/// Most steps in one turn in Full auto, unless `[agent] full_auto_max_steps` says otherwise.
+pub const DEFAULT_FULL_AUTO_MAX_STEPS: u32 = 250;
+
+/// Fewest steps a turn may be given, whatever the settings say.
+pub const MIN_MAX_STEPS: u32 = 10;
+
+/// Most steps a turn may be given, whatever the settings say. Stops runaway loops.
+pub const MAX_MAX_STEPS: u32 = 500;
+
 /// The engine's access token (local mode): clients read it to connect. Created at first start.
 pub const TOKEN_FILE: &str = "access-token";
 
@@ -254,6 +267,8 @@ pub const EDITABLE_SETTINGS: &[&str] = &[
     "agent.question_wait_minutes",
     "agent.helpers_at_once",
     "agent.helper_cost_limit_cents",
+    "agent.max_steps",
+    "agent.full_auto_max_steps",
     "memory.remember_conversations",
     "memory.context_limit_tokens",
     "memory.embedding_model",

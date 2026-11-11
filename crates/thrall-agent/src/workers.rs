@@ -21,7 +21,7 @@ use thrall_tools::{Cancel, ToolOutput};
 use crate::checks::Track;
 use crate::constants::{
     ASK_THINKER, BACKGROUND_HELPER_NOTE, HELPER_PROMPT, HELPER_ROLE_HEADING, LOOKING_HELPER_NOTE,
-    MAX_HELPER_CALLS, MAX_MODEL_CALLS_PER_TURN, SPLIT_DOER_NOTE,
+    MAX_HELPER_CALLS, SPLIT_DOER_NOTE,
 };
 use crate::error::AgentError;
 use crate::state::{AppState, BackgroundTask};
@@ -213,7 +213,11 @@ pub(crate) async fn run_helper(
     let (model, role, max_calls) = match &doer {
         Some(d) => {
             tools.push(crate::split::ask_thinker_spec());
-            (d.model.clone(), usage_role::DOER, MAX_MODEL_CALLS_PER_TURN)
+            (
+                d.model.clone(),
+                usage_role::DOER,
+                state.config.agent.max_steps(mode == Mode::FullAuto),
+            )
         }
         None => (
             kind.and_then(|k| k.model.clone())

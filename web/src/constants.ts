@@ -101,10 +101,11 @@ export const MODE_LABELS: Record<string, string> = {
 /** What each mode lets Thrall do without asking, shown when it's picked (the engine's wording). */
 export const MODE_COVERS: Record<string, string> = {
   ask: "Thrall asks before every file edit and every command.",
-  auto_edits: "File edits in the folder go ahead without asking; commands still ask.",
+  auto_edits:
+    "File edits and everyday commands go ahead without asking; deleting, installing and stopping programs ask, and so does anything risky.",
   plan: "Thrall only reads and plans; nothing changes until you approve a plan.",
   full_auto:
-    "Edits and commands go ahead without asking, risky ones too (restarts, sending and deleting outside the folder still ask).",
+    "Edits and commands go ahead without asking, except risky ones: changing the registry or system files, wiping disks, deleting whole folders outside the session's, force pushes, restarts and sending still ask.",
 };
 
 /** The tour's note: its width (as in the CSS) and the gap it keeps from the window's edges. */
@@ -188,6 +189,10 @@ export const SKILL_DESCRIPTION_MAX_CHARS = 300;
 
 /** Most helpers that may work at once (the engine's MAX_HELPERS_AT_ONCE). */
 export const MAX_HELPERS_AT_ONCE = 8;
+
+/** Fewest and most steps a turn may be given (the engine's MIN_MAX_STEPS and MAX_MAX_STEPS). */
+export const MIN_MAX_STEPS = 10;
+export const MAX_MAX_STEPS = 500;
 
 /** Log detail levels, least to most. */
 export const LOG_LEVELS = ["error", "warn", "info", "debug", "trace"] as const;

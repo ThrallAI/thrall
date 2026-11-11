@@ -63,6 +63,7 @@ pub async fn compact(
             Sized {
                 is_user: m.role == role::USER,
                 tokens: scaled(tokens, scale),
+                in_task: m.turn_id.as_deref() == Some(turn_id),
             }
         })
         .collect();

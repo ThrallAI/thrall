@@ -519,6 +519,7 @@ impl Tool for DownloadVideo {
             ),
             risk: Risk::Low,
             grant: Some("download".to_owned()),
+            everyday: false,
         }
     }
     fn run<'a>(&'a self, ctx: &'a ToolContext, args: Value) -> BoxFuture<'a, ToolOutput> {
@@ -580,6 +581,7 @@ impl Tool for VideoTranscript {
             summary: format!("Get the transcript of {}", arg_str(args, "url")),
             risk: Risk::Low,
             grant: Some("download".to_owned()),
+            everyday: false,
         }
     }
     fn run<'a>(&'a self, _ctx: &'a ToolContext, _args: Value) -> BoxFuture<'a, ToolOutput> {

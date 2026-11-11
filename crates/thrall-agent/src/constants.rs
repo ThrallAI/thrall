@@ -11,8 +11,54 @@ pub const SESSION_TITLE_MAX_CHARS: usize = 60;
 /// Events buffered between the agent and a client before the agent waits.
 pub const EVENT_CHANNEL_CAPACITY: usize = 256;
 
-/// Most model calls in one turn (each tool round is one call). Stops runaway loops.
-pub const MAX_MODEL_CALLS_PER_TURN: usize = 60;
+/// Share of a turn's step limit (`[agent] max_steps`), in percent, after which Thrall is told to
+/// wrap up.
+pub const STEPS_WARNING_PERCENT: usize = 80;
+
+/// Sent once a turn has used `STEPS_WARNING_PERCENT` of its steps. `{used}`, `{max}` and `{left}`
+/// are filled in.
+pub const STEPS_WARNING_NUDGE: &str = "You've used {used} of this turn's {max} steps; {left} are \
+     left. Finish what's in hand and check it. If the task can't be finished in that, stop at a \
+     safe point and say plainly what's done and what's still to do, so the person can say \
+     \"carry on\".";
+
+/// Shown when a turn runs out of steps. `{max}` is filled in.
+pub const STEPS_STOPPED_NOTICE: &str = "Stopped after {max} steps in one turn. Say \"carry on\" \
+     to let Thrall continue, or raise the step limit in Settings.";
+
+/// Added to the first tool result of a turn, so Thrall knows its step limit from the start.
+/// `{max}` is filled in.
+pub const STEP_TAG_FIRST: &str = "[this message has {max} steps; step 1 used]";
+
+/// Added to a tool result every `STEP_TAG_EVERY` steps, so Thrall knows where it stands against
+/// the turn's step limit without a count on every result. `{step}` and `{max}` are filled in.
+pub const STEP_TAG: &str = "[step {step} of {max}]";
+pub const STEP_TAG_EVERY: usize = 25;
+
+/// Added to a tool result when the step limit changes mid-turn (the mode changed), so Thrall
+/// isn't planning around the old one. `{step}` and `{max}` are filled in.
+pub const STEP_TAG_CHANGED: &str = "[the step limit changed: step {step} of {max}]";
+
+/// The shell tool, whose results get the untracked-program reminder.
+pub const SHELL_TOOL: &str = "shell";
+
+/// Added to a shell result that started a program Thrall doesn't track.
+pub const UNTRACKED_START_REMINDER: &str = "If what you just started keeps running, Thrall can't \
+     see or stop it. Add a todo item to stop it, with its process ID and port (e.g. \"Stop cast \
+     server (PID 4120, port 8750)\"), and stop it when you're done, unless the person wants it \
+     left running. Or start it with shell keep_running, which Thrall tracks.";
+
+/// An edit to a file edited this many steps ago or fewer counts as a split edit.
+pub const SPLIT_EDIT_WINDOW_STEPS: usize = 3;
+
+/// Added to an edit_file result when the same file was edited `SPLIT_EDIT_WINDOW_STEPS` or fewer
+/// steps before. `{when}` is filled in ("in this same step", "2 steps ago").
+pub const SPLIT_EDIT_REMINDER: &str = "You already edited this file {when}. Next time, put every \
+     change to a file in one edit_file call, listing them in edits.";
+
+/// The tool whose results get the split-edit reminder, and the start of its successful result.
+pub const EDIT_TOOL: &str = "edit_file";
+pub const EDITED_PREFIX: &str = "Edited ";
 
 /// Characters of the first message sent when asking the model for a title.
 pub const TITLE_SOURCE_MAX_CHARS: usize = 1000;
@@ -50,7 +96,20 @@ sleep command, a pop-up script or the system's task scheduler.
 or conversion, and quote its answer. When a tool already calculates something (a combined total, \
 a cost), use its number instead of redoing it.
 - Look before you change: read a file before editing it.
-- File edits only work inside the working folder below.
+- Make every change to a file in one edit_file call, listing them in edits, instead of one call \
+per change. Its result shows the changed lines as they now are, so don't read the file back \
+afterwards; a file you just wrote is exactly what you sent.
+- Trust what a read shows you. Before calling a line broken, quote it exactly and say what's \
+wrong with it; if you can't, it isn't broken.
+- Notes in square brackets at the end of tool results, like [step 75 of 250], are for you: plan \
+around them, and don't repeat them in replies.
+- Clean up after yourself. Before testing, check your task list and running programs for \
+anything left from earlier work (servers, watchers, test scripts) and stop or remove it. Note \
+anything you start that keeps running as a task (what it is, process ID, port). When you're \
+done, stop what you started and delete throwaway files, unless the person wants something left \
+running; then say what's still running and why.
+- Use the file tools, not the shell, to write and change files, in the working folder below or \
+anywhere else you're asked to work.
 - Every shell command is shown to the user for approval; say briefly why you need it.
 - For work with three or more steps, keep the task list (todo_write) up to date. Skip it for \
 quick jobs of one or two steps: just do them.
@@ -223,6 +282,12 @@ pub const SANDBOX_PATH: &str = r#"(^|[\s(])(?:sandbox:)?/mnt/data/([^\s)\]`'"<>]
 
 /// Starts every message Thrall's own checks add to the conversation.
 pub const CHECK_PREFIX: &str = "[Thrall check]";
+
+/// Added (for the model only) after a message the person typed while Thrall was working, so it
+/// isn't taken as the whole new task and the request being worked on dropped.
+pub const MID_TASK_NOTE: &str = "The message above was sent while you were working on the \
+     request before it. Deal with it, then carry on with that request, unless the message changes \
+     or cancels it. If you stop before the request is finished, say plainly what's left.";
 
 /// Finds "I created x.rs", "updated `README.md`", "config.toml has been updated" in a reply.
 pub const CLAIM_PATTERN: &str = r"(?i)(?:\b(?:created|wrote|written|updated|edited|modified|saved|added|changed|fixed|renamed)\s+(?:the\s+)?(?:file\s+)?`?(?P<path>[\w./\\-]+\.[A-Za-z0-9]{1,8})`?)|(?:`?(?P<path2>[\w./\\-]+\.[A-Za-z0-9]{1,8})`?\s+(?:has|have)\s+been\s+(?:created|written|updated|edited|modified|saved|changed|fixed))";
@@ -855,6 +920,11 @@ pub const COMMAND_TOOLS: &[&str] = &["shell", "shell_output", "shell_stop", "git
 pub const COMMANDS_OFF: &str = "this Thrall's owner turned commands off for this person, so no \
      command can run. Don't look for other ways to run one; do what you can with the other tools \
      and say what needs a command.";
+
+/// What starts the permission card for a file edit in the system's folders (Windows, programs,
+/// other people's folders), which asks in every mode. The file is kept as it was first.
+pub const SYSTEM_EDIT_NOTE: &str = "Changes a system file (a copy is kept: undo by rewinding \
+     this message): Edit ";
 
 /// For the model, when an edit would land in the system's folders and the owner said not to.
 pub const SYSTEM_FOLDERS_OFF: &str = "this Thrall's owner keeps this person's file changes out of \

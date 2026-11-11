@@ -30,11 +30,11 @@ pub enum Mode {
     /// Ask before edits and commands.
     #[default]
     Ask,
-    /// File edits inside the folder go ahead; commands still ask.
+    /// File edits and everyday commands go ahead; other commands ask.
     AutoEdits,
     /// Read-only until a plan is approved.
     Plan,
-    /// No questions, except for actions that always ask.
+    /// No questions, except for risky actions, which always ask.
     FullAuto,
 }
 
@@ -80,12 +80,14 @@ impl Mode {
         match self {
             Self::Ask => "Thrall asks before every file edit and every command.",
             Self::AutoEdits => {
-                "File edits in the folder go ahead without asking; commands still ask."
+                "File edits and everyday commands go ahead without asking; deleting, installing \
+                 and stopping programs ask, and so does anything risky."
             }
             Self::Plan => "Thrall only reads and plans; nothing changes until you approve a plan.",
             Self::FullAuto => {
-                "Edits and commands go ahead without asking, risky ones too (restarts, sending \
-                 and deleting outside the folder still ask)."
+                "Edits and commands go ahead without asking, except risky ones: changing the \
+                 registry or system files, wiping disks, deleting whole folders outside the \
+                 session's, force pushes, restarts and sending still ask."
             }
         }
     }
@@ -109,7 +111,7 @@ impl Mode {
 pub enum Effect {
     /// Only reads (files, the web, memory).
     Read,
-    /// Changes a file inside the working folder.
+    /// Changes a file.
     Edit {
         /// File, as shown to the user.
         path: String,
@@ -124,6 +126,10 @@ pub enum Effect {
         risk: Risk,
         /// What an "always" answer covers (e.g. `shell:cargo`). `None` = never "always".
         grant: Option<String>,
+        /// An everyday command (building, testing, running a script): auto-edits mode runs it
+        /// without asking.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        everyday: bool,
     },
     /// Runs something that may only look (a tool on another app's MCP server that doesn't say
     /// it's read-only). Like [`Effect::Run`], except that plan mode asks instead of refusing:
@@ -178,13 +184,17 @@ pub fn tool_gate(mode: Mode, effect: &Effect, granted: bool) -> Decision {
             summary,
             risk,
             grant,
+            everyday,
         } => match mode {
             Mode::Plan => Decision::Deny(plan_refusal(summary)),
+            // Risky actions ask in every mode and are never covered by "always" (a Python Thrall
+            // lesson).
+            _ if *risk == Risk::High => Decision::Ask { always: false },
             Mode::FullAuto => Decision::Allow,
-            // Risky actions are never covered by "always" (a Python Thrall lesson).
-            Mode::Ask | Mode::AutoEdits if granted && *risk != Risk::High => Decision::Allow,
+            Mode::AutoEdits if *everyday => Decision::Allow,
+            Mode::Ask | Mode::AutoEdits if granted => Decision::Allow,
             Mode::Ask | Mode::AutoEdits => Decision::Ask {
-                always: grant.is_some() && *risk != Risk::High,
+                always: grant.is_some(),
             },
         },
         Effect::Probe {
@@ -202,6 +212,7 @@ pub fn tool_gate(mode: Mode, effect: &Effect, granted: bool) -> Decision {
                     summary: summary.clone(),
                     risk: *risk,
                     grant: grant.clone(),
+                    everyday: false,
                 },
                 granted,
             ),
@@ -348,6 +359,7 @@ mod tests {
             summary: "Run `x`".into(),
             risk,
             grant: grant.map(str::to_owned),
+            everyday: false,
         }
     }
 
@@ -415,9 +427,41 @@ mod tests {
             tool_gate(Mode::Ask, &run(Risk::High, Some("shell:rm")), true),
             Decision::Ask { always: false }
         );
+        // Risky ones ask even in full auto, and an earlier "always" doesn't cover them.
         assert_eq!(
-            tool_gate(Mode::FullAuto, &run(Risk::High, None), false),
+            tool_gate(Mode::FullAuto, &run(Risk::High, None), true),
+            Decision::Ask { always: false }
+        );
+        assert_eq!(
+            tool_gate(Mode::FullAuto, &run(Risk::Medium, None), false),
             Decision::Allow
+        );
+    }
+
+    #[test]
+    fn auto_edits_runs_everyday_commands_without_asking() {
+        let everyday = |risk| Effect::Run {
+            summary: "Run `cargo test`".into(),
+            risk,
+            grant: None,
+            everyday: true,
+        };
+        assert_eq!(
+            tool_gate(Mode::AutoEdits, &everyday(Risk::Low), false),
+            Decision::Allow
+        );
+        // Ask mode still asks, plan mode still refuses, and a risky one still asks.
+        assert_eq!(
+            tool_gate(Mode::Ask, &everyday(Risk::Low), false),
+            Decision::Ask { always: false }
+        );
+        assert!(matches!(
+            tool_gate(Mode::Plan, &everyday(Risk::Low), false),
+            Decision::Deny(_)
+        ));
+        assert_eq!(
+            tool_gate(Mode::AutoEdits, &everyday(Risk::High), false),
+            Decision::Ask { always: false }
         );
     }
 

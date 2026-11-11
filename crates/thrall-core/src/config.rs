@@ -458,6 +458,10 @@ pub struct AgentConfig {
     pub helpers_at_once: u32,
     /// What one helper may spend before it's stopped, in US cents (0: no limit).
     pub helper_cost_limit_cents: u32,
+    /// Most steps in one turn (`MIN_MAX_STEPS` to `MAX_MAX_STEPS`).
+    pub max_steps: u32,
+    /// Most steps in one turn in Full auto (`MIN_MAX_STEPS` to `MAX_MAX_STEPS`).
+    pub full_auto_max_steps: u32,
 }
 
 impl AgentConfig {
@@ -471,6 +475,19 @@ impl AgentConfig {
     pub fn helper_cost_limit_usd(&self) -> Option<f64> {
         (self.helper_cost_limit_cents > 0).then(|| f64::from(self.helper_cost_limit_cents) / 100.0)
     }
+
+    /// Most steps one turn may take, kept within `MIN_MAX_STEPS` and `MAX_MAX_STEPS`.
+    pub fn max_steps(&self, full_auto: bool) -> usize {
+        let steps = if full_auto {
+            self.full_auto_max_steps
+        } else {
+            self.max_steps
+        };
+        steps.clamp(
+            crate::constants::MIN_MAX_STEPS,
+            crate::constants::MAX_MAX_STEPS,
+        ) as usize
+    }
 }
 
 impl Default for AgentConfig {
@@ -482,6 +499,8 @@ impl Default for AgentConfig {
             question_wait_minutes: crate::constants::DEFAULT_QUESTION_WAIT_MINUTES,
             helpers_at_once: crate::constants::DEFAULT_HELPERS_AT_ONCE,
             helper_cost_limit_cents: crate::constants::DEFAULT_HELPER_COST_LIMIT_CENTS,
+            max_steps: crate::constants::DEFAULT_MAX_STEPS,
+            full_auto_max_steps: crate::constants::DEFAULT_FULL_AUTO_MAX_STEPS,
         }
     }
 }
@@ -911,6 +930,27 @@ mod tests {
         assert_eq!(config.skills.disabled, vec!["Notes".to_owned()]);
         assert!(with_setting("", "skills.x.enabled", &serde_json::json!("no"), p).is_err());
         assert!(Config::default().memory.save_facts);
+    }
+
+    #[test]
+    fn step_limits_are_set_and_kept_in_range() {
+        let p = Path::new("config.toml");
+        let agent = Config::default().agent;
+        assert_eq!(agent.max_steps(false), 100);
+        assert_eq!(agent.max_steps(true), 250);
+        let (text, config) =
+            with_setting("", "agent.max_steps", &serde_json::json!(150), p).unwrap();
+        assert_eq!(config.agent.max_steps(false), 150);
+        let (_, config) = with_setting(
+            &text,
+            "agent.full_auto_max_steps",
+            &serde_json::json!(9999),
+            p,
+        )
+        .unwrap();
+        assert_eq!(config.agent.max_steps(true), 500);
+        let (_, config) = with_setting("", "agent.max_steps", &serde_json::json!(0), p).unwrap();
+        assert_eq!(config.agent.max_steps(false), 10);
     }
 
     #[test]

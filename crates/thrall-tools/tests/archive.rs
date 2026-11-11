@@ -155,25 +155,26 @@ async fn zip_list_and_unpack_round_trip() {
 }
 
 #[tokio::test]
-async fn it_only_writes_inside_the_session_folder() {
+async fn it_can_write_outside_the_session_folder() {
     let ctx = ctx("inside").await;
     std::fs::write(ctx.workspace.join("a.txt"), "a").unwrap();
     let outside = std::env::temp_dir().join("thrall-zip-outside.zip");
-    let e = Archive
-        .precheck(
+    let _ = std::fs::remove_file(&outside);
+    assert_eq!(
+        Archive.precheck(
             &ctx,
             &json!({"action": "zip", "path": outside.to_string_lossy(), "files": ["a.txt"]}),
-        )
-        .unwrap();
-    assert!(e.contains("outside this session's folder"), "{e}");
+        ),
+        None
+    );
     zip_of(&ctx.workspace.join("x.zip"), &[("a.txt", "a")], None);
-    let e = Archive
-        .precheck(
+    assert_eq!(
+        Archive.precheck(
             &ctx,
             &json!({"action": "unpack", "path": "x.zip", "to": "../elsewhere"}),
-        )
-        .unwrap();
-    assert!(e.contains("outside this session's folder"), "{e}");
+        ),
+        None
+    );
     let e = Archive
         .precheck(
             &ctx,

@@ -24,8 +24,9 @@ use crate::checks::Track;
 use crate::constants::{
     BACKGROUND_CANT_CHANGE, BLOCKED_BY_HOOK, BLOCKED_BY_PLAN, BLOCKED_UNATTENDED, CHECK_IN_BLOCKED,
     CHECK_IN_READ_ONLY, COMMAND_TOOLS, COMMANDS_OFF, FLAG_COMMAND, FLAG_SYSTEM_FOLDER, NOT_ALLOWED,
-    NOT_LOOKING, SKILL_HELPER_DONE, SKILL_HELPER_TASK, SYSTEM_FOLDERS_OFF, THINKER_BLOCKED,
-    THINKER_CANT, THINKER_LOOK_ONLY, TOOL_MAX_SECS, TOOL_STOP_GRACE_SECS, step_status,
+    NOT_LOOKING, SKILL_HELPER_DONE, SKILL_HELPER_TASK, SYSTEM_EDIT_NOTE, SYSTEM_FOLDERS_OFF,
+    THINKER_BLOCKED, THINKER_CANT, THINKER_LOOK_ONLY, TOOL_MAX_SECS, TOOL_STOP_GRACE_SECS,
+    step_status,
 };
 use crate::error::AgentError;
 use crate::hooks;
@@ -374,8 +375,11 @@ pub(crate) async fn run_step(
                         )))
                     }
                     None => {
-                        gate_call(emitter, state, &step_id, &call.name, &effect, *mode, cancel)
-                            .await
+                        // A file in the system's folders asks every time; the checkpoint below
+                        // still keeps it as it was, so the change can be undone.
+                        let asked = system_edit(&effect, workspace);
+                        let gated = asked.as_ref().unwrap_or(&effect);
+                        gate_call(emitter, state, &step_id, &call.name, gated, *mode, cancel).await
                     }
                 }?;
                 match allowed {
@@ -871,6 +875,18 @@ pub(crate) async fn gate_call(
     }
 }
 
+/// How a file edit in the system's folders is asked about: every time, whatever the mode.
+fn system_edit(effect: &Effect, workspace: &Path) -> Option<Effect> {
+    let Effect::Edit { path, diff } = effect else {
+        return None;
+    };
+    thrall_gates::system_folder(path, &workspace.to_string_lossy()).then(|| Effect::AlwaysAsk {
+        summary: format!("{SYSTEM_EDIT_NOTE}{path}"),
+        risk: Risk::High,
+        diff: diff.clone(),
+    })
+}
+
 fn effect_name(effect: &Effect) -> &'static str {
     match effect {
         Effect::Read => "read",
@@ -1048,4 +1064,35 @@ pub(crate) async fn decide_plan(
         })
         .await?;
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn edit(path: &str) -> Effect {
+        Effect::Edit {
+            path: path.into(),
+            diff: None,
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_system_file_edit_asks_in_every_mode() {
+        let ws = Path::new(r"C:\Users\me\Documents\Thrall\me");
+        let asked = system_edit(&edit(r"C:\Windows\System32\drivers\etc\hosts"), ws);
+        let Some(effect) = asked else {
+            panic!("a system file wasn't asked about");
+        };
+        for mode in [Mode::Ask, Mode::AutoEdits, Mode::FullAuto] {
+            assert_eq!(
+                tool_gate(mode, &effect, true),
+                Decision::Ask { always: false }
+            );
+        }
+        // The person's own files, in the session or elsewhere, follow the mode as before.
+        assert!(system_edit(&edit("notes.txt"), ws).is_none());
+        assert!(system_edit(&edit(r"C:\Users\me\Projects\a.txt"), ws).is_none());
+    }
 }

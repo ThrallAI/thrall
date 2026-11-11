@@ -10,8 +10,60 @@ pub const RESULT_MAX_CHARS: usize = 60_000;
 /// reply has to say whether the command did what was asked.
 pub const NONZERO_EXIT_NOTE: &str = " (it ran to the end; the output below may still be what was \
      wanted: say in your reply whether it did the job)";
+/// After a command that ended while something it started kept running (it held the output open),
+/// when Thrall couldn't find what it was.
+pub const LEFT_RUNNING_NOTE: &str = "The command ended, but something it started is still running \
+     (it kept the output open). Thrall isn't tracking it and can't stop it: note its process ID \
+     and port, and stop it when you're done, unless the person wants it left running.";
+/// The same, when Thrall found the programs and keeps track of them. `{programs}` (names with
+/// process IDs) and `{id}` are filled in.
+pub const LEFT_TRACKED_NOTE: &str = "The command ended, but what it started is still running: \
+     {programs}. Thrall keeps track of it as {id}: read its latest output with shell_output, and \
+     stop it with shell_stop when you're done, unless the person wants it left running.";
+/// Finds the programs a command started that are still running after it ended (Windows: the
+/// shell's gone, so they're no longer under it). `{pid}` is the shell's process ID and `{ms}` when
+/// it started (Unix milliseconds), so a later program reusing the ID isn't counted.
+pub const LEFT_BEHIND_QUERY: &str = "Get-CimInstance Win32_Process -Filter 'ParentProcessId={pid}' \
+     | Where-Object { $_.CreationDate -ge [DateTimeOffset]::FromUnixTimeMilliseconds({ms}).LocalDateTime } \
+     | ForEach-Object { \"$($_.ProcessId) $($_.Name)\" }";
+/// Allowance for clock granularity when matching programs started since the shell did.
+pub const LEFT_BEHIND_MARGIN_MS: u128 = 1000;
+/// After a command was stopped (timed out or interrupted): what was stopped with it.
+pub const STOPPED_NOTE: &str = "it and the programs under it were stopped";
+/// Added to [`STOPPED_NOTE`] only when the command starts a program on its own, which may have
+/// escaped the stop.
+pub const STOPPED_DETACHED_NOTE: &str = ". A program it started on its own (like with \
+     Start-Process) may still be running: check before going on";
+/// Ways of starting a program that keeps running after the shell command ends, which Thrall
+/// doesn't track: matched in lower case where a command begins, so `Get-Help Start-Process`
+/// doesn't count.
+pub const UNTRACKED_STARTS: &[&str] = &[
+    "start-process",
+    "saps ",
+    "start ",
+    "start-job",
+    "sajb ",
+    "nohup ",
+    "setsid ",
+    "cmd /c start",
+];
+/// Programs that run without a window of output and outlive the command that starts them,
+/// matched by name where a command begins (as `pythonw app.py`, not `Get-Process pythonw`).
+pub const UNTRACKED_PROGRAMS: &[&str] = &["pythonw"];
+/// What separates the commands on one shell line, for finding where each begins.
+pub const COMMAND_SEPARATORS: &[char] = &[';', '|', '&', '\n', '(', '{'];
+/// After an `mcp_search` by key words that found nothing, when some servers weren't searched
+/// because they aren't started. `{servers}` is filled in.
+pub const MCP_NOT_STARTED_NOTE: &str = " Only servers already started were searched. Not started: \
+     {servers}. If one of these is clearly what's needed, search again with its name to start it; \
+     don't start them to hunt for something.";
 /// Characters of a single line shown before it's cut.
 pub const LINE_MAX_CHARS: usize = 2000;
+
+/// Most changes `edit_file` makes in one call.
+pub const EDIT_MAX_CHANGES: usize = 50;
+/// Most changed lines (with a little context) `edit_file` shows back to the model.
+pub const EDIT_SHOWN_MAX_LINES: usize = 80;
 
 /// Most entries `list_dir` shows.
 pub const LIST_MAX_ENTRIES: usize = 500;
@@ -41,6 +93,13 @@ pub const BACKGROUND_OUTPUT_MAX_CHARS: usize = 20_000;
 pub const BACKGROUND_READ_MAX_CHARS: usize = 6_000;
 /// Programs one person may leave running in the background at once.
 pub const BACKGROUND_MAX_PER_PERSON: usize = 5;
+/// With keep_running and nothing to wait for, a program still going after this long is kept.
+pub const KEEP_RUNNING_SETTLE_SECS: u64 = 3;
+/// After a command ends, how long its output may take to finish arriving. Longer means something
+/// it started (like Start-Process) is still running and holding the output open.
+pub const OUTPUT_DRAIN_MS: u64 = 2000;
+/// Set to "1" for programs Thrall runs, so Python prints as it goes instead of holding output back.
+pub const PYTHON_UNBUFFERED: &str = "PYTHONUNBUFFERED";
 /// Git commands time out after this.
 pub const GIT_TIMEOUT_SECS: u64 = 60;
 /// Most characters of live output sent to clients per step (the model still gets the result).
@@ -145,36 +204,140 @@ pub const GIT_READ_ONLY: &[&str] = &[
     "shortlog",
     "describe",
 ];
-/// Pieces of a shell command that make it high-risk (lower-case match). High-risk commands always
-/// ask and are never covered by "always".
+/// Pieces of a shell command that make it high-risk (lower-case match). High-risk commands ask in
+/// every mode, Full auto too, and are never covered by "always". Deleting whole folders outside
+/// the session's, stopping programs by name and changing the registry or system files are
+/// high-risk too, worked out from the command's words.
 pub const SHELL_RISKY: &[&str] = &[
-    "rm -r",
-    "rm -f",
-    "rmdir",
-    "remove-item",
-    "del /s",
-    "rd /s",
     "format ",
+    "format-volume",
+    "clear-disk",
+    "initialize-disk",
+    "diskpart",
     "mkfs",
+    "bcdedit",
     "shutdown",
     "restart-computer",
     "stop-computer",
-    "reg delete",
     "set-executionpolicy",
     "git push --force",
+    "git push -f",
     "git reset --hard",
     "git clean",
     "> /dev/",
     "dd if=",
 ];
 
+/// Pieces of a shell command that need a look (lower-case match): installing and sending code
+/// out. Like deleting and stopping a program, they ask unless the mode is Full auto.
+pub const SHELL_CAREFUL: &[&str] = &[
+    " install",
+    "install-",
+    "uninstall",
+    "npm i ",
+    "msiexec",
+    "add-appxpackage",
+    "git push",
+];
+
 /// Programs that delete files (lower-case, matched as whole words). A command using one says so at
 /// the start of its permission card, so a delete chained onto something harmless isn't missed.
 pub const SHELL_DELETERS: &[&str] = &["rm", "rmdir", "remove-item", "ri", "del", "erase", "rd"];
 
-/// What starts the permission card of a command that deletes files, or of another risky one.
+/// Words that make a delete take whole folders (with one of `SHELL_DELETERS`).
+pub const SHELL_RECURSIVE: &[&str] = &["-r", "-rf", "-fr", "-recurse", "/s", "rmdir", "rd"];
+
+/// Words that move a command to another folder, so what it deletes may be outside the session's.
+pub const SHELL_MOVERS: &[&str] = &[
+    "cd",
+    "set-location",
+    "sl",
+    "pushd",
+    "push-location",
+    "chdir",
+];
+
+/// Programs that stop other programs (whole words), and the words that make them stop every
+/// program of a name rather than one process.
+pub const SHELL_STOPPERS: &[&str] = &[
+    "stop-process",
+    "spps",
+    "kill",
+    "taskkill",
+    "pkill",
+    "killall",
+];
+pub const SHELL_BY_NAME: &[&str] = &["-name", "-processname", "/im", "pkill", "killall"];
+
+/// Words that change something on disk (with `>`), for spotting changes to the system's folders.
+pub const SHELL_WRITERS: &[&str] = &[
+    "rm",
+    "rmdir",
+    "remove-item",
+    "ri",
+    "del",
+    "erase",
+    "rd",
+    "copy-item",
+    "cp",
+    "copy",
+    "move-item",
+    "mv",
+    "move",
+    "rename-item",
+    "ren",
+    "new-item",
+    "set-content",
+    "add-content",
+    "out-file",
+    "icacls",
+    "takeown",
+    "attrib",
+];
+
+/// How the registry is named in a command, and the commands that change it (lower case).
+pub const REGISTRY_NAMES: &[&str] = &[
+    "hklm:",
+    "hkcu:",
+    "hkcr:",
+    "hku:",
+    "hkcc:",
+    "registry::",
+    "hkey_",
+];
+pub const REGISTRY_WRITERS: &[&str] = &[
+    "set-itemproperty",
+    "new-itemproperty",
+    "remove-itemproperty",
+    "rename-itemproperty",
+    "copy-itemproperty",
+    "move-itemproperty",
+    "set-item",
+    "new-item",
+    "remove-item",
+];
+pub const REG_EXE_WRITES: &[&str] = &[
+    "reg add",
+    "reg delete",
+    "reg import",
+    "reg copy",
+    "reg restore",
+    "reg load",
+    "reg unload",
+];
+
+/// What starts the permission card of a command that deletes files, of another risky one, and of
+/// one that changes the registry or system files.
 pub const SHELL_DELETES_NOTE: &str = "Deletes files: ";
 pub const SHELL_RISKY_NOTE: &str = "Risky: ";
+pub const SHELL_SYSTEM_NOTE: &str = "Changes the system: ";
+
+/// Why a change to the registry or system files can't go ahead yet: it needs its outcome, how to
+/// undo it, and a backup that the undo names.
+pub const SYSTEM_CHANGE_NEEDS: &str = "This changes the registry or system files, so it must be \
+     reversible. First make a backup (reg export <key> <file>.reg, or copy the file somewhere), \
+     then run it again with `outcome` (what will change and what that does) and `undo` (how to \
+     put it back, naming the backup file).";
 
 /// Characters that chain or pipe commands; such commands can't be covered by "always".
 pub const SHELL_CHAINING: &[char] = &[';', '&', '|', '`', '$', '>', '<', '\n'];

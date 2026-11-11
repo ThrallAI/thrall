@@ -21,7 +21,7 @@ export function ModeBanner({
     return (
       <div className="th-modebar is-full_auto" role="status">
         <span>
-          <strong>Full auto is on.</strong> Edits and commands go ahead without asking. {lasts(limit)}
+          <strong>Full auto is on.</strong> Edits and commands go ahead without asking; risky ones still ask. {lasts(limit)}
         </span>
         <button type="button" className="th-btn" onClick={onAsk}>
           Stop Full auto

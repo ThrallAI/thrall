@@ -78,6 +78,11 @@ chromiumoxide = "0.9.1"
 # Starting with Windows (the Run key). Already in the lock file: the tray's autostart uses it.
 windows-registry = "0.6.1"
 
+# Debug builds keep line numbers for panics and backtraces but not full debugger info: the build
+# folder stays several times smaller (it had grown past 300 GB).
+[profile.dev]
+debug = "line-tables-only"
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 

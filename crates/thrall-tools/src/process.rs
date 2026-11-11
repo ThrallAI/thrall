@@ -3,13 +3,16 @@
 
 use std::path::Path;
 use std::process::Stdio;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 
-use crate::constants::LIVE_OUTPUT_MAX_CHARS;
+use crate::constants::{
+    LEFT_BEHIND_MARGIN_MS, LEFT_BEHIND_QUERY, LIVE_OUTPUT_MAX_CHARS, OUTPUT_DRAIN_MS,
+    PYTHON_UNBUFFERED,
+};
 use crate::tool::Cancel;
 
 /// How a program run ended.
@@ -22,6 +25,19 @@ pub struct Finished {
     pub timed_out: bool,
     /// Whether it was killed because the user interrupted.
     pub cancelled: bool,
+    /// What it left running when it ended, if something it started kept its output open (a
+    /// windowed app, a server): no longer under the command, so stopping the command won't end it.
+    pub left: Option<Left>,
+}
+
+/// Programs a command left running when it ended, and the rest of their output.
+pub struct Left {
+    /// Each one's process ID and name (empty if they couldn't be found).
+    pub programs: Vec<(u32, String)>,
+    /// What to stop to end them: their process IDs (Windows), or the command's process group.
+    pub stop: Vec<u32>,
+    /// Their output from here on.
+    pub lines: mpsc::UnboundedReceiver<String>,
 }
 
 /// Run `program args…` in `cwd`, sending output lines to `live` as they come. Killed with its
@@ -41,10 +57,14 @@ pub async fn run(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true);
+        .kill_on_drop(true)
+        // Python holds back what it prints when it isn't printing to a screen, so a server's
+        // "listening" line would never arrive.
+        .env(PYTHON_UNBUFFERED, "1");
     #[cfg(unix)]
     command.process_group(0);
     thrall_core::process::no_window(command.as_std_mut());
+    let since = SystemTime::now();
     let mut child = command.spawn()?;
     let pid = child.id();
 
@@ -71,18 +91,27 @@ pub async fn run(
     };
 
     enum End {
-        Exited(std::io::Result<std::process::ExitStatus>),
+        Exited(std::io::Result<std::process::ExitStatus>, bool),
         TimedOut,
         Cancelled,
     }
     let end = {
         let finish = tokio::time::timeout(timeout, async {
-            collect.await;
-            child.wait().await
+            tokio::pin!(collect);
+            tokio::select! {
+                () = &mut collect => (child.wait().await, false),
+                status = child.wait() => {
+                    // It ended. Its output is done too, unless something it started inherited
+                    // the output and is still running: don't wait for that to end.
+                    let drain = Duration::from_millis(OUTPUT_DRAIN_MS);
+                    let left = tokio::time::timeout(drain, &mut collect).await.is_err();
+                    (status, left)
+                }
+            }
         });
         tokio::select! {
             result = finish => match result {
-                Ok(status) => End::Exited(status),
+                Ok((status, left)) => End::Exited(status, left),
                 Err(_) => End::TimedOut,
             },
             () = cancel.cancelled() => End::Cancelled,
@@ -90,12 +119,20 @@ pub async fn run(
     };
 
     match end {
-        End::Exited(status) => Ok(Finished {
-            code: status?.code(),
-            output,
-            timed_out: false,
-            cancelled: false,
-        }),
+        End::Exited(status, left_running) => {
+            let left = if left_running {
+                Some(left_behind(pid, since, rx).await)
+            } else {
+                None
+            };
+            Ok(Finished {
+                code: status?.code(),
+                output,
+                timed_out: false,
+                cancelled: false,
+                left,
+            })
+        }
         stopped => {
             kill_tree(pid).await;
             let _ = child.kill().await;
@@ -104,6 +141,7 @@ pub async fn run(
                 output,
                 timed_out: matches!(stopped, End::TimedOut),
                 cancelled: matches!(stopped, End::Cancelled),
+                left: None,
             })
         }
     }
@@ -125,7 +163,8 @@ pub enum Watched {
 }
 
 /// Like [`run`], but hand back as soon as a line matches `wait_for`: then the program is
-/// stopped, or with `keep_running` left running in the background as `user_id`'s.
+/// stopped, or with `keep_running` left running in the background as `user_id`'s. With no
+/// `wait_for`, a program kept running is handed back once `timeout` passes and it's still going.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_until(
     program: &str,
@@ -134,7 +173,7 @@ pub async fn run_until(
     timeout: Duration,
     live: &mpsc::UnboundedSender<String>,
     mut cancel: Cancel,
-    wait_for: &regex::Regex,
+    wait_for: Option<&regex::Regex>,
     keep_running: Option<(&str, &str)>,
 ) -> std::io::Result<Watched> {
     let mut command = Command::new(program);
@@ -144,10 +183,14 @@ pub async fn run_until(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true);
+        .kill_on_drop(true)
+        // Python holds back what it prints when it isn't printing to a screen, so a server's
+        // "listening" line would never arrive.
+        .env(PYTHON_UNBUFFERED, "1");
     #[cfg(unix)]
     command.process_group(0);
     thrall_core::process::no_window(command.as_std_mut());
+    let since = SystemTime::now();
     let mut child = command.spawn()?;
     let pid = child.id();
 
@@ -163,12 +206,16 @@ pub async fn run_until(
     enum End {
         Seen,
         Closed,
+        LeftBehind,
         TimedOut,
         Cancelled,
     }
     let mut output = String::new();
     let mut live_sent = 0usize;
     let deadline = tokio::time::Instant::now() + timeout;
+    // The command's own end, and how long its output then gets to close.
+    let mut exited = None;
+    let mut drained = deadline;
     let end = loop {
         tokio::select! {
             line = rx.recv() => match line {
@@ -177,7 +224,7 @@ pub async fn run_until(
                         live_sent += line.len();
                         let _ = live.send(line.clone());
                     }
-                    let seen = wait_for.is_match(&line);
+                    let seen = wait_for.is_some_and(|w| w.is_match(&line));
                     output.push_str(&line);
                     if seen {
                         break End::Seen;
@@ -185,53 +232,178 @@ pub async fn run_until(
                 }
                 None => break End::Closed,
             },
+            // It ended. Its output is done too, unless something it started inherited the output
+            // and is still running (a windowed app prints nothing, so its line never comes).
+            status = child.wait(), if exited.is_none() => {
+                exited = Some(status);
+                let drain = tokio::time::Instant::now() + Duration::from_millis(OUTPUT_DRAIN_MS);
+                drained = drain.min(deadline);
+            }
+            () = tokio::time::sleep_until(drained), if exited.is_some() => break End::LeftBehind,
             () = tokio::time::sleep_until(deadline) => break End::TimedOut,
             () = cancel.cancelled() => break End::Cancelled,
         }
     };
+    let end = match end {
+        End::TimedOut if exited.is_some() => End::LeftBehind,
+        end => end,
+    };
     match end {
         End::Seen => match keep_running {
+            // The command's gone: keep track of what it left instead.
+            Some((user_id, shown)) if exited.is_some() => {
+                let left = left_behind(pid, since, rx).await;
+                let id =
+                    crate::background::adopt(user_id, shown, left.stop, left.lines, output.clone());
+                Ok(Watched::Kept { output, id })
+            }
             Some((user_id, shown)) => {
                 let id = crate::background::keep(user_id, shown, child, rx, output.clone());
                 Ok(Watched::Kept { output, id })
             }
             None => {
-                kill_tree(pid).await;
+                stop(pid, since, exited.is_some()).await;
                 let _ = child.kill().await;
                 Ok(Watched::Seen(output))
             }
         },
         // Every pipe closed: it's ending (or handed its output elsewhere); wait for it, within
         // the time left.
-        End::Closed => match tokio::time::timeout_at(deadline, child.wait()).await {
-            Ok(status) => Ok(Watched::Ended(Finished {
-                code: status?.code(),
+        End::Closed => {
+            let status = match exited {
+                Some(status) => Ok(status),
+                None => tokio::time::timeout_at(deadline, child.wait()).await,
+            };
+            match status {
+                Ok(status) => Ok(Watched::Ended(Finished {
+                    code: status?.code(),
+                    output,
+                    timed_out: false,
+                    cancelled: false,
+                    left: None,
+                })),
+                Err(_) => {
+                    kill_tree(pid).await;
+                    let _ = child.kill().await;
+                    Ok(Watched::Ended(Finished {
+                        code: None,
+                        output,
+                        timed_out: true,
+                        cancelled: false,
+                        left: None,
+                    }))
+                }
+            }
+        }
+        // It ended and left something running: hand that back rather than waiting on a line it
+        // may never print, or stopping the command and leaving it behind.
+        End::LeftBehind => {
+            let code = match exited {
+                Some(status) => status?.code(),
+                None => None,
+            };
+            Ok(Watched::Ended(Finished {
+                code,
                 output,
                 timed_out: false,
                 cancelled: false,
-            })),
-            Err(_) => {
-                kill_tree(pid).await;
-                let _ = child.kill().await;
-                Ok(Watched::Ended(Finished {
-                    code: None,
-                    output,
-                    timed_out: true,
-                    cancelled: false,
-                }))
-            }
-        },
+                left: Some(left_behind(pid, since, rx).await),
+            }))
+        }
+        End::TimedOut if wait_for.is_none() && keep_running.is_some() => {
+            let (user_id, shown) = keep_running.unwrap_or_default();
+            let id = crate::background::keep(user_id, shown, child, rx, output.clone());
+            Ok(Watched::Kept { output, id })
+        }
         stopped => {
-            kill_tree(pid).await;
+            stop(pid, since, exited.is_some()).await;
             let _ = child.kill().await;
             Ok(Watched::Ended(Finished {
                 code: None,
                 output,
                 timed_out: matches!(stopped, End::TimedOut),
                 cancelled: matches!(stopped, End::Cancelled),
+                left: None,
             }))
         }
     }
+}
+
+/// Stop a command and everything it started, including what it left running if it already
+/// ended (no longer under it).
+async fn stop(pid: Option<u32>, since: SystemTime, ended: bool) {
+    kill_tree(pid).await;
+    #[cfg(windows)]
+    if ended && let Some(pid) = pid {
+        for (left, _) in list_left(pid, since).await {
+            kill_tree(Some(left)).await;
+        }
+    }
+    // Elsewhere they're in the command's process group, stopped with it.
+    #[cfg(not(windows))]
+    let _ = (since, ended);
+}
+
+/// What a command that ended left running, with the rest of its output.
+async fn left_behind(
+    pid: Option<u32>,
+    since: SystemTime,
+    lines: mpsc::UnboundedReceiver<String>,
+) -> Left {
+    let programs = match pid {
+        Some(pid) => list_left(pid, since).await,
+        None => Vec::new(),
+    };
+    #[cfg(windows)]
+    let stop = programs.iter().map(|(id, _)| *id).collect();
+    #[cfg(not(windows))]
+    let stop = match pid {
+        Some(group) if !programs.is_empty() => vec![group],
+        _ => Vec::new(),
+    };
+    Left {
+        programs,
+        stop,
+        lines,
+    }
+}
+
+/// The programs command `pid` started since `since` that are still running after it ended: on
+/// Windows those whose parent it was, elsewhere those in its process group.
+async fn list_left(pid: u32, since: SystemTime) -> Vec<(u32, String)> {
+    let ms = since
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default()
+        .saturating_sub(LEFT_BEHIND_MARGIN_MS);
+    #[cfg(windows)]
+    let mut command = {
+        let query = LEFT_BEHIND_QUERY
+            .replace("{pid}", &pid.to_string())
+            .replace("{ms}", &ms.to_string());
+        let mut command = Command::new("powershell");
+        command.args(["-NoProfile", "-NonInteractive", "-Command", &query]);
+        command
+    };
+    #[cfg(not(windows))]
+    let mut command = {
+        let _ = (ms, LEFT_BEHIND_QUERY);
+        let mut command = Command::new("pgrep");
+        command.args(["-l", "-g", &pid.to_string()]);
+        command
+    };
+    command.stdin(Stdio::null()).stderr(Stdio::null());
+    thrall_core::process::no_window(command.as_std_mut());
+    let Ok(out) = command.output().await else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| {
+            let (id, name) = line.trim().split_once(' ')?;
+            Some((id.parse().ok()?, name.trim().to_owned()))
+        })
+        .collect()
 }
 
 async fn pump(stream: impl AsyncRead + Unpin, tx: mpsc::UnboundedSender<String>) {

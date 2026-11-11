@@ -47,8 +47,9 @@ export function DecisionCard({
         else if (key === "a" && card.always) onChoose({ kind: "permission", choice: "always" });
         else return;
       } else {
-        if (key === "y") onChoose({ kind: "plan", approve: true, autoEdits: false });
-        else if (key === "a") onChoose({ kind: "plan", approve: true, autoEdits: true });
+        // Approving goes on in Auto edits; a keeps asking before each change.
+        if (key === "y") onChoose({ kind: "plan", approve: true, autoEdits: true });
+        else if (key === "a") onChoose({ kind: "plan", approve: true, autoEdits: false });
         else if (key === "n") onChoose({ kind: "plan", approve: false, autoEdits: false });
         else return;
       }
@@ -69,16 +70,16 @@ export function DecisionCard({
           <button
             type="button"
             className="th-btn th-btn-primary th-yes"
-            onClick={() => onChoose({ kind: "plan", approve: true, autoEdits: false })}
+            onClick={() => onChoose({ kind: "plan", approve: true, autoEdits: true })}
           >
             <span className="th-key">y</span> Approve
           </button>
           <button
             type="button"
             className="th-btn"
-            onClick={() => onChoose({ kind: "plan", approve: true, autoEdits: true })}
+            onClick={() => onChoose({ kind: "plan", approve: true, autoEdits: false })}
           >
-            <span className="th-key">a</span> Approve, auto-accept edits
+            <span className="th-key">a</span> Approve, ask before each change
           </button>
           <button
             type="button"
