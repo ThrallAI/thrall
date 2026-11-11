@@ -1066,7 +1066,8 @@ pub(crate) async fn decide_plan(
     Ok(true)
 }
 
-#[cfg(test)]
+// Windows paths only: the system folders checked are Windows ones.
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
 
@@ -1077,7 +1078,6 @@ mod tests {
         }
     }
 
-    #[cfg(windows)]
     #[test]
     fn a_system_file_edit_asks_in_every_mode() {
         let ws = Path::new(r"C:\Users\me\Documents\Thrall\me");

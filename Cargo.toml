@@ -44,7 +44,7 @@ regex = "1.13.1"
 # Scheduled jobs and MCP servers.
 croner = "4.0.1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-rmcp = { version = "3.5.1", default-features = false, features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest", "reqwest", "auth"] }
+rmcp = { version = "3.9.0", default-features = false, features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest", "reqwest", "auth"] }
 async-trait = "0.1.92"
 # The protocol schema, the server and the web app.
 schemars = "1.2.3"
