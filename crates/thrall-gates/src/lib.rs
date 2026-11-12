@@ -337,16 +337,24 @@ fn user_of(path: &str) -> Option<&str> {
 
 /// Whether `path` is in the system's folders (Windows, programs, the boot and system folders,
 /// someone else's user folder) for a person working in `workspace`. The working folder itself is
-/// the person's, wherever it is (macOS keeps temporary folders under `/var`), unless a system
-/// folder is inside it (a whole drive as the working folder).
+/// the person's, wherever it is (macOS keeps temporary folders under `/var`), and so is the
+/// system's temporary folder, unless a system folder is inside it (a whole drive as the working
+/// folder).
 pub fn system_folder(path: &str, workspace: &str) -> bool {
+    system_folder_with_temp(path, workspace, &std::env::temp_dir().to_string_lossy())
+}
+
+fn system_folder_with_temp(path: &str, workspace: &str, temp: &str) -> bool {
     let path = plain_path(path, workspace);
     let starts = |prefix: &&str| path == *prefix || path.starts_with(&format!("{prefix}\\"));
-    let own = plain_path("", workspace);
-    let holds_system = SYSTEM_FOLDERS
-        .iter()
-        .any(|s| s.starts_with(&format!("{own}\\")));
-    if !holds_system && starts(&own.as_str()) {
+    let persons = |folder: &str| {
+        let own = plain_path("", folder);
+        let holds_system = SYSTEM_FOLDERS
+            .iter()
+            .any(|s| s.starts_with(&format!("{own}\\")));
+        !holds_system && starts(&own.as_str())
+    };
+    if persons(workspace) || persons(temp) {
         return false;
     }
     if SYSTEM_FOLDERS.iter().any(starts) {
@@ -528,7 +536,7 @@ mod tests {
 
 #[cfg(test)]
 mod system_folder_tests {
-    use super::system_folder;
+    use super::{system_folder, system_folder_with_temp};
 
     #[test]
     fn system_and_other_peoples_folders_are_out_of_bounds() {
@@ -563,5 +571,21 @@ mod system_folder_tests {
         // A whole drive as the working folder doesn't make the system's folders the person's.
         assert!(system_folder(r"C:\Windows\x.dll", r"C:\"));
         assert!(system_folder("/etc/passwd", "/"));
+    }
+
+    #[test]
+    fn the_systems_temporary_folder_is_the_persons() {
+        let ws = "/Users/you/Thrall";
+        let temp = "/var/folders/ab/xyz/T/";
+        assert!(!system_folder_with_temp(
+            "/var/folders/ab/xyz/T/marker.txt",
+            ws,
+            temp
+        ));
+        assert!(system_folder_with_temp("/var/log/x", ws, temp));
+        assert!(
+            system_folder_with_temp(r"C:\Windows\x.dll", ws, r"C:\"),
+            "a whole drive as the temporary folder changes nothing"
+        );
     }
 }
