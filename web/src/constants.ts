@@ -282,3 +282,15 @@ export const CHECK_IN_AGENT = "check-in";
 
 /** The function the desktop app calls to open the session a clicked notification is about. */
 export const OPEN_SESSION_JS = "thrallOpen";
+
+/** Messages and steps drawn when a session opens (the latest); older ones come as you scroll up. */
+export const SHOWN_ITEMS = 100;
+
+/** How many older messages and steps scrolling near the top draws. */
+export const MORE_ITEMS = 50;
+
+/** How close to the top (pixels) scrolling has to come to draw older messages. */
+export const NEAR_TOP_PX = 600;
+
+/** Pictures, recordings and videos kept loaded at once; the oldest are let go after that. */
+export const KEPT_FILES = 40;
