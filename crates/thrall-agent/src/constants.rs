@@ -253,6 +253,18 @@ pub const SKILL_HELPER_DONE: &str = "Skill finished in a helper";
 /// Facts `/memory` shows.
 pub const MEMORY_COMMAND_LIMIT: u32 = 20;
 
+/// `/cost`'s last line: credit left on the account the model spends ({provider}, {left}).
+pub const COST_BALANCE_LINE: &str = "**{provider} balance:** {left} left";
+
+/// Said once after a turn when credit falls below `[provider] low_balance_warn_cents` ({provider},
+/// {left}, {limit}).
+pub const LOW_BALANCE_NOTICE: &str = "Your {provider} credit is running low: {left} left (you're \
+     warned below {limit}). Top up to keep Thrall working. Change or switch off this warning in \
+     Settings → Models.";
+
+/// `/cost`'s last line when the provider didn't say how much credit is left ({provider}).
+pub const COST_BALANCE_UNAVAILABLE: &str = "**{provider} balance:** unavailable right now";
+
 /// Instructions for the call that names a session. The first message is quoted after this, so the
 /// model names it instead of answering it.
 pub const TITLE_PROMPT: &str = "You name conversations. Do not answer or carry out the message \

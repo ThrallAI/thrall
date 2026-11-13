@@ -568,6 +568,32 @@ async fn commands_answer_in_markdown() {
     assert!(err.to_string().contains("/help"));
 }
 
+#[tokio::test]
+async fn cost_shows_the_balance_only_for_models_that_spend_it() {
+    let (state, provider) = setup(vec![reply(&["x"])]).await;
+    let s = session::create(&state, None).await.unwrap();
+    let cost = || commands::run(&state, &s.id, "cost", "");
+    assert!(
+        cost()
+            .await
+            .unwrap()
+            .contains("Fake balance:** unavailable")
+    );
+    *provider.credit.lock().unwrap() = Some(12.345);
+    assert!(
+        cost()
+            .await
+            .unwrap()
+            .contains("Fake balance:** $12.35 left")
+    );
+    *provider.credit.lock().unwrap() = Some(-0.2);
+    assert!(cost().await.unwrap().contains("$0.0000 left"));
+    for other in ["chatgpt/gpt-5", "local/llama3.1"] {
+        commands::run(&state, &s.id, "model", other).await.unwrap();
+        assert!(!cost().await.unwrap().contains("balance"), "{other}");
+    }
+}
+
 // ---------- modes, gates, plan mode, interrupts, checks ----------
 
 /// Run a turn, answering prompts with `reply`, and calling `during` on each event (for
@@ -3274,6 +3300,29 @@ async fn an_empty_reply_on_nearly_no_credit_says_to_top_up_without_asking_again(
             .any(|m| m.content.contains("Your last reply was empty"))),
         "no second (paid) call to ask for a summary"
     );
+}
+
+#[tokio::test]
+async fn low_credit_is_warned_once_until_topped_up() {
+    let replies = (0..4).map(|i| reply(&[&format!("Reply {i}")])).collect();
+    let (state, provider) = setup(replies).await;
+    let s = session::create(&state, None).await.unwrap();
+    let warned = |frames: &[EventFrame]| {
+        frames.iter().any(|f| {
+            matches!(&f.event,
+            Event::Notice { text, .. } if text.contains("credit is running low: $0.40 left"))
+        })
+    };
+    *provider.credit.lock().unwrap() = Some(0.4);
+    let (_, frames) = run(&state, &s.id, "one").await;
+    assert!(warned(&frames), "warned the first time");
+    let (_, frames) = run(&state, &s.id, "two").await;
+    assert!(!warned(&frames), "not again while still low");
+    *provider.credit.lock().unwrap() = Some(20.0);
+    run(&state, &s.id, "three").await;
+    *provider.credit.lock().unwrap() = Some(0.4);
+    let (_, frames) = run(&state, &s.id, "four").await;
+    assert!(warned(&frames), "warned again after a top-up ran down");
 }
 
 #[tokio::test]

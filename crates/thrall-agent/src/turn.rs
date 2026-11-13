@@ -38,15 +38,15 @@ use crate::constants::{
     CHECK_PREFIX, CHECKING_NOTICE, COMPACTED_NOTICE, CUT_OFF_NOTICE, CUT_OFF_NUDGE,
     CUT_OFF_THINKING, DELTA_FLUSH_INTERVAL, DESCRIBED_MARK, EDIT_TOOL, EDITED_PREFIX,
     EMPTY_REPLY_NOTICE, EMPTY_REPLY_NUDGE, EPISODE_SOURCE_MAX_CHARS, FINISH_LENGTH, HAND_OFF,
-    HOME_NOTE, LOW_CREDIT_NOTICE, LOW_CREDIT_USD, MID_TASK_NOTE, PICTURE_FAILED_MARK,
-    PICTURE_MAX_BYTES, PICTURES_PER_REQUEST, PLAN_QUESTION_MAX_CHARS, SCANNED_PDF_MAX_BYTES,
-    SESSION_TITLE_MAX_CHARS, SHELL_TOOL, SKIPPED_INTERRUPTED, SPLIT_EDIT_REMINDER,
-    SPLIT_EDIT_WINDOW_STEPS, STEP_TAG, STEP_TAG_CHANGED, STEP_TAG_EVERY, STEP_TAG_FIRST,
-    STEPS_STOPPED_NOTICE, STEPS_WARNING_NUDGE, STEPS_WARNING_PERCENT, SUMMARY_PREFIX,
-    SUMMARY_PREFIX_OLD, SYSTEM_PROMPT, TITLE_MAX_TOKENS, TITLE_MAX_WORDS, TITLE_PROMPT,
-    TITLE_SOURCE_MAX_CHARS, TRANSCRIBE_MAX_TOKENS, TRANSCRIBE_PROMPT, TRANSCRIPT_MAX_CHARS,
-    UNTRACKED_START_REMINDER, VISION_MAX_TOKENS, VISION_MODEL_HINT, VISION_PROMPT, VISION_TOOL,
-    role, turn_status,
+    HOME_NOTE, LOW_BALANCE_NOTICE, LOW_CREDIT_NOTICE, LOW_CREDIT_USD, MID_TASK_NOTE,
+    PICTURE_FAILED_MARK, PICTURE_MAX_BYTES, PICTURES_PER_REQUEST, PLAN_QUESTION_MAX_CHARS,
+    SCANNED_PDF_MAX_BYTES, SESSION_TITLE_MAX_CHARS, SHELL_TOOL, SKIPPED_INTERRUPTED,
+    SPLIT_EDIT_REMINDER, SPLIT_EDIT_WINDOW_STEPS, STEP_TAG, STEP_TAG_CHANGED, STEP_TAG_EVERY,
+    STEP_TAG_FIRST, STEPS_STOPPED_NOTICE, STEPS_WARNING_NUDGE, STEPS_WARNING_PERCENT,
+    SUMMARY_PREFIX, SUMMARY_PREFIX_OLD, SYSTEM_PROMPT, TITLE_MAX_TOKENS, TITLE_MAX_WORDS,
+    TITLE_PROMPT, TITLE_SOURCE_MAX_CHARS, TRANSCRIBE_MAX_TOKENS, TRANSCRIBE_PROMPT,
+    TRANSCRIPT_MAX_CHARS, UNTRACKED_START_REMINDER, VISION_MAX_TOKENS, VISION_MODEL_HINT,
+    VISION_PROMPT, VISION_TOOL, role, turn_status,
 };
 use crate::error::AgentError;
 use crate::hooks;
@@ -953,6 +953,8 @@ async fn run_turn(
             if let Some(left) = state.llm.credit_left().await
                 && left < LOW_CREDIT_USD
             {
+                // This says it already: no low-balance warning on top.
+                state.first_low_balance(true);
                 emitter
                     .emit(Event::Notice {
                         level: NoticeLevel::Warning,
@@ -1196,6 +1198,24 @@ async fn run_turn(
     // The turn is over: free the session now. What follows (hooks, title, memory) can't fail the
     // turn, and the user can retry or send meanwhile.
     let leftover = slot.release();
+
+    // Credit running low on the account this model spends: say so once, until it's topped up.
+    if let Some(limit) = state.config.provider.low_balance_warn_usd()
+        && thrall_llm::Routed::goes_to_main(&state.model_for(session_id))
+        && let Some(left) = state.llm.credit_left().await
+        && state.first_low_balance(left < limit)
+        && let Err(e) = emitter
+            .emit(Event::Notice {
+                level: NoticeLevel::Warning,
+                text: LOW_BALANCE_NOTICE
+                    .replace("{provider}", state.llm.name())
+                    .replace("{left}", &format!("${:.2}", left.max(0.0)))
+                    .replace("{limit}", &format!("${limit:.2}")),
+            })
+            .await
+    {
+        tracing::warn!(%e, "couldn't warn about low credit");
+    }
 
     hooks::fire(
         state,

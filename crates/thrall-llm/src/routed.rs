@@ -68,6 +68,12 @@ impl Routed {
         self
     }
 
+    /// Whether `model`'s calls go to the main provider (OpenRouter), so its credit is what they
+    /// spend.
+    pub fn goes_to_main(model: &str) -> bool {
+        matches!(Self::route(model), Route::Main)
+    }
+
     fn route(model: &str) -> Route<'_> {
         if let Some(m) = model.strip_prefix(LOCAL_MODEL_PREFIX) {
             return Route::Local(m);
@@ -343,6 +349,20 @@ mod tests {
             thinking: None,
         };
         r.stream(request).next().await.unwrap()
+    }
+
+    #[test]
+    fn only_main_models_spend_the_main_providers_credit() {
+        assert!(Routed::goes_to_main("deepseek/deepseek-v4.1-flash"));
+        assert!(Routed::goes_to_main("openai/gpt-5"));
+        for other in [
+            "chatgpt/gpt-5",
+            "local/llama3.1",
+            "program/codex",
+            "direct/openai/gpt-5",
+        ] {
+            assert!(!Routed::goes_to_main(other), "{other}");
+        }
     }
 
     #[tokio::test]
