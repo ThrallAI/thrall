@@ -11,12 +11,15 @@ use thrall_protocol::Risk;
 
 use crate::constants::{
     BACKGROUND_MAX_PER_PERSON, BACKGROUND_READ_MAX_CHARS, COMMAND_SEPARATORS, GIT_READ_ONLY,
-    GIT_RISKY, GIT_TIMEOUT_SECS, GIT_WRITE_FLAGS, KEEP_RUNNING_SETTLE_SECS, LEFT_RUNNING_NOTE,
-    LEFT_TRACKED_NOTE, NONZERO_EXIT_NOTE, REG_EXE_WRITES, REGISTRY_NAMES, REGISTRY_WRITERS,
-    RESULT_MAX_CHARS, SHELL_BY_NAME, SHELL_CAREFUL, SHELL_CHAINING, SHELL_DEFAULT_TIMEOUT_SECS,
-    SHELL_DELETERS, SHELL_DELETES_NOTE, SHELL_MAX_TIMEOUT_SECS, SHELL_MOVERS, SHELL_RECURSIVE,
-    SHELL_RISKY, SHELL_RISKY_NOTE, SHELL_STOPPERS, SHELL_SYSTEM_NOTE, SHELL_WRITERS,
-    STOPPED_DETACHED_NOTE, STOPPED_NOTE, SYSTEM_CHANGE_NEEDS, UNTRACKED_PROGRAMS, UNTRACKED_STARTS,
+    GIT_RISKY, GIT_TIMEOUT_SECS, GIT_WRITE_FLAGS, INSTALL_CUSTOM_SOURCES, INSTALL_PIECES,
+    INSTALL_SOURCE_FLAGS, KEEP_RUNNING_SETTLE_SECS, LEFT_RUNNING_NOTE, LEFT_TRACKED_NOTE,
+    NONZERO_EXIT_NOTE, OFFICIAL_SOURCES, PIP_NAMES, PIP_SOURCE_FLAGS, REG_EXE_WRITES,
+    REGISTRY_NAMES, REGISTRY_WRITERS, RESULT_MAX_CHARS, SHELL_BY_NAME, SHELL_CAREFUL,
+    SHELL_CHAINING, SHELL_CUSTOM_SOURCE_NOTE, SHELL_DEFAULT_TIMEOUT_SECS, SHELL_DELETERS,
+    SHELL_DELETES_NOTE, SHELL_MAX_TIMEOUT_SECS, SHELL_MOVERS, SHELL_RECURSIVE, SHELL_RISKY,
+    SHELL_RISKY_NOTE, SHELL_STOPPERS, SHELL_SYSTEM_NOTE, SHELL_WRITERS, SHORT_SOURCE_FLAGS,
+    SHORT_SOURCE_PROGRAMS, STOPPED_DETACHED_NOTE, STOPPED_NOTE, SYSTEM_CHANGE_NEEDS,
+    UNTRACKED_PROGRAMS, UNTRACKED_STARTS,
 };
 use crate::paths::inside;
 use crate::process::{self, Finished};
@@ -105,10 +108,33 @@ fn system_change(command: &str, workspace: &Path) -> bool {
     registry || system_files
 }
 
+/// Whether the command installs something from a place that isn't the official one: a web or git
+/// address, another index or registry, a package file, or a source flag naming an unofficial
+/// source.
+fn custom_source_install(command: &str) -> bool {
+    let lower = command.to_lowercase();
+    if !INSTALL_PIECES.iter().any(|r| lower.contains(r)) {
+        return false;
+    }
+    let words = words(command);
+    let has = |list: &[&str]| words.iter().any(|w| list.contains(&w.as_str()));
+    let pip = has(PIP_NAMES);
+    let short = has(SHORT_SOURCE_PROGRAMS);
+    let source_flag = |w: &str| {
+        INSTALL_SOURCE_FLAGS.contains(&w)
+            || (pip && PIP_SOURCE_FLAGS.contains(&w))
+            || (short && SHORT_SOURCE_FLAGS.contains(&w))
+    };
+    INSTALL_CUSTOM_SOURCES.iter().any(|r| lower.contains(r))
+        || words
+            .windows(2)
+            .any(|pair| source_flag(&pair[0]) && !OFFICIAL_SOURCES.contains(&pair[1].as_str()))
+}
+
 /// How risky a shell command looks, for a session working in `workspace`:
 /// - High asks in every mode and is never covered by "always": the `SHELL_RISKY` list, changing
-///   the registry or system files, stopping programs by name, and deleting whole folders
-///   outside the session's.
+///   the registry or system files, stopping programs by name, deleting whole folders outside the
+///   session's, and installing from an unofficial source.
 /// - Medium asks unless the mode is Full auto: deleting, installing, stopping a program.
 /// - Low is an everyday command (building, testing, running a script): Auto edits runs it
 ///   without asking.
@@ -122,6 +148,7 @@ fn shell_risk(command: &str, workspace: &Path) -> Risk {
         || system_change(command, workspace)
         || (stops && has(SHELL_BY_NAME))
         || (deletes && has(SHELL_RECURSIVE) && reaches_outside(command, &words, workspace))
+        || custom_source_install(command)
     {
         Risk::High
     } else if deletes || stops || SHELL_CAREFUL.iter().any(|r| lower.contains(r)) {
@@ -152,6 +179,8 @@ fn shell_summary(args: &Value, workspace: &Path) -> String {
     }
     let note = if shell_deletes(command) {
         SHELL_DELETES_NOTE
+    } else if custom_source_install(command) {
+        SHELL_CUSTOM_SOURCE_NOTE
     } else if shell_risk(command, workspace) == Risk::High {
         SHELL_RISKY_NOTE
     } else {
@@ -758,6 +787,56 @@ mod tests {
             "git push origin main",
         ] {
             assert_eq!(shell_risk(command, &ws), Risk::Medium, "{command}");
+        }
+    }
+
+    #[test]
+    fn installs_from_the_official_places_need_only_a_look() {
+        let ws = ws();
+        for command in [
+            "pip install requests pyserial",
+            "pip3 install -r requirements.txt",
+            "npm install left-pad",
+            "cargo install ripgrep",
+            "winget install Git.Git --source winget",
+            "winget install 9NBLGGH4NNS1 -s msstore",
+            "choco install git",
+            "Install-Module PSReadLine -Repository PSGallery",
+        ] {
+            assert_eq!(shell_risk(command, &ws), Risk::Medium, "{command}");
+            assert!(
+                !shell_summary(&json!({ "command": command }), &ws)
+                    .starts_with(SHELL_CUSTOM_SOURCE_NOTE)
+            );
+        }
+    }
+
+    #[test]
+    fn installs_from_anywhere_else_always_ask() {
+        let ws = ws();
+        for command in [
+            "pip install https://example.com/pkg-1.0.tar.gz",
+            "pip install git+https://example.com/me/pkg",
+            "pip install --index-url https://example.com/simple pkg",
+            "pip install --extra-index-url=https://example.com/simple pkg",
+            "pip install -i https://example.com/simple pkg",
+            "pip install -f ./wheels pkg",
+            "pip install ./pkg-1.0-py3-none-any.whl",
+            "npm install github:me/pkg",
+            "npm i ./pkg-1.0.0.tgz",
+            "npm install pkg --registry https://example.com",
+            "cargo install --git https://example.com/me/tool",
+            "cargo install tool --index sparse+https://example.com/index/",
+            "winget install pkg --source mysource",
+            "choco install pkg -s https://example.com/feed",
+            "Install-Module pkg -Repository MyFeed",
+        ] {
+            assert_eq!(shell_risk(command, &ws), Risk::High, "{command}");
+            assert!(
+                shell_summary(&json!({ "command": command }), &ws)
+                    .starts_with(SHELL_CUSTOM_SOURCE_NOTE),
+                "{command}"
+            );
         }
     }
 
