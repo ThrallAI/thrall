@@ -211,7 +211,14 @@ fn usable_from(path: &str, home: &str) -> Result<(), String> {
             "New folders aren't made on network places; make `{path}` there first."
         ));
     }
-    if thrall_gates::system_folder(path, home) || thrall_gates::system_folder(&real_shown, home) {
+    // The real path is checked against the person's real folder: a home given by its short name
+    // (an 8.3 name like `RUNNE~1`) is the same folder as the long one the real path shows.
+    let real_home = std::fs::canonicalize(home)
+        .map(|h| plain_shown(&h))
+        .unwrap_or_else(|_| home.to_owned());
+    if thrall_gates::system_folder(path, home)
+        || thrall_gates::system_folder(&real_shown, &real_home)
+    {
         return Err(format!(
             "`{path}` would be in the system's folders; pick a folder of your own."
         ));
