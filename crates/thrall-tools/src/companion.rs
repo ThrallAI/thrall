@@ -465,6 +465,7 @@ mod tests {
                 summary: "Run `dir`".into(),
                 risk: thrall_protocol::Risk::Medium,
                 grant: Some("shell:dir".into()),
+                everyday: false,
             },
         };
         let text = serde_json::to_string(&checked).unwrap_or_default();

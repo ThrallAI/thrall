@@ -28,6 +28,10 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant: Linux-only via zbus; unmaintained notice, no vulnerability" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names: Linux-only via zbus; unmaintained notice, no vulnerability" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: Linux-only via zbus; unmaintained notice, no vulnerability" },
+    # Bundled SQLite before 3.54 (libsqlite3-sys 0.37, held there by sqlx 0.9.0, the newest sqlx).
+    # Needs a database and `-wal` file crafted by someone else; Thrall only opens its own database
+    # in its own data folder (thrall-store). Revisit when sqlx moves to libsqlite3-sys 0.39.
+    { id = "RUSTSEC-2026-0459", reason = "sqlx 0.9 pins SQLite 3.53; Thrall opens only its own database" },
 ]
 
 [licenses]

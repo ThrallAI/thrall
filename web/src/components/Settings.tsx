@@ -9,6 +9,8 @@ import {
   HUMANISE_LEVELS,
   LOG_LEVELS,
   MAX_HELPERS_AT_ONCE,
+  MAX_MAX_STEPS,
+  MIN_MAX_STEPS,
   QUESTION_MODE_LABELS,
   QUESTION_MODES,
   RATING_LABELS,
@@ -936,6 +938,17 @@ export function Settings({
             </Row>
             <Row label="Wait for an answer" hint="Minutes before Thrall goes ahead with its recommended answers">
               <Field k="agent.question_wait_minutes" v={agent.question_wait_minutes} label="Wait for an answer" onSave={save} number />
+            </Row>
+          </Group>
+          <Group
+            title="Steps"
+            note="A step is one go of thinking, which can use several tools. When a task runs out of steps Thrall stops and you can say &quot;carry on&quot;; near the limit it's told to wrap up first."
+          >
+            <Row label="Most steps per message" hint={`${MIN_MAX_STEPS} to ${MAX_MAX_STEPS}`}>
+              <Field k="agent.max_steps" v={agent.max_steps} label="Most steps per message" onSave={save} number />
+            </Row>
+            <Row label="Most steps in Full auto" hint={`${MIN_MAX_STEPS} to ${MAX_MAX_STEPS}`}>
+              <Field k="agent.full_auto_max_steps" v={agent.full_auto_max_steps} label="Most steps in Full auto" onSave={save} number />
             </Row>
           </Group>
           <Group

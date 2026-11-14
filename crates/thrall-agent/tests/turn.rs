@@ -394,6 +394,46 @@ async fn tools_run_and_their_results_go_back_to_the_model() {
 }
 
 #[tokio::test]
+async fn a_long_turn_is_told_to_wrap_up_then_stopped_at_the_limit() {
+    let scripts = (0..12)
+        .map(|i| tool_call(&format!("c{i}"), "list_dir", "{}"))
+        .collect();
+    let (mut state, provider) = setup(scripts).await;
+    state.config.agent.max_steps = 10;
+    let s = session::create(&state, Some(workspace("steps")))
+        .await
+        .unwrap();
+    let (_, frames) = run(&state, &s.id, "keep looking").await;
+
+    // Ten model calls, then the notice naming the limit (the chat's title is a separate call,
+    // without tools).
+    let seen: Vec<ChatRequest> = provider
+        .seen
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|r| !r.tools.is_empty())
+        .cloned()
+        .collect();
+    assert_eq!(seen.len(), 10);
+    let stopped = frames.iter().any(|f| {
+        matches!(&f.event, Event::Notice { text, .. } if text.starts_with("Stopped after 10 steps"))
+    });
+    assert!(stopped);
+
+    // The wrap-up note arrives once, before the ninth call (80% of 10), and not earlier.
+    let note = |r: &ChatRequest| {
+        r.messages
+            .iter()
+            .filter(|m| m.content.contains("You've used 8 of this turn's 10 steps"))
+            .count()
+    };
+    assert_eq!(note(&seen[7]), 0);
+    assert_eq!(note(&seen[8]), 1);
+    assert_eq!(note(&seen[9]), 1);
+}
+
+#[tokio::test]
 async fn shell_asks_and_a_no_stops_it() {
     let marker = std::env::temp_dir().join(format!("thrall-denied-{}", std::process::id()));
     let _ = std::fs::remove_file(&marker);
@@ -783,10 +823,16 @@ async fn full_auto_switched_on_mid_task_stops_the_questions() {
 
 #[tokio::test]
 async fn a_mode_changed_mid_task_counts_from_the_next_step() {
+    // Deleting still asks in auto-edits mode (an everyday command like echo doesn't).
+    let delete = if cfg!(windows) {
+        r#"{"command": "Remove-Item missing.txt -ErrorAction SilentlyContinue"}"#
+    } else {
+        r#"{"command": "rm -f missing.txt"}"#
+    };
     let (mut state, _) = setup(vec![
         tool_call("c1", "shell", r#"{"command": "echo one"}"#),
         tool_call("c2", "write_file", r#"{"path": "x.txt", "content": "x"}"#),
-        tool_call("c3", "shell", r#"{"command": "echo two"}"#),
+        tool_call("c3", "shell", delete),
         reply(&["Done."]),
         reply(&["Writing"]),
     ])
@@ -998,9 +1044,20 @@ async fn messages_typed_mid_turn_join_the_next_step() {
     })
     .await;
     let second = provider.seen.lock().unwrap()[1].clone();
-    let last = second.messages.last().unwrap();
-    assert_eq!(last.role, ChatRole::User);
-    assert_eq!(last.content, "also count them");
+    let [.., typed, note] = second.messages.as_slice() else {
+        panic!("too few messages");
+    };
+    assert_eq!(typed.role, ChatRole::User);
+    assert_eq!(typed.content, "also count them");
+    // The task in hand still stands: the typed message isn't the whole new job.
+    assert_eq!(note.role, ChatRole::User);
+    assert!(
+        note.content.starts_with("[Thrall check]")
+            && note.content.contains("carry on with that request")
+            && note.content.contains("say plainly what's left"),
+        "{}",
+        note.content
+    );
 }
 
 #[tokio::test]
@@ -1390,7 +1447,7 @@ async fn a_helper_works_in_its_own_context_and_hands_back_its_answer() {
         .unwrap();
     assert_eq!(
         parent_second.messages.last().unwrap().content,
-        "Found hello.txt."
+        "Found hello.txt.\n\n[this message has 100 steps; step 1 used]"
     );
     assert!(
         !parent_second
@@ -3335,7 +3392,7 @@ async fn split_mode_hands_the_work_to_the_doer_and_tags_every_call() {
         .unwrap();
     assert_eq!(
         thinker_second.messages.last().unwrap().content,
-        "Wrote done.txt (ok)."
+        "Wrote done.txt (ok).\n\n[this message has 100 steps; step 1 used]"
     );
 
     // Every call's usage row says who made it, on which model.

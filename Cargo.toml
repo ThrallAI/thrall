@@ -44,7 +44,7 @@ regex = "1.13.1"
 # Scheduled jobs and MCP servers.
 croner = "4.0.1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-rmcp = { version = "3.5.1", default-features = false, features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest", "reqwest", "auth"] }
+rmcp = { version = "3.9.0", default-features = false, features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest", "reqwest", "auth"] }
 async-trait = "0.1.92"
 # The protocol schema, the server and the web app.
 schemars = "1.2.3"
@@ -77,6 +77,11 @@ sysinfo = "0.39.6"
 chromiumoxide = "0.9.1"
 # Starting with Windows (the Run key). Already in the lock file: the tray's autostart uses it.
 windows-registry = "0.6.1"
+
+# Debug builds keep line numbers for panics and backtraces but not full debugger info: the build
+# folder stays several times smaller (it had grown past 300 GB).
+[profile.dev]
+debug = "line-tables-only"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

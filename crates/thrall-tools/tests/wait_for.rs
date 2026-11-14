@@ -40,7 +40,7 @@ async fn hands_back_when_the_line_appears() {
         Duration::from_secs(40),
         &live,
         thrall_tools::Cancel::never(),
-        &pattern("listening on"),
+        Some(&pattern("listening on")),
         None,
     )
     .await
@@ -66,7 +66,7 @@ async fn keeps_running_in_the_background_until_stopped() {
         Duration::from_secs(40),
         &live,
         thrall_tools::Cancel::never(),
-        &pattern("Listening"),
+        Some(&pattern("Listening")),
         Some(("u_test", "the server")),
     )
     .await
@@ -103,10 +103,56 @@ async fn a_line_that_never_comes_times_out() {
         Duration::from_secs(3),
         &live,
         thrall_tools::Cancel::never(),
-        &pattern("ready"),
+        Some(&pattern("ready")),
         None,
     )
     .await
     .unwrap();
     assert!(matches!(out, Watched::Ended(done) if done.timed_out));
+}
+
+#[tokio::test]
+async fn with_nothing_to_wait_for_a_program_still_going_is_kept() {
+    let quiet = if cfg!(windows) {
+        "Start-Sleep 60"
+    } else {
+        "sleep 60"
+    };
+    let (program, args) = shell_command(quiet);
+    let (live, _rx) = mpsc::unbounded_channel();
+    let out = run_until(
+        program,
+        &args,
+        &std::env::temp_dir(),
+        Duration::from_secs(2),
+        &live,
+        thrall_tools::Cancel::never(),
+        None,
+        Some(("u_settle", "the quiet one")),
+    )
+    .await
+    .unwrap();
+    let Watched::Kept { id, .. } = out else {
+        panic!("expected it to keep running");
+    };
+    assert!(thrall_tools::background::stop("u_settle", &id).await);
+}
+
+#[tokio::test]
+async fn with_nothing_to_wait_for_a_quick_program_just_ends() {
+    let (program, args) = shell_command("echo done");
+    let (live, _rx) = mpsc::unbounded_channel();
+    let out = run_until(
+        program,
+        &args,
+        &std::env::temp_dir(),
+        Duration::from_secs(10),
+        &live,
+        thrall_tools::Cancel::never(),
+        None,
+        Some(("u_quick", "echo")),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(out, Watched::Ended(done) if !done.timed_out));
 }

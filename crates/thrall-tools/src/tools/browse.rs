@@ -139,6 +139,7 @@ impl Tool for BrowserTool {
                 ),
                 risk: Risk::Low,
                 grant: Some("browser".to_owned()),
+                everyday: false,
             },
             "fill" => Effect::Run {
                 summary: format!(
@@ -156,6 +157,7 @@ impl Tool for BrowserTool {
                 ),
                 risk: Risk::Low,
                 grant: Some("browser".to_owned()),
+                everyday: false,
             },
             _ => Effect::Read,
         }

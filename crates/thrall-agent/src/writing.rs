@@ -37,6 +37,16 @@ pub fn written_text(tool: &str, args: &Value, workspace: &Path) -> Option<String
     if let Some(text) = args.get(*field).and_then(Value::as_str) {
         return Some(text.to_owned());
     }
+    // edit_file can make several changes at once: check all their new text together.
+    if let Some(edits) = args.get("edits").and_then(Value::as_array) {
+        let texts: Vec<&str> = edits
+            .iter()
+            .filter_map(|e| e.get(*field).and_then(Value::as_str))
+            .collect();
+        if !texts.is_empty() {
+            return Some(texts.join("\n\n"));
+        }
+    }
     // make_pdf can lay out a markdown file instead.
     let source = args.get("source").and_then(Value::as_str)?;
     std::fs::read_to_string(thrall_tools::paths::resolve(workspace, source)).ok()
@@ -73,6 +83,11 @@ mod tests {
         assert!(written_text("write_file", &code, ws).is_none());
         let edit = json!({ "path": "README.md", "old_string": "a", "new_string": "b" });
         assert_eq!(written_text("edit_file", &edit, ws).unwrap(), "b");
+        let edits = json!({ "path": "README.md", "edits": [
+            { "old_string": "a", "new_string": "b" },
+            { "old_string": "c", "new_string": "d" }
+        ] });
+        assert_eq!(written_text("edit_file", &edits, ws).unwrap(), "b\n\nd");
         let word = json!({ "path": "r.docx", "content": "Hi" });
         assert_eq!(written_text("edit_word", &word, ws).unwrap(), "Hi");
         assert!(written_text("shell", &json!({ "command": "ls" }), ws).is_none());

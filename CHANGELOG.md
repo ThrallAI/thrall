@@ -7,6 +7,74 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ## [Unreleased]
 
+### Added
+
+- Settings → Steps: how many steps Thrall may take on one message before it stops and asks you
+  to say "carry on" (100 by default, 250 in Full auto, up to 500). In the terminal:
+  `/settings agent.max_steps <number>` and `agent.full_auto_max_steps`.
+- Near the limit Thrall is told to wrap up: finish what's in hand, or stop at a safe point and say
+  what's done and what's left, instead of being cut off mid-change.
+- Thrall is told its step limit at the start of a message and where it stands every 25 steps
+  ("step 75 of 250"), so it can plan around the limit.
+- Thrall cleans up after itself: before testing it checks for programs and files left from
+  earlier work, it notes anything it starts that keeps running, and when it's done it stops what
+  it started (or says what's still running and why). Starting a program with Start-Process or
+  similar reminds it to note the program so it can be stopped later.
+- shell keep_running works without waiting for a line: a program still going after a few seconds
+  is kept running and tracked. Python programs print as they go instead of holding output back.
+- Thrall can make several changes to a file in one step, and they're all made or none are. Each
+  edit shows the changed lines as they now read, so Thrall no longer reads the file back after
+  changing it.
+- When Thrall edits the same file again a step or two later, it's reminded to put all the
+  changes to a file in one edit next time.
+- If the step limit changes during a message (the mode was changed), Thrall is told the new one.
+
+### Changed
+
+- Thrall was stopped after 60 steps; long jobs now get 100 (250 in Full auto).
+- Thrall's file tools work in any folder, not just the session's: asked to work somewhere else, it
+  writes and edits files there with the file tools (read first, undoable) instead of going round
+  through the shell. Your mode still decides whether it asks, and a person kept out of system
+  folders still is.
+- Auto edits now runs everyday commands without asking too (building, testing, running a script,
+  checking a web address). Deleting, installing and stopping a program still ask, and so does
+  anything risky.
+- Risky actions ask in every mode, Full auto included, and "always" never covers them: changing
+  the registry or system files, wiping or formatting disks, deleting whole folders outside the
+  session's, stopping programs by name, force pushes, and restarts or shutdowns. Before, Full auto
+  ran them without asking.
+- A change to the registry or system files through the shell has to be reversible: Thrall makes
+  a backup first, and the permission card says what will change and how to undo it. Without the
+  backup it's refused. A system file changed with the file tools asks every time, and its copy
+  is kept so rewinding the message puts it back.
+- Approving a plan goes on in Auto edits, so the work doesn't stop to ask before every change.
+  "Approve, ask before each change" (`a`) keeps asking. The phone app still approves into Ask for
+  now.
+
+### Fixed
+
+- A command that started a program on its own (like Start-Process with its output saved to a file)
+  made Thrall wait the full timeout. It now hands back as soon as the command ends and says a
+  program it started is still running.
+- After a command was stopped, Thrall said everything it started had been stopped, when a program
+  started on its own could still be running. It now says so, and to check, when the command
+  starts one (a plain search that timed out no longer gets the warning).
+- A message typed while Thrall was working could be taken as the whole new task: he dealt with it
+  and finished, dropping what he was asked first without saying so. He's now told the task in
+  hand still stands, and to say what's left if he stops early.
+- Summarising a long conversation mid-task could summarise the request being worked on, so it
+  read as done and the newest message as the whole job. The summary now stops at the start of the
+  task in progress, unless that task alone is too big to fit.
+- Searching MCP tools by key words started every configured MCP server, all at once, for a guess
+  (18 programs, some signed in to your accounts). Key words now search only the servers already
+  running, and Thrall is told which aren't started; naming a server starts just that one.
+- Opening a windowed app (a Python app with a window, for one) could hang Thrall until the timeout,
+  report the app stopped while it kept running, and leave copies open. Thrall now hands back once
+  the command ends, names what's still running with its process ID, and keeps track of it, so
+  shell_output and shell_stop work on it. Waiting for a line and being stopped really stops it.
+- The reminder to note a program started out of sight came up when a program was only named, as
+  in `Get-Process pythonw`. It now only comes up when one is started.
+
 ## [0.2.4] - 2026-11-09
 
 Mode changes take hold while Thrall is working, and Full auto is easier to set.

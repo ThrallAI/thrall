@@ -30,11 +30,11 @@ pub enum Mode {
     /// Ask before edits and commands.
     #[default]
     Ask,
-    /// File edits inside the folder go ahead; commands still ask.
+    /// File edits and everyday commands go ahead; other commands ask.
     AutoEdits,
     /// Read-only until a plan is approved.
     Plan,
-    /// No questions, except for actions that always ask.
+    /// No questions, except for risky actions, which always ask.
     FullAuto,
 }
 
@@ -80,12 +80,14 @@ impl Mode {
         match self {
             Self::Ask => "Thrall asks before every file edit and every command.",
             Self::AutoEdits => {
-                "File edits in the folder go ahead without asking; commands still ask."
+                "File edits and everyday commands go ahead without asking; deleting, installing \
+                 and stopping programs ask, and so does anything risky."
             }
             Self::Plan => "Thrall only reads and plans; nothing changes until you approve a plan.",
             Self::FullAuto => {
-                "Edits and commands go ahead without asking, risky ones too (restarts, sending \
-                 and deleting outside the folder still ask)."
+                "Edits and commands go ahead without asking, except risky ones: changing the \
+                 registry or system files, wiping disks, deleting whole folders outside the \
+                 session's, force pushes, restarts and sending still ask."
             }
         }
     }
@@ -109,7 +111,7 @@ impl Mode {
 pub enum Effect {
     /// Only reads (files, the web, memory).
     Read,
-    /// Changes a file inside the working folder.
+    /// Changes a file.
     Edit {
         /// File, as shown to the user.
         path: String,
@@ -124,6 +126,10 @@ pub enum Effect {
         risk: Risk,
         /// What an "always" answer covers (e.g. `shell:cargo`). `None` = never "always".
         grant: Option<String>,
+        /// An everyday command (building, testing, running a script): auto-edits mode runs it
+        /// without asking.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        everyday: bool,
     },
     /// Runs something that may only look (a tool on another app's MCP server that doesn't say
     /// it's read-only). Like [`Effect::Run`], except that plan mode asks instead of refusing:
@@ -178,13 +184,17 @@ pub fn tool_gate(mode: Mode, effect: &Effect, granted: bool) -> Decision {
             summary,
             risk,
             grant,
+            everyday,
         } => match mode {
             Mode::Plan => Decision::Deny(plan_refusal(summary)),
+            // Risky actions ask in every mode and are never covered by "always" (a Python Thrall
+            // lesson).
+            _ if *risk == Risk::High => Decision::Ask { always: false },
             Mode::FullAuto => Decision::Allow,
-            // Risky actions are never covered by "always" (a Python Thrall lesson).
-            Mode::Ask | Mode::AutoEdits if granted && *risk != Risk::High => Decision::Allow,
+            Mode::AutoEdits if *everyday => Decision::Allow,
+            Mode::Ask | Mode::AutoEdits if granted => Decision::Allow,
             Mode::Ask | Mode::AutoEdits => Decision::Ask {
-                always: grant.is_some() && *risk != Risk::High,
+                always: grant.is_some(),
             },
         },
         Effect::Probe {
@@ -202,6 +212,7 @@ pub fn tool_gate(mode: Mode, effect: &Effect, granted: bool) -> Decision {
                     summary: summary.clone(),
                     risk: *risk,
                     grant: grant.clone(),
+                    everyday: false,
                 },
                 granted,
             ),
@@ -325,10 +336,27 @@ fn user_of(path: &str) -> Option<&str> {
 }
 
 /// Whether `path` is in the system's folders (Windows, programs, the boot and system folders,
-/// someone else's user folder) for a person working in `workspace`.
+/// someone else's user folder) for a person working in `workspace`. The working folder itself is
+/// the person's, wherever it is (macOS keeps temporary folders under `/var`), and so is the
+/// system's temporary folder, unless a system folder is inside it (a whole drive as the working
+/// folder).
 pub fn system_folder(path: &str, workspace: &str) -> bool {
+    system_folder_with_temp(path, workspace, &std::env::temp_dir().to_string_lossy())
+}
+
+fn system_folder_with_temp(path: &str, workspace: &str, temp: &str) -> bool {
     let path = plain_path(path, workspace);
     let starts = |prefix: &&str| path == *prefix || path.starts_with(&format!("{prefix}\\"));
+    let persons = |folder: &str| {
+        let own = plain_path("", folder);
+        let holds_system = SYSTEM_FOLDERS
+            .iter()
+            .any(|s| s.starts_with(&format!("{own}\\")));
+        !holds_system && starts(&own.as_str())
+    };
+    if persons(workspace) || persons(temp) {
+        return false;
+    }
     if SYSTEM_FOLDERS.iter().any(starts) {
         return true;
     }
@@ -348,6 +376,7 @@ mod tests {
             summary: "Run `x`".into(),
             risk,
             grant: grant.map(str::to_owned),
+            everyday: false,
         }
     }
 
@@ -415,9 +444,41 @@ mod tests {
             tool_gate(Mode::Ask, &run(Risk::High, Some("shell:rm")), true),
             Decision::Ask { always: false }
         );
+        // Risky ones ask even in full auto, and an earlier "always" doesn't cover them.
         assert_eq!(
-            tool_gate(Mode::FullAuto, &run(Risk::High, None), false),
+            tool_gate(Mode::FullAuto, &run(Risk::High, None), true),
+            Decision::Ask { always: false }
+        );
+        assert_eq!(
+            tool_gate(Mode::FullAuto, &run(Risk::Medium, None), false),
             Decision::Allow
+        );
+    }
+
+    #[test]
+    fn auto_edits_runs_everyday_commands_without_asking() {
+        let everyday = |risk| Effect::Run {
+            summary: "Run `cargo test`".into(),
+            risk,
+            grant: None,
+            everyday: true,
+        };
+        assert_eq!(
+            tool_gate(Mode::AutoEdits, &everyday(Risk::Low), false),
+            Decision::Allow
+        );
+        // Ask mode still asks, plan mode still refuses, and a risky one still asks.
+        assert_eq!(
+            tool_gate(Mode::Ask, &everyday(Risk::Low), false),
+            Decision::Ask { always: false }
+        );
+        assert!(matches!(
+            tool_gate(Mode::Plan, &everyday(Risk::Low), false),
+            Decision::Deny(_)
+        ));
+        assert_eq!(
+            tool_gate(Mode::AutoEdits, &everyday(Risk::High), false),
+            Decision::Ask { always: false }
         );
     }
 
@@ -475,7 +536,7 @@ mod tests {
 
 #[cfg(test)]
 mod system_folder_tests {
-    use super::system_folder;
+    use super::{system_folder, system_folder_with_temp};
 
     #[test]
     fn system_and_other_peoples_folders_are_out_of_bounds() {
@@ -496,5 +557,35 @@ mod system_folder_tests {
         );
         assert!(system_folder("/etc/passwd", "/home/you/Thrall"));
         assert!(!system_folder("notes.txt", "/home/you/Thrall"));
+        // A working folder under a system folder is still the person's (macOS temp folders).
+        let mac_tmp = "/var/folders/ab/xyz/T/thrall-ws";
+        assert!(!system_folder("x.txt", mac_tmp));
+        assert!(!system_folder(
+            "/var/folders/ab/xyz/T/thrall-ws/a/b.txt",
+            mac_tmp
+        ));
+        assert!(
+            system_folder("../../../../log/x", mac_tmp),
+            "climbing out with .."
+        );
+        // A whole drive as the working folder doesn't make the system's folders the person's.
+        assert!(system_folder(r"C:\Windows\x.dll", r"C:\"));
+        assert!(system_folder("/etc/passwd", "/"));
+    }
+
+    #[test]
+    fn the_systems_temporary_folder_is_the_persons() {
+        let ws = "/Users/you/Thrall";
+        let temp = "/var/folders/ab/xyz/T/";
+        assert!(!system_folder_with_temp(
+            "/var/folders/ab/xyz/T/marker.txt",
+            ws,
+            temp
+        ));
+        assert!(system_folder_with_temp("/var/log/x", ws, temp));
+        assert!(
+            system_folder_with_temp(r"C:\Windows\x.dll", ws, r"C:\"),
+            "a whole drive as the temporary folder changes nothing"
+        );
     }
 }

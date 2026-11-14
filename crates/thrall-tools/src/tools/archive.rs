@@ -383,13 +383,6 @@ fn make_zip(
     }
 }
 
-fn outside(shown: &str) -> String {
-    format!(
-        "{shown} is outside this session's folder. Thrall only writes inside the folder it was \
-         started in."
-    )
-}
-
 impl Archive {
     /// Why this call can't work, if so.
     fn problem(ctx: &ToolContext, args: &Value) -> Option<String> {
@@ -416,9 +409,6 @@ impl Archive {
                 }
                 let folder = unpack_folder(ctx, &a);
                 let folder_shown = display(&ctx.workspace, &folder);
-                if !inside(&ctx.workspace, &folder) {
-                    return Some(outside(&folder_shown));
-                }
                 if folder.is_file() {
                     return Some(format!("{folder_shown} is a file, not a folder"));
                 }
@@ -443,9 +433,6 @@ impl Archive {
                     .is_none_or(|e| !e.eq_ignore_ascii_case("zip"))
                 {
                     return Some(format!("{shown} must end in .zip"));
-                }
-                if !inside(&ctx.workspace, &path) {
-                    return Some(outside(&shown));
                 }
                 if path.exists() && !a.overwrite {
                     return Some(format!(

@@ -88,14 +88,42 @@ async fn write_edit_read_round_trip() {
 }
 
 #[tokio::test]
-async fn edits_outside_the_folder_are_refused() {
+async fn files_outside_the_folder_can_be_changed_once_read() {
     let (ctx, _rx) = ctx("outside").await;
+    let elsewhere = ctx.workspace.with_extension("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let file = elsewhere.join("notes.txt");
+    let _ = std::fs::remove_file(&file);
+
+    // A new file outside the folder is written.
+    let path = file.to_string_lossy().into_owned();
     let out = WriteFile
-        .run(&ctx, json!({"path": "../escape.txt", "content": "x"}))
+        .run(&ctx, json!({"path": path, "content": "one"}))
+        .await;
+    assert!(out.ok, "{}", out.content);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "one");
+
+    // One that's there but unread isn't changed until it's read.
+    std::fs::write(elsewhere.join("old.txt"), "old").unwrap();
+    let old = elsewhere.join("old.txt").to_string_lossy().into_owned();
+    let out = WriteFile
+        .run(&ctx, json!({"path": old, "content": "new"}))
         .await;
     assert!(!out.ok);
-    assert!(out.content.contains("outside"));
-    assert!(!ctx.workspace.parent().unwrap().join("escape.txt").exists());
+    assert!(out.content.contains("read"), "{}", out.content);
+    ReadFile.run(&ctx, json!({"path": old})).await;
+    let out = EditFile
+        .run(
+            &ctx,
+            json!({"path": old, "old_string": "old", "new_string": "new"}),
+        )
+        .await;
+    assert!(out.ok, "{}", out.content);
+    assert_eq!(
+        std::fs::read_to_string(elsewhere.join("old.txt")).unwrap(),
+        "new"
+    );
+    let _ = std::fs::remove_dir_all(elsewhere);
 }
 
 #[tokio::test]
@@ -122,6 +150,67 @@ async fn ambiguous_edits_need_replace_all() {
         std::fs::read_to_string(ctx.workspace.join("b.txt")).unwrap(),
         "y y y"
     );
+}
+
+#[tokio::test]
+async fn several_edits_go_in_one_call_or_not_at_all() {
+    let (ctx, _rx) = ctx("multi").await;
+    let path = ctx.workspace.join("c.py");
+    WriteFile
+        .run(
+            &ctx,
+            json!({"path": "c.py", "content": "a = 1\nb = 2\nc = 3\n"}),
+        )
+        .await;
+
+    // Several changes in order, the second matching what the first left.
+    let out = EditFile
+        .run(
+            &ctx,
+            json!({"path": "c.py", "edits": [
+                {"old_string": "a = 1", "new_string": "a = 10"},
+                {"old_string": "a = 10\nb", "new_string": "a = 10\nbb"},
+                {"old_string": "c = 3", "new_string": "c = 30"}
+            ]}),
+        )
+        .await;
+    assert!(out.ok, "{}", out.content);
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "a = 10\nbb = 2\nc = 30\n"
+    );
+    // The result shows the lines as they now read, numbered.
+    assert!(out.content.contains("     1\ta = 10"), "{}", out.content);
+    assert!(out.content.contains("     3\tc = 30"), "{}", out.content);
+
+    // One change that can't be made stops them all.
+    let bad = EditFile
+        .run(
+            &ctx,
+            json!({"path": "c.py", "edits": [
+                {"old_string": "a = 10", "new_string": "a = 99"},
+                {"old_string": "missing", "new_string": "x"}
+            ]}),
+        )
+        .await;
+    assert!(!bad.ok);
+    assert!(bad.content.contains("edits[1]"), "{}", bad.content);
+    assert!(
+        bad.content.contains("Nothing was changed"),
+        "{}",
+        bad.content
+    );
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "a = 10\nbb = 2\nc = 30\n"
+    );
+
+    // A list and a single change at once is refused, as is neither.
+    let both = json!({"path": "c.py", "old_string": "a", "new_string": "b",
+        "edits": [{"old_string": "c", "new_string": "d"}]});
+    assert!(EditFile.precheck(&ctx, &both).is_some());
+    assert!(!EditFile.run(&ctx, both).await.ok);
+    assert!(!EditFile.run(&ctx, json!({"path": "c.py"})).await.ok);
 }
 
 #[tokio::test]
@@ -180,7 +269,8 @@ async fn shell_asks_and_runs() {
     assert!(matches!(
         Shell.effect(&ctx, &args),
         Effect::Run {
-            risk: Risk::Medium,
+            risk: Risk::Low,
+            everyday: true,
             ..
         }
     ));

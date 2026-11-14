@@ -319,13 +319,14 @@ impl McpHub {
 
     /// Tools matching `query`, plus a line for each server that couldn't be reached. A query that
     /// names servers ("cadcraft", "cadcraft layer") starts and searches only those, and a word
-    /// that only names the server needn't match the tool. Otherwise every server is searched
-    /// (each starts if it isn't running).
+    /// that only names the server needn't match the tool. Otherwise only the servers already
+    /// started are searched: starting every server on a guess is slow, and runs programs (some
+    /// signed in to the person's accounts) nobody asked for.
     pub async fn search(&self, query: &str) -> (Vec<ToolInfo>, Vec<String>) {
         let named = self.named_in(query);
         let mut words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
         let servers: Vec<String> = if named.is_empty() {
-            self.servers.keys().cloned().collect()
+            self.listed().await.into_keys().collect()
         } else {
             let lower: Vec<String> = named.iter().map(|n| n.to_lowercase()).collect();
             words.retain(|w| !lower.iter().any(|n| n.contains(w.as_str())));
@@ -492,7 +493,7 @@ mod tests {
             },
         );
         let hub = McpHub::new(servers);
-        let (found, problems) = hub.search("anything").await;
+        let (found, problems) = hub.search("broken anything").await;
         assert!(found.is_empty());
         assert_eq!(problems.len(), 1);
         assert!(problems[0].contains("broken"));
@@ -599,7 +600,7 @@ mod tests {
     async fn a_server_on_the_web_is_searched_and_called() {
         let url = web::serve(None).await;
         let hub = web_hub("thrall-test-web", url, &[]);
-        let (found, problems) = hub.search("hello").await;
+        let (found, problems) = hub.search("thrall-test-web hello").await;
         assert!(problems.is_empty(), "{problems:?}");
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].name, "hello");
@@ -643,10 +644,12 @@ mod tests {
         let (found, _) = hub.search("greeter look").await;
         assert_eq!(found.len(), 1);
         assert_eq!(hub.listed().await.keys().collect::<Vec<_>>(), ["greeter"]);
-        // Without a server's name, every server is searched.
+        // Without a server's name, only servers already started are searched: the broken one
+        // isn't tried.
         let (found, problems) = hub.search("hello").await;
         assert_eq!(found.len(), 1);
-        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(problems.is_empty(), "{problems:?}");
+        assert_eq!(hub.listed().await.keys().collect::<Vec<_>>(), ["greeter"]);
         assert!(hub.named_in("a b").is_empty(), "short words name nothing");
     }
 
@@ -707,7 +710,7 @@ mod tests {
     async fn a_web_server_that_wants_a_key_says_to_sign_in_until_it_has_one() {
         let url = web::serve(Some("open-sesame")).await;
         let hub = web_hub("thrall-test-locked", url.clone(), &[]);
-        let (_, problems) = hub.search("hello").await;
+        let (_, problems) = hub.search("thrall-test-locked hello").await;
         assert_eq!(problems.len(), 1);
         assert!(
             problems[0].contains("needs you to sign in")
@@ -715,7 +718,7 @@ mod tests {
             "{problems:?}"
         );
         let hub = web_hub("thrall-test-locked", url, &[("X-Api-Key", "open-sesame")]);
-        let (found, problems) = hub.search("hello").await;
+        let (found, problems) = hub.search("thrall-test-locked hello").await;
         assert!(problems.is_empty(), "{problems:?}");
         assert_eq!(found.len(), 1);
     }

@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 use thrall_gates::Effect;
 use thrall_protocol::Risk;
 
+use crate::constants::MCP_NOT_STARTED_NOTE;
 use crate::tool::{Tool, ToolContext, ToolOutput, arg_str, parse_args};
 
 /// The `mcp_search` tool's name.
@@ -25,10 +26,10 @@ impl Tool for McpSearch {
     }
     fn description(&self) -> &'static str {
         "Search the tools on the user's MCP servers (other apps and services connected to Thrall). \
-         Give one or two key words (e.g. \"calendar\", \"github issue\"), or a server's name to \
-         see only its tools (e.g. \"cadcraft\"); only the servers searched are started. An empty \
-         query lists the servers without starting any. Results include each tool's server, name, \
-         description and arguments; then use mcp_call."
+         Give a server's name to start it and see its tools (e.g. \"cadcraft\", \"cadcraft \
+         layer\"). Key words alone (e.g. \"calendar\") search only the servers already started. \
+         An empty query lists the servers without starting any. Results include each tool's \
+         server, name, description and arguments; then use mcp_call."
     }
     fn parameters(&self) -> Value {
         json!({
@@ -84,7 +85,17 @@ impl Tool for McpSearch {
             }
             if found.is_empty() {
                 out.push_str("No matching tools.");
-                if !problems.is_empty() || hub.names().is_empty() {
+                let listed = hub.listed().await;
+                let not_started: Vec<String> = hub
+                    .names()
+                    .into_iter()
+                    .filter(|s| !listed.contains_key(s))
+                    .collect();
+                if hub.named_in(&query).is_empty() && !not_started.is_empty() {
+                    out.push_str(
+                        &MCP_NOT_STARTED_NOTE.replace("{servers}", &not_started.join(", ")),
+                    );
+                } else if !problems.is_empty() || hub.names().is_empty() {
                     out.push_str(&format!(" Servers: {}.", hub.names().join(", ")));
                 }
             }

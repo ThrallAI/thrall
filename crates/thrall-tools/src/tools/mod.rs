@@ -43,7 +43,7 @@ pub use office::{EditPdf, EditSpreadsheet, EditWord, MakePdf};
 pub use schedule::{Schedule, ScheduleList, ScheduleRemove};
 pub use search::{Glob, Grep};
 pub use sessions::{SessionRead, SessionsList};
-pub use shell::{Git, Shell, ShellOutput, ShellStop, shell_command};
+pub use shell::{Git, Shell, ShellOutput, ShellStop, shell_command, starts_untracked};
 pub use system::SystemInfo;
 pub use web::{WebFetch, WebSearch};
 pub use work::{MEMORY_SAVE, MemorySave, MemorySearch, TodoWrite};

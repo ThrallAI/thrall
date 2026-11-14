@@ -5,6 +5,7 @@
 //! meanwhile join at the next step; Esc stops everything; before finishing, Thrall's own checks
 //! may ask it to verify its work or correct its reply.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Instant;
@@ -30,18 +31,22 @@ use thrall_protocol::{
 };
 use thrall_store::{NewEvent, NewMessage, TurnEnd, UsageRecord};
 use thrall_tools::Cancel;
+use thrall_tools::tools::starts_untracked;
 
 use crate::checks::{self, Track};
 use crate::constants::{
     CHECK_PREFIX, CHECKING_NOTICE, COMPACTED_NOTICE, CUT_OFF_NOTICE, CUT_OFF_NUDGE,
-    CUT_OFF_THINKING, DELTA_FLUSH_INTERVAL, DESCRIBED_MARK, EMPTY_REPLY_NOTICE, EMPTY_REPLY_NUDGE,
-    EPISODE_SOURCE_MAX_CHARS, FINISH_LENGTH, HAND_OFF, HOME_NOTE, LOW_CREDIT_NOTICE,
-    LOW_CREDIT_USD, MAX_MODEL_CALLS_PER_TURN, PICTURE_FAILED_MARK, PICTURE_MAX_BYTES,
-    PICTURES_PER_REQUEST, PLAN_QUESTION_MAX_CHARS, SCANNED_PDF_MAX_BYTES, SESSION_TITLE_MAX_CHARS,
-    SKIPPED_INTERRUPTED, SUMMARY_PREFIX, SUMMARY_PREFIX_OLD, SYSTEM_PROMPT, TITLE_MAX_TOKENS,
-    TITLE_MAX_WORDS, TITLE_PROMPT, TITLE_SOURCE_MAX_CHARS, TRANSCRIBE_MAX_TOKENS,
-    TRANSCRIBE_PROMPT, TRANSCRIPT_MAX_CHARS, VISION_MAX_TOKENS, VISION_MODEL_HINT, VISION_PROMPT,
-    VISION_TOOL, role, turn_status,
+    CUT_OFF_THINKING, DELTA_FLUSH_INTERVAL, DESCRIBED_MARK, EDIT_TOOL, EDITED_PREFIX,
+    EMPTY_REPLY_NOTICE, EMPTY_REPLY_NUDGE, EPISODE_SOURCE_MAX_CHARS, FINISH_LENGTH, HAND_OFF,
+    HOME_NOTE, LOW_CREDIT_NOTICE, LOW_CREDIT_USD, MID_TASK_NOTE, PICTURE_FAILED_MARK,
+    PICTURE_MAX_BYTES, PICTURES_PER_REQUEST, PLAN_QUESTION_MAX_CHARS, SCANNED_PDF_MAX_BYTES,
+    SESSION_TITLE_MAX_CHARS, SHELL_TOOL, SKIPPED_INTERRUPTED, SPLIT_EDIT_REMINDER,
+    SPLIT_EDIT_WINDOW_STEPS, STEP_TAG, STEP_TAG_CHANGED, STEP_TAG_EVERY, STEP_TAG_FIRST,
+    STEPS_STOPPED_NOTICE, STEPS_WARNING_NUDGE, STEPS_WARNING_PERCENT, SUMMARY_PREFIX,
+    SUMMARY_PREFIX_OLD, SYSTEM_PROMPT, TITLE_MAX_TOKENS, TITLE_MAX_WORDS, TITLE_PROMPT,
+    TITLE_SOURCE_MAX_CHARS, TRANSCRIBE_MAX_TOKENS, TRANSCRIBE_PROMPT, TRANSCRIPT_MAX_CHARS,
+    UNTRACKED_START_REMINDER, VISION_MAX_TOKENS, VISION_MODEL_HINT, VISION_PROMPT, VISION_TOOL,
+    role, turn_status,
 };
 use crate::error::AgentError;
 use crate::hooks;
@@ -591,6 +596,82 @@ async fn current_mode(state: &AppState, session_id: &str, mode: Mode) -> Result<
         .unwrap_or(mode))
 }
 
+/// The step after which Thrall is told to wrap up: `STEPS_WARNING_PERCENT` of the limit, and
+/// always before the last step.
+fn steps_warning_at(max_steps: usize) -> usize {
+    (max_steps * STEPS_WARNING_PERCENT / 100).min(max_steps.saturating_sub(1))
+}
+
+/// What a turn's tool results have told Thrall so far.
+#[derive(Default)]
+struct ResultNotes {
+    /// The step each file was last edited at, for the split-edit reminder.
+    edited: HashMap<String, usize>,
+    /// The last step whose count was shown, so a step with several results shows it once.
+    counted: usize,
+    /// The step limit last shown, so a change mid-turn is pointed out.
+    limit: usize,
+}
+
+/// A tool result as the model sees it, with any reminders added: a file it just edited edited
+/// again, a program started where Thrall can't track it, and now and then where the turn stands
+/// against its step limit.
+fn annotate(
+    mut content: String,
+    call: &ToolCall,
+    step: usize,
+    max_steps: usize,
+    notes: &mut ResultNotes,
+) -> String {
+    let args = serde_json::from_str::<serde_json::Value>(&call.arguments).unwrap_or_default();
+    let mut added: Vec<String> = Vec::new();
+    if call.name == EDIT_TOOL
+        && content.starts_with(EDITED_PREFIX)
+        && let Some(path) = args["path"].as_str().map(|p| p.trim().replace('\\', "/"))
+    {
+        if let Some(&before) = notes.edited.get(&path)
+            && step - before <= SPLIT_EDIT_WINDOW_STEPS
+        {
+            let when = match step - before {
+                0 => "in this same step".to_owned(),
+                1 => "1 step ago".to_owned(),
+                n => format!("{n} steps ago"),
+            };
+            added.push(SPLIT_EDIT_REMINDER.replace("{when}", &when));
+        }
+        notes.edited.insert(path, step);
+    }
+    if call.name == SHELL_TOOL
+        && args["keep_running"].as_bool() != Some(true)
+        && args["command"].as_str().is_some_and(starts_untracked)
+    {
+        added.push(UNTRACKED_START_REMINDER.to_owned());
+    }
+    let changed = notes.limit != 0 && notes.limit != max_steps;
+    if (step > notes.counted && (step == 1 || step.is_multiple_of(STEP_TAG_EVERY)))
+        || (changed && step >= notes.counted)
+    {
+        notes.counted = step;
+        notes.limit = max_steps;
+        let tag = if changed {
+            STEP_TAG_CHANGED
+        } else if step == 1 {
+            STEP_TAG_FIRST
+        } else {
+            STEP_TAG
+        };
+        added.push(
+            tag.replace("{step}", &step.to_string())
+                .replace("{max}", &max_steps.to_string()),
+        );
+    }
+    for note in added {
+        content.push_str("\n\n");
+        content.push_str(&note);
+    }
+    content
+}
+
 /// A session's place as "running a turn". Released once: as soon as the turn is finished (so the
 /// user can retry or send while the title and memory are written), or when it fails. A second
 /// release does nothing, so it never frees a turn that started since.
@@ -707,30 +788,69 @@ async fn run_turn(
     let mut track = Track::default();
     track.look_only = split.is_some();
     let mut calls = 0;
+    let mut warned_steps = false;
+    // What tool results have been told this turn: edited files and the last step count shown.
+    let mut notes = ResultNotes::default();
 
     loop {
         if cancel.is_cancelled() {
             interrupted = true;
             break;
         }
-        // Messages typed while Thrall works join here, before its next step.
+        // Messages typed while Thrall works join here, before its next step, with a note that the
+        // task in hand still stands (otherwise the newest message reads as the whole job).
+        let mut joined = false;
         for extra in state.take_inbox(session_id) {
             if let Input::Ok(extra) = thrall_gates::input_gate(&extra) {
                 emitter.user_message(&extra, &workspace, "", &[]).await?;
+                joined = true;
             }
         }
+        if joined {
+            emitter
+                .save_message(
+                    role::USER,
+                    StoredContent {
+                        text: format!("{CHECK_PREFIX} {MID_TASK_NOTE}"),
+                        tool_calls: Vec::new(),
+                        tool_call_id: None,
+                        files: Vec::new(),
+                    },
+                    None,
+                )
+                .await?;
+        }
         mode = current_mode(state, session_id, mode).await?;
-        if calls >= MAX_MODEL_CALLS_PER_TURN {
+        // Read each step, so switching Full auto on or off mid-task changes the limit too.
+        let max_steps = state.config.agent.max_steps(mode == Mode::FullAuto);
+        if calls >= max_steps {
             emitter
                 .emit(Event::Notice {
                     level: NoticeLevel::Warning,
-                    text: format!(
-                        "Stopped after {MAX_MODEL_CALLS_PER_TURN} steps in one turn. Say \
-                         \"carry on\" to let Thrall continue."
-                    ),
+                    text: STEPS_STOPPED_NOTICE.replace("{max}", &max_steps.to_string()),
                 })
                 .await?;
             break;
+        }
+        // Near the limit, Thrall is told once to wrap up instead of being cut off mid-edit.
+        if !warned_steps && calls >= steps_warning_at(max_steps) {
+            warned_steps = true;
+            let nudge = STEPS_WARNING_NUDGE
+                .replace("{used}", &calls.to_string())
+                .replace("{max}", &max_steps.to_string())
+                .replace("{left}", &(max_steps - calls).to_string());
+            emitter
+                .save_message(
+                    role::USER,
+                    StoredContent {
+                        text: format!("{CHECK_PREFIX} {nudge}"),
+                        tool_calls: Vec::new(),
+                        tool_call_id: None,
+                        files: Vec::new(),
+                    },
+                    None,
+                )
+                .await?;
         }
         calls += 1;
 
@@ -936,6 +1056,7 @@ async fn run_turn(
                 None => break,
             }
         }
+        let step = calls;
         let calls = &outcome.tool_calls;
         let mut next = 0;
         while next < calls.len() {
@@ -968,7 +1089,7 @@ async fn run_turn(
                         .save_message(
                             role::TOOL,
                             StoredContent {
-                                text: content?,
+                                text: annotate(content?, c, step, max_steps, &mut notes),
                                 tool_calls: Vec::new(),
                                 tool_call_id: Some(c.id.clone()),
                                 files: Vec::new(),
@@ -1015,7 +1136,7 @@ async fn run_turn(
                 .save_message(
                     role::TOOL,
                     StoredContent {
-                        text: content,
+                        text: annotate(content, call, step, max_steps, &mut notes),
                         tool_calls: Vec::new(),
                         tool_call_id: Some(call.id.clone()),
                         files: Vec::new(),
@@ -1734,6 +1855,95 @@ mod tests {
         // A long plan that happens to end with a question is still a plan.
         let long = format!("{}Shall I go ahead?", "step. ".repeat(200));
         assert!(looks_like_plan(&long));
+    }
+
+    #[test]
+    fn the_wrap_up_warning_comes_before_the_last_step() {
+        assert_eq!(steps_warning_at(100), 80);
+        assert_eq!(steps_warning_at(200), 160);
+        assert_eq!(steps_warning_at(10), 8);
+        assert!(steps_warning_at(1) < 1);
+    }
+
+    #[test]
+    fn results_carry_the_step_count_and_split_edits_are_pointed_out() {
+        let call = |name: &str, path: &str| ToolCall {
+            id: "c".into(),
+            name: name.into(),
+            arguments: json!({ "path": path }).to_string(),
+        };
+        let mut notes = ResultNotes::default();
+        let n = &mut notes;
+        // The first step says the limit; later steps show the count only every so often, once.
+        let first = annotate("text".into(), &call("read_file", "a.rs"), 1, 250, n);
+        assert_eq!(first, "text\n\n[this message has 250 steps; step 1 used]");
+        assert_eq!(
+            annotate("t".into(), &call("read_file", "a.rs"), 1, 250, n),
+            "t"
+        );
+        assert_eq!(
+            annotate("t".into(), &call("read_file", "a.rs"), 3, 250, n),
+            "t"
+        );
+        let every = annotate(
+            "t".into(),
+            &call("read_file", "a.rs"),
+            STEP_TAG_EVERY,
+            250,
+            n,
+        );
+        assert_eq!(every, format!("t\n\n[step {STEP_TAG_EVERY} of 250]"));
+        // The limit changing mid-turn (the mode changed) is said once, on the next result.
+        let changed = annotate("t".into(), &call("read_file", "a.rs"), 30, 100, n);
+        assert_eq!(changed, "t\n\n[the step limit changed: step 30 of 100]");
+        assert_eq!(
+            annotate("t".into(), &call("read_file", "a.rs"), 31, 100, n),
+            "t"
+        );
+        let n = &mut ResultNotes::default();
+
+        let edit = |text: &str, path: &str, step, n: &mut ResultNotes| {
+            annotate(text.into(), &call("edit_file", path), step, 250, n)
+        };
+        assert!(!edit("Edited a.rs", "a.rs", 4, n).contains("already edited"));
+        assert!(
+            edit("Edited a.rs", "a.rs", 4, n)
+                .contains("already edited this file in this same step")
+        );
+        // Paths written either way count as the same file.
+        assert!(!edit("Edited b.rs", "./x\\b.rs", 5, n).contains("already edited"));
+        assert!(
+            edit("Edited b.rs", "./x/b.rs", 7, n).contains("already edited this file 2 steps ago")
+        );
+        // Long enough apart is fine, and a failed edit isn't counted.
+        assert!(!edit("Edited a.rs", "a.rs", 9, n).contains("already edited"));
+        edit("Nothing was changed.", "c.rs", 10, n);
+        assert!(!edit("Edited c.rs", "c.rs", 11, n).contains("already edited"));
+    }
+
+    #[test]
+    fn programs_started_out_of_sight_get_a_reminder_to_track_them() {
+        let shell = |command: &str, keep: bool| ToolCall {
+            id: "c".into(),
+            name: "shell".into(),
+            arguments: json!({ "command": command, "keep_running": keep }).to_string(),
+        };
+        let mut notes = ResultNotes::default();
+        let n = &mut notes;
+        let started = annotate(
+            "ok".into(),
+            &shell("Start-Process python -ArgumentList app.py", false),
+            2,
+            250,
+            n,
+        );
+        assert!(started.contains("Add a todo item to stop it"));
+        assert!(
+            !annotate("ok".into(), &shell("python app.py", true), 3, 250, n).contains("todo item")
+        );
+        assert!(
+            !annotate("ok".into(), &shell("cargo test", false), 4, 250, n).contains("todo item")
+        );
     }
 
     #[test]

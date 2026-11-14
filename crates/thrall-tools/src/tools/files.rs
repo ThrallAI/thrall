@@ -1,24 +1,18 @@
-//! File tools: read, write, edit, list. Writes and edits only happen inside the workspace.
+//! File tools: read, write, edit, list. Paths are relative to the workspace unless absolute.
 
 use futures::future::BoxFuture;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::constants::{
-    LINE_MAX_CHARS, LIST_MAX_ENTRIES, READ_DEFAULT_LINES, READ_MAX_BYTES, RESULT_MAX_CHARS,
+    EDIT_MAX_CHANGES, EDIT_SHOWN_MAX_LINES, LINE_MAX_CHARS, LIST_MAX_ENTRIES, READ_DEFAULT_LINES,
+    READ_MAX_BYTES, RESULT_MAX_CHARS,
 };
 use thrall_gates::Effect;
 
 use crate::diff;
-use crate::paths::{display, inside, resolve};
+use crate::paths::{display, resolve};
 use crate::tool::{Tool, ToolContext, ToolOutput, arg_str, cap, parse_args};
-
-fn outside_message(shown: &str) -> String {
-    format!(
-        "{shown} is outside this session's folder. For now Thrall only changes files inside the \
-         folder it was started in."
-    )
-}
 
 // ---------- read_file ----------
 
@@ -128,45 +122,63 @@ fn text_of(bytes: &[u8]) -> Option<String> {
     }
 }
 
-/// Why a write or edit to `path` can't happen, checked before anyone is asked about it.
-/// Why the path can't be changed (outside the folder, or changed since it was read), if so.
+/// Why a write or edit to `path` can't happen (it wasn't read, or changed since), checked before
+/// anyone is asked about it. Any folder is fine: the gate and the person's rules decide where.
 pub(crate) fn write_blocked(ctx: &ToolContext, raw_path: &str) -> Option<String> {
     let path = resolve(&ctx.workspace, raw_path);
     let shown = display(&ctx.workspace, &path);
-    if !inside(&ctx.workspace, &path) {
-        return Some(outside_message(&shown));
-    }
     ctx.edit_guard(&path, &shown)
 }
 
-/// The new content an edit would produce, or why it can't be made.
+/// The new content an edit would produce and how many replacements it makes, or why it can't be
+/// made. Changes apply in order, each to the text the ones before it left; if any can't, none do.
 fn apply_edit(old: &str, a: &EditArgs, shown: &str) -> Result<(String, usize), String> {
-    if a.old_string.is_empty() {
-        return Err("old_string is empty; use write_file to create files".to_owned());
+    let changes = a.changes()?;
+    let mut text = old.to_owned();
+    let mut total = 0;
+    for (index, c) in changes.iter().enumerate() {
+        // Name the change only when there are several, so a single edit reads as it always has.
+        let which = if changes.len() > 1 {
+            format!("edits[{index}]: ")
+        } else {
+            String::new()
+        };
+        if c.old_string.is_empty() {
+            return Err(format!(
+                "{which}old_string is empty; use write_file to create files"
+            ));
+        }
+        let count = text.matches(c.old_string.as_str()).count();
+        if count == 0 {
+            let order = if index > 0 {
+                " Edits apply in order, so match the text as the earlier ones left it."
+            } else {
+                ""
+            };
+            return Err(format!(
+                "{which}old_string wasn't found in {shown}. Read the file and copy the text \
+                 exactly.{order} Nothing was changed."
+            ));
+        }
+        if count > 1 && !c.replace_all {
+            return Err(format!(
+                "{which}old_string appears {count} times in {shown}. Include more surrounding \
+                 text to make it unique, or set replace_all. Nothing was changed."
+            ));
+        }
+        text = if c.replace_all {
+            text.replace(c.old_string.as_str(), &c.new_string)
+        } else {
+            text.replacen(c.old_string.as_str(), &c.new_string, 1)
+        };
+        total += count;
     }
-    let count = old.matches(a.old_string.as_str()).count();
-    if count == 0 {
-        return Err(format!(
-            "old_string wasn't found in {shown}. Read the file and copy the text exactly."
-        ));
-    }
-    if count > 1 && !a.replace_all {
-        return Err(format!(
-            "old_string appears {count} times in {shown}. Include more surrounding text to make \
-             it unique, or set replace_all."
-        ));
-    }
-    let new = if a.replace_all {
-        old.replace(a.old_string.as_str(), &a.new_string)
-    } else {
-        old.replacen(a.old_string.as_str(), &a.new_string, 1)
-    };
-    Ok((new, count))
+    Ok((text, total))
 }
 
 // ---------- write_file ----------
 
-/// Create or overwrite a file inside the workspace.
+/// Create or overwrite a file.
 pub struct WriteFile;
 
 #[derive(Deserialize)]
@@ -181,7 +193,7 @@ impl Tool for WriteFile {
     }
     fn description(&self) -> &'static str {
         "Create a file, or replace a file's whole content. Creates missing folders. Prefer \
-         edit_file for changes to existing files. Only works inside the session folder."
+         edit_file for changes to existing files."
     }
     fn parameters(&self) -> Value {
         json!({
@@ -242,16 +254,59 @@ impl Tool for WriteFile {
 
 // ---------- edit_file ----------
 
-/// Replace exact text in a file inside the workspace.
+/// Replace exact text in a file: one change, or several in one call.
 pub struct EditFile;
 
 #[derive(Deserialize)]
 struct EditArgs {
     path: String,
+    #[serde(default)]
+    old_string: Option<String>,
+    #[serde(default)]
+    new_string: Option<String>,
+    #[serde(default)]
+    replace_all: bool,
+    #[serde(default)]
+    edits: Vec<Change>,
+}
+
+/// One replacement in an edit.
+#[derive(Deserialize, Clone)]
+struct Change {
     old_string: String,
     new_string: String,
     #[serde(default)]
     replace_all: bool,
+}
+
+impl EditArgs {
+    /// The changes asked for: the `edits` list, or the single change given directly.
+    fn changes(&self) -> Result<Vec<Change>, String> {
+        if !self.edits.is_empty() {
+            if self.old_string.is_some() || self.new_string.is_some() {
+                return Err(
+                    "give either old_string and new_string, or a list in edits, not both"
+                        .to_owned(),
+                );
+            }
+            if self.edits.len() > EDIT_MAX_CHANGES {
+                return Err(format!(
+                    "edits has {} changes; at most {EDIT_MAX_CHANGES} go in one call (use \
+                     write_file to rewrite the whole file)",
+                    self.edits.len()
+                ));
+            }
+            return Ok(self.edits.clone());
+        }
+        match (&self.old_string, &self.new_string) {
+            (Some(old), Some(new)) => Ok(vec![Change {
+                old_string: old.clone(),
+                new_string: new.clone(),
+                replace_all: self.replace_all,
+            }]),
+            _ => Err("give old_string and new_string, or a list of changes in edits".to_owned()),
+        }
+    }
 }
 
 impl Tool for EditFile {
@@ -259,20 +314,35 @@ impl Tool for EditFile {
         "edit_file"
     }
     fn description(&self) -> &'static str {
-        "Replace exact text in a file. old_string must match the file exactly (including \
-         indentation) and be unique unless replace_all is true. Read the file first. Only works \
-         inside the session folder."
+        "Replace exact text in a file. Put every change to the file in one call: list them in \
+         edits (applied in order; if any can't be made, none are), or give a single \
+         old_string/new_string. Each old_string must match the file exactly (including \
+         indentation) and be unique unless replace_all is true. Read the file first. The result \
+         shows the changed lines as they now are, so there's no need to read the file again."
     }
     fn parameters(&self) -> Value {
         json!({
             "type": "object",
             "properties": {
                 "path": { "type": "string" },
-                "old_string": { "type": "string", "description": "Exact text to replace" },
-                "new_string": { "type": "string", "description": "Replacement text" },
-                "replace_all": { "type": "boolean", "description": "Replace every occurrence" }
+                "edits": {
+                    "type": "array",
+                    "description": "Several changes to this file, made together",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "old_string": { "type": "string", "description": "Exact text to replace" },
+                            "new_string": { "type": "string", "description": "Replacement text" },
+                            "replace_all": { "type": "boolean", "description": "Replace every occurrence" }
+                        },
+                        "required": ["old_string", "new_string"]
+                    }
+                },
+                "old_string": { "type": "string", "description": "Exact text to replace (one change)" },
+                "new_string": { "type": "string", "description": "Replacement text (one change)" },
+                "replace_all": { "type": "boolean", "description": "Replace every occurrence (one change)" }
             },
-            "required": ["path", "old_string", "new_string"]
+            "required": ["path"]
         })
     }
     fn title(&self, args: &Value) -> String {
@@ -328,10 +398,12 @@ impl Tool for EditFile {
             ctx.note_read(&path);
             let d = diff::make(&shown, Some(&old), &new);
             let summary = format!("Edited {shown} (+{} −{})", d.added, d.removed);
+            // The changed lines as they now read, so the model needn't read the file back.
             let mut out = ToolOutput::ok(
                 format!(
-                    "Edited {shown} ({count} replacement{}).",
-                    if count == 1 { "" } else { "s" }
+                    "Edited {shown} ({count} replacement{}). The changed lines now read:\n{}",
+                    if count == 1 { "" } else { "s" },
+                    diff::new_lines(&d.unified, EDIT_SHOWN_MAX_LINES)
                 ),
                 summary,
             );

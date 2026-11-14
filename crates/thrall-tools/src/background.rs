@@ -16,7 +16,8 @@ use crate::constants::BACKGROUND_OUTPUT_MAX_CHARS;
 struct Entry {
     user_id: String,
     command: String,
-    pid: Option<u32>,
+    /// What to stop to end it (each with everything it started).
+    pids: Vec<u32>,
     output: Arc<Mutex<String>>,
     /// `Some(code)` once it ended (`None` inside: killed).
     ended: Arc<Mutex<Option<Option<i32>>>>,
@@ -53,14 +54,37 @@ pub fn running_for(user_id: &str) -> usize {
 pub fn keep(
     user_id: &str,
     command: &str,
-    mut child: Child,
+    child: Child,
+    lines: mpsc::UnboundedReceiver<String>,
+    so_far: String,
+) -> String {
+    let pids = child.id().into_iter().collect();
+    track(user_id, command, pids, Some(child), lines, so_far)
+}
+
+/// Take over programs a command left running when it ended (`stop` ends them): their output
+/// (`lines`) keeps being collected. Returns their id.
+pub fn adopt(
+    user_id: &str,
+    command: &str,
+    stop: Vec<u32>,
+    lines: mpsc::UnboundedReceiver<String>,
+    so_far: String,
+) -> String {
+    track(user_id, command, stop, None, lines, so_far)
+}
+
+fn track(
+    user_id: &str,
+    command: &str,
+    pids: Vec<u32>,
+    child: Option<Child>,
     mut lines: mpsc::UnboundedReceiver<String>,
     so_far: String,
 ) -> String {
     let id = format!("bg_{}", NEXT.fetch_add(1, Ordering::SeqCst));
     let output = Arc::new(Mutex::new(so_far));
     let ended = Arc::new(Mutex::new(None));
-    let pid = child.id();
     {
         let output = output.clone();
         let ended = ended.clone();
@@ -70,7 +94,11 @@ pub fn keep(
                 buf.push_str(&line);
                 keep_tail(&mut buf);
             }
-            let code = child.wait().await.ok().and_then(|s| s.code());
+            // Its output closed: it ended. Programs taken over can't be waited on for a code.
+            let code = match child {
+                Some(mut child) => child.wait().await.ok().and_then(|s| s.code()),
+                None => None,
+            };
             *lock(&ended) = Some(code);
         });
     }
@@ -79,7 +107,7 @@ pub fn keep(
         Entry {
             user_id: user_id.to_owned(),
             command: command.to_owned(),
-            pid,
+            pids,
             output,
             ended,
         },
@@ -106,22 +134,24 @@ pub fn output(
 
 /// Stop `id` and everything it started, if it's `user_id`'s. False if there's no such program.
 pub async fn stop(user_id: &str, id: &str) -> bool {
-    let pid = {
+    let pids = {
         let mut running = lock(&RUNNING);
         match running.get(id) {
-            Some(e) if e.user_id == user_id => running.remove(id).and_then(|e| e.pid),
+            Some(e) if e.user_id == user_id => running.remove(id).map(|e| e.pids),
             _ => return false,
         }
     };
-    crate::process::kill_tree(pid).await;
+    for pid in pids.unwrap_or_default() {
+        crate::process::kill_tree(Some(pid)).await;
+    }
     true
 }
 
 /// Stop every background program (the engine is stopping).
 pub async fn stop_all() {
-    let pids: Vec<Option<u32>> = lock(&RUNNING).drain().map(|(_, e)| e.pid).collect();
+    let pids: Vec<u32> = lock(&RUNNING).drain().flat_map(|(_, e)| e.pids).collect();
     for pid in pids {
-        crate::process::kill_tree(pid).await;
+        crate::process::kill_tree(Some(pid)).await;
     }
 }
 

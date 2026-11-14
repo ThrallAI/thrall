@@ -1,5 +1,6 @@
 //! Shell commands and git. Shell always asks first; git asks unless the command only reads.
 
+use std::path::Path;
 use std::time::Duration;
 
 use futures::future::BoxFuture;
@@ -9,11 +10,15 @@ use thrall_gates::Effect;
 use thrall_protocol::Risk;
 
 use crate::constants::{
-    BACKGROUND_MAX_PER_PERSON, BACKGROUND_READ_MAX_CHARS, GIT_READ_ONLY, GIT_RISKY,
-    GIT_TIMEOUT_SECS, GIT_WRITE_FLAGS, NONZERO_EXIT_NOTE, RESULT_MAX_CHARS, SHELL_CHAINING,
-    SHELL_DEFAULT_TIMEOUT_SECS, SHELL_DELETERS, SHELL_DELETES_NOTE, SHELL_MAX_TIMEOUT_SECS,
-    SHELL_RISKY, SHELL_RISKY_NOTE,
+    BACKGROUND_MAX_PER_PERSON, BACKGROUND_READ_MAX_CHARS, COMMAND_SEPARATORS, GIT_READ_ONLY,
+    GIT_RISKY, GIT_TIMEOUT_SECS, GIT_WRITE_FLAGS, KEEP_RUNNING_SETTLE_SECS, LEFT_RUNNING_NOTE,
+    LEFT_TRACKED_NOTE, NONZERO_EXIT_NOTE, REG_EXE_WRITES, REGISTRY_NAMES, REGISTRY_WRITERS,
+    RESULT_MAX_CHARS, SHELL_BY_NAME, SHELL_CAREFUL, SHELL_CHAINING, SHELL_DEFAULT_TIMEOUT_SECS,
+    SHELL_DELETERS, SHELL_DELETES_NOTE, SHELL_MAX_TIMEOUT_SECS, SHELL_MOVERS, SHELL_RECURSIVE,
+    SHELL_RISKY, SHELL_RISKY_NOTE, SHELL_STOPPERS, SHELL_SYSTEM_NOTE, SHELL_WRITERS,
+    STOPPED_DETACHED_NOTE, STOPPED_NOTE, SYSTEM_CHANGE_NEEDS, UNTRACKED_PROGRAMS, UNTRACKED_STARTS,
 };
+use crate::paths::inside;
 use crate::process::{self, Finished};
 use crate::tool::{Tool, ToolContext, ToolOutput, arg_str, cap, parse_args};
 
@@ -52,30 +57,102 @@ pub fn shell_command(command: &str) -> (&'static str, Vec<String>) {
     }
 }
 
-/// How risky a shell command looks. High-risk commands are never covered by "always".
-fn shell_risk(command: &str) -> Risk {
+/// The command's words, lower case, wherever they sit in a chain or pipe, quotes taken off.
+fn words(command: &str) -> Vec<String> {
+    command
+        .to_lowercase()
+        .split(|c: char| c.is_whitespace() || SHELL_CHAINING.contains(&c) || "(){},=".contains(c))
+        .map(|w| w.trim_matches(|c| c == '\'' || c == '"').to_owned())
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+
+/// Whether `word` is a full path (`C:\…`, `\\server\…`, and on Linux and macOS `/…` or `~…`).
+fn full_path(word: &str) -> bool {
+    let bytes = word.as_bytes();
+    let drive = bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes[2] == b'\\' || bytes[2] == b'/');
+    drive || word.starts_with("\\\\") || (!cfg!(windows) && word.starts_with(['/', '~']))
+}
+
+/// Whether what the command works on may be outside `workspace`: a full path outside it, a `..`,
+/// a variable, or a move to another folder.
+fn reaches_outside(command: &str, words: &[String], workspace: &Path) -> bool {
+    // A variable can name any folder (`$` splits words, so it's looked for in the command).
+    command.contains('$')
+        || words.iter().any(|w| {
+            (full_path(w) && !inside(workspace, Path::new(w)))
+                || w.contains("..")
+                || (!cfg!(windows) && w.starts_with('~'))
+                || SHELL_MOVERS.contains(&w.as_str())
+        })
+}
+
+/// Whether the command changes the registry, or something in the system's folders (Windows,
+/// programs, another person's user folder).
+fn system_change(command: &str, workspace: &Path) -> bool {
     let lower = command.to_lowercase();
-    if SHELL_RISKY.iter().any(|r| lower.contains(r)) {
+    let words = words(command);
+    let has = |list: &[&str]| words.iter().any(|w| list.contains(&w.as_str()));
+    let registry = REG_EXE_WRITES.iter().any(|r| lower.contains(r))
+        || (REGISTRY_NAMES.iter().any(|r| lower.contains(r)) && has(REGISTRY_WRITERS));
+    let system_files = (has(SHELL_WRITERS) || command.contains('>'))
+        && words
+            .iter()
+            .any(|w| full_path(w) && thrall_gates::system_folder(w, &workspace.to_string_lossy()));
+    registry || system_files
+}
+
+/// How risky a shell command looks, for a session working in `workspace`:
+/// - High asks in every mode and is never covered by "always": the `SHELL_RISKY` list, changing
+///   the registry or system files, stopping programs by name, and deleting whole folders
+///   outside the session's.
+/// - Medium asks unless the mode is Full auto: deleting, installing, stopping a program.
+/// - Low is an everyday command (building, testing, running a script): Auto edits runs it
+///   without asking.
+fn shell_risk(command: &str, workspace: &Path) -> Risk {
+    let lower = command.to_lowercase();
+    let words = words(command);
+    let has = |list: &[&str]| words.iter().any(|w| list.contains(&w.as_str()));
+    let deletes = has(SHELL_DELETERS);
+    let stops = has(SHELL_STOPPERS);
+    if SHELL_RISKY.iter().any(|r| lower.contains(r))
+        || system_change(command, workspace)
+        || (stops && has(SHELL_BY_NAME))
+        || (deletes && has(SHELL_RECURSIVE) && reaches_outside(command, &words, workspace))
+    {
         Risk::High
-    } else {
+    } else if deletes || stops || SHELL_CAREFUL.iter().any(|r| lower.contains(r)) {
         Risk::Medium
+    } else {
+        Risk::Low
     }
 }
 
 /// Whether any program in the command deletes files (`rm`, `Remove-Item`, `del`…), wherever it
 /// sits in a chain or pipe.
 fn shell_deletes(command: &str) -> bool {
-    command
-        .to_lowercase()
-        .split(|c: char| c.is_whitespace() || SHELL_CHAINING.contains(&c) || c == '(' || c == '{')
-        .any(|word| SHELL_DELETERS.contains(&word))
+    words(command)
+        .iter()
+        .any(|word| SHELL_DELETERS.contains(&word.as_str()))
 }
 
-/// The permission card's line: what the command does to files first, when it deletes or is risky.
-fn shell_summary(command: &str) -> String {
+/// The permission card's line: what the command does to files first, when it deletes, is risky
+/// or changes the system (then with what it does and how to undo it).
+fn shell_summary(args: &Value, workspace: &Path) -> String {
+    let command = arg_str(args, "command");
+    if system_change(command, workspace) {
+        return format!(
+            "{SHELL_SYSTEM_NOTE}Run `{command}`\nOutcome: {}\nUndo: {}",
+            arg_str(args, "outcome").trim(),
+            arg_str(args, "undo").trim()
+        );
+    }
     let note = if shell_deletes(command) {
         SHELL_DELETES_NOTE
-    } else if shell_risk(command) == Risk::High {
+    } else if shell_risk(command, workspace) == Risk::High {
         SHELL_RISKY_NOTE
     } else {
         ""
@@ -83,35 +160,84 @@ fn shell_summary(command: &str) -> String {
     format!("{note}Run `{command}`")
 }
 
+/// Why a change to the registry or system files can't go ahead: it needs `outcome`, and `undo`
+/// naming a backup that's there.
+fn system_change_blocked(args: &Value, workspace: &Path) -> Option<String> {
+    if !system_change(arg_str(args, "command"), workspace) {
+        return None;
+    }
+    let undo = arg_str(args, "undo");
+    // Not lower-cased: file names are case-sensitive on Linux.
+    let backed_up = undo
+        .split(|c: char| c.is_whitespace() || SHELL_CHAINING.contains(&c) || "(){},=".contains(c))
+        .map(|w| w.trim_matches(|c| c == '\'' || c == '"'))
+        .any(|w| !w.is_empty() && crate::paths::resolve(workspace, w).is_file());
+    (arg_str(args, "outcome").trim().is_empty() || !backed_up)
+        .then(|| SYSTEM_CHANGE_NEEDS.to_owned())
+}
+
 /// What an "always" for this command covers: its program (`shell:cargo`). Commands that chain or
-/// pipe several programs, or that look risky, can't be covered.
-fn shell_grant(command: &str) -> Option<String> {
-    if command.contains(SHELL_CHAINING) || shell_risk(command) == Risk::High {
+/// pipe several programs, delete, or look risky can't be covered.
+fn shell_grant(command: &str, workspace: &Path) -> Option<String> {
+    if command.contains(SHELL_CHAINING)
+        || shell_deletes(command)
+        || shell_risk(command, workspace) == Risk::High
+    {
         return None;
     }
     let program = command.split_whitespace().next()?.to_lowercase();
     Some(format!("shell:{program}"))
 }
 
-fn describe(finished: Finished, timeout_secs: u64, what: &str) -> ToolOutput {
-    let body = if finished.output.trim().is_empty() {
+/// Whether a shell command starts a program that outlives it: one of `UNTRACKED_STARTS` or
+/// `UNTRACKED_PROGRAMS` where a command begins, not just named (as in `Get-Process pythonw`).
+pub fn starts_untracked(command: &str) -> bool {
+    let command = command.to_lowercase();
+    command.split(COMMAND_SEPARATORS).any(|part| {
+        let mut part = part.trim();
+        // `$p = Start-Process …`
+        if part.starts_with('$')
+            && let Some((_, rest)) = part.split_once('=')
+        {
+            part = rest.trim();
+        }
+        let program = match part.strip_prefix(['"', '\'']) {
+            Some(quoted) => quoted.split(['"', '\'']).next().unwrap_or_default(),
+            None => part.split_whitespace().next().unwrap_or_default(),
+        };
+        let name = program.rsplit(['/', '\\']).next().unwrap_or_default();
+        let name = name.strip_suffix(".exe").unwrap_or(name);
+        UNTRACKED_STARTS.iter().any(|s| part.starts_with(s)) || UNTRACKED_PROGRAMS.contains(&name)
+    })
+}
+
+/// `command` is what ran, for the warning that something it started on its own may have
+/// escaped a stop (empty: no warning).
+fn describe(finished: Finished, timeout_secs: u64, what: &str, command: &str) -> ToolOutput {
+    let mut body = if finished.output.trim().is_empty() {
         "(no output)".to_owned()
     } else {
         finished.output
     };
+    let detached = if starts_untracked(command) {
+        STOPPED_DETACHED_NOTE
+    } else {
+        ""
+    };
     if finished.cancelled {
         return ToolOutput::error(format!(
-            "{what} was stopped because the user interrupted (it and everything it started \
-             were killed).\n{}",
+            "{what} was stopped because the user interrupted ({STOPPED_NOTE}{detached}).\n{}",
             cap(body, RESULT_MAX_CHARS)
         ));
     }
     if finished.timed_out {
         return ToolOutput::error(format!(
-            "{what} was stopped after {timeout_secs}s (it and everything it started were \
-             killed).\n{}",
+            "{what} was stopped after {timeout_secs}s ({STOPPED_NOTE}{detached}).\n{}",
             cap(body, RESULT_MAX_CHARS)
         ));
+    }
+    if finished.left.is_some() {
+        body = format!("{}\n\n{LEFT_RUNNING_NOTE}", cap(body, RESULT_MAX_CHARS));
     }
     match finished.code {
         Some(0) => ToolOutput::ok(cap(body, RESULT_MAX_CHARS), "Exit code 0"),
@@ -129,6 +255,30 @@ fn describe(finished: Finished, timeout_secs: u64, what: &str) -> ToolOutput {
         }
         None => ToolOutput::error(format!("{what} ended without an exit code\n{body}")),
     }
+}
+
+/// [`describe`], keeping track of what the command left running as the person's (so
+/// shell_output and shell_stop work on it), and saying so.
+fn describe_tracked(ctx: &ToolContext, command: &str, mut done: Finished, secs: u64) -> ToolOutput {
+    let note = done.left.take_if(|l| !l.programs.is_empty()).map(|left| {
+        let programs = left
+            .programs
+            .iter()
+            .map(|(pid, name)| format!("{name} (process ID {pid})"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let id =
+            crate::background::adopt(&ctx.user_id, command, left.stop, left.lines, String::new());
+        LEFT_TRACKED_NOTE
+            .replace("{programs}", &programs)
+            .replace("{id}", &id)
+    });
+    let mut out = describe(done, secs, "The command", command);
+    if let Some(note) = note {
+        out.content.push_str("\n\n");
+        out.content.push_str(&note);
+    }
+    out
 }
 
 // ---------- shell ----------
@@ -158,7 +308,7 @@ impl Tool for Shell {
              `powershell -Command` or `cmd /c` (a nested shell mangles $variables and quotes). \
              Several statements can go on one line separated by `;`. Prefer the file tools \
              (glob, grep, read_file) over shell commands for finding and reading files, and \
-             don't leave helper scripts behind. The user approves every command. Output (stdout \
+             don't leave helper scripts behind. Risky commands need the user's approval. Output (stdout \
              and stderr) is returned. Default timeout 120s, max 600s."
         } else if cfg!(target_os = "macos") {
             "Run zsh code on macOS in the session folder. `command` is the shell code itself: \
@@ -168,7 +318,7 @@ impl Tool for Shell {
              would ask. macOS tools are the BSD ones (`sed -i ''`, no `--long` options on \
              `ls`/`stat`); Homebrew installs with `brew`. Prefer the file tools (glob, grep, \
              read_file) over shell commands for finding and reading files, and don't leave \
-             helper scripts behind. The user approves every command. Output (stdout and stderr) \
+             helper scripts behind. Risky commands need the user's approval. Output (stdout and stderr) \
              is returned. Default timeout 120s, max 600s."
         } else {
             "Run bash code on Linux in the session folder (sh where bash isn't installed). \
@@ -178,7 +328,7 @@ impl Tool for Shell {
              `-y` or `--noconfirm` where a program would ask, and tell the user the command to \
              run themselves when it needs sudo. Prefer the file tools (glob, grep, read_file) \
              over shell commands for finding and reading files, and don't leave helper scripts \
-             behind. The user approves every command. Output (stdout and stderr) is returned. \
+             behind. Risky commands need the user's approval. Output (stdout and stderr) is returned. \
              Default timeout 120s, max 600s."
         }
     }
@@ -188,8 +338,10 @@ impl Tool for Shell {
             "properties": {
                 "command": { "type": "string" },
                 "timeout_secs": { "type": "integer", "description": "Default 120, max 600" },
-                "wait_for": { "type": "string", "description": "Return as soon as a line of output contains this (text, or a regular expression), e.g. 'Listening on' for a server starting. Without keep_running the program is then stopped." },
-                "keep_running": { "type": "boolean", "description": "With wait_for: leave the program running in the background once the line appears (a dev server, a watcher). You get an id for shell_output and shell_stop. Stop it when you're done." }
+                "wait_for": { "type": "string", "description": "Return as soon as a line of output contains this (text, or a regular expression), e.g. 'Listening on' for a server starting. Without keep_running the program is then stopped. Not for a windowed app, which prints nothing: start it with a plain command, and if it keeps running Thrall says so and keeps track of it." },
+                "keep_running": { "type": "boolean", "description": "Leave the program running in the background (a dev server, a watcher): once the wait_for line appears, or without wait_for once it's been going a few seconds. You get an id for shell_output and shell_stop, and Thrall keeps track of it. Prefer this to Start-Process or & for anything that keeps running. Stop it when you're done." },
+                "outcome": { "type": "string", "description": "Only for a change to the registry or system files: what will change and what that does." },
+                "undo": { "type": "string", "description": "Only for a change to the registry or system files: how to put it back, naming the backup you made first (reg export <key> <file>.reg, or a copy of the file)." }
             },
             "required": ["command"]
         })
@@ -197,12 +349,17 @@ impl Tool for Shell {
     fn title(&self, args: &Value) -> String {
         format!("Running {}", arg_str(args, "command"))
     }
-    fn effect(&self, _ctx: &ToolContext, args: &Value) -> Effect {
+    fn precheck(&self, ctx: &ToolContext, args: &Value) -> Option<String> {
+        system_change_blocked(args, &ctx.workspace)
+    }
+    fn effect(&self, ctx: &ToolContext, args: &Value) -> Effect {
         let command = arg_str(args, "command");
+        let risk = shell_risk(command, &ctx.workspace);
         Effect::Run {
-            summary: shell_summary(command),
-            risk: shell_risk(command),
-            grant: shell_grant(command),
+            summary: shell_summary(args, &ctx.workspace),
+            risk,
+            grant: shell_grant(command, &ctx.workspace),
+            everyday: risk == Risk::Low,
         }
     }
     fn run<'a>(&'a self, ctx: &'a ToolContext, args: Value) -> BoxFuture<'a, ToolOutput> {
@@ -216,7 +373,8 @@ impl Tool for Shell {
                 .unwrap_or(SHELL_DEFAULT_TIMEOUT_SECS)
                 .clamp(1, SHELL_MAX_TIMEOUT_SECS);
             let (program, argv) = shell_command(&a.command);
-            if let Some(pattern) = a.wait_for.as_deref().filter(|p| !p.trim().is_empty()) {
+            let pattern = a.wait_for.as_deref().filter(|p| !p.trim().is_empty());
+            if pattern.is_some() || a.keep_running {
                 return watch(ctx, &a, pattern, secs, program, &argv).await;
             }
             match process::run(
@@ -229,7 +387,7 @@ impl Tool for Shell {
             )
             .await
             {
-                Ok(done) => describe(done, secs, "The command"),
+                Ok(done) => describe_tracked(ctx, &a.command, done, secs),
                 Err(e) => ToolOutput::error(format!("couldn't start {program}: {e}")),
             }
         })
@@ -249,18 +407,34 @@ fn line_pattern(pattern: &str) -> Option<regex::Regex> {
         .ok()
 }
 
-/// `shell` with `wait_for`: hand back when the line appears.
+/// `shell` with `wait_for`: hand back when the line appears. With `keep_running` and no
+/// `wait_for`, hand back after `KEEP_RUNNING_SETTLE_SECS`, leaving the program running.
 async fn watch(
     ctx: &ToolContext,
     a: &ShellArgs,
-    pattern: &str,
+    pattern: Option<&str>,
     secs: u64,
     program: &str,
     argv: &[String],
 ) -> ToolOutput {
-    let Some(wait_for) = line_pattern(pattern) else {
-        return ToolOutput::error("wait_for isn't usable text or a regular expression");
+    let wait_for = match pattern.map(line_pattern) {
+        Some(None) => {
+            return ToolOutput::error("wait_for isn't usable text or a regular expression");
+        }
+        Some(Some(w)) => Some(w),
+        None => None,
     };
+    let secs = if wait_for.is_some() {
+        secs
+    } else {
+        KEEP_RUNNING_SETTLE_SECS
+    };
+    // What the result says the program was watched for.
+    let watched = match pattern {
+        Some(p) => format!("Saw \"{p}\""),
+        None => format!("It was still going after {secs}s"),
+    };
+    let pattern = pattern.unwrap_or_default();
     if a.keep_running && crate::background::running_for(&ctx.user_id) >= BACKGROUND_MAX_PER_PERSON {
         return ToolOutput::error(format!(
             "{BACKGROUND_MAX_PER_PERSON} programs are already running in the background: stop one \
@@ -277,7 +451,7 @@ async fn watch(
         Duration::from_secs(secs),
         &ctx.output,
         ctx.cancel.clone(),
-        &wait_for,
+        wait_for.as_ref(),
         keep,
     )
     .await
@@ -291,7 +465,7 @@ async fn watch(
         ),
         Ok(process::Watched::Kept { output, id }) => ToolOutput::ok(
             format!(
-                "Saw \"{pattern}\". It keeps running in the background as {id}: read its latest \
+                "{watched}. It keeps running in the background as {id}: read its latest \
                  output with shell_output, and stop it with shell_stop when you're done.\n{}",
                 cap(output, RESULT_MAX_CHARS)
             ),
@@ -302,8 +476,18 @@ async fn watch(
             cap(done.output, RESULT_MAX_CHARS)
         )),
         Ok(process::Watched::Ended(done)) => {
-            let mut out = describe(done, secs, "The command");
-            out.content = format!("It ended before \"{pattern}\" appeared.\n{}", out.content);
+            let left = done.left.is_some();
+            let mut out = describe_tracked(ctx, &a.command, done, secs);
+            out.content = if wait_for.is_some() {
+                format!("It ended before \"{pattern}\" appeared.\n{}", out.content)
+            } else if left {
+                format!("It ended within {secs}s.\n{}", out.content)
+            } else {
+                format!(
+                    "It ended within {secs}s, so nothing was left running.\n{}",
+                    out.content
+                )
+            };
             out
         }
         Err(e) => ToolOutput::error(format!("couldn't start {program}: {e}")),
@@ -467,6 +651,7 @@ impl Tool for Git {
             summary: format!("Run `git {joined}`"),
             risk: if risky { Risk::High } else { Risk::Medium },
             grant: (!sub.is_empty()).then(|| format!("git:{sub}")),
+            everyday: false,
         }
     }
     fn run<'a>(&'a self, ctx: &'a ToolContext, args: Value) -> BoxFuture<'a, ToolOutput> {
@@ -492,7 +677,7 @@ impl Tool for Git {
             )
             .await
             {
-                Ok(done) => describe(done, GIT_TIMEOUT_SECS, "git"),
+                Ok(done) => describe(done, GIT_TIMEOUT_SECS, "git", ""),
                 Err(e) => ToolOutput::error(format!("couldn't run git (is it installed?): {e}")),
             }
         })
@@ -518,33 +703,149 @@ mod tests {
         assert!(!read_only(&v(&[])));
     }
 
+    /// A session folder in the person's own user folder, as on a real install.
+    fn ws() -> std::path::PathBuf {
+        if cfg!(windows) {
+            Path::new(r"C:\Users\me\Documents\Thrall\me").to_path_buf()
+        } else {
+            Path::new("/home/me/Thrall/me").to_path_buf()
+        }
+    }
+
+    fn card(command: &str) -> String {
+        shell_summary(&json!({ "command": command }), &ws())
+    }
+
     #[test]
     fn shell_grants_and_risk() {
-        assert_eq!(shell_grant("cargo test -p x"), Some("shell:cargo".into()));
-        assert_eq!(shell_grant("cargo test; rm -rf /"), None);
-        assert_eq!(shell_grant("ls | sort"), None);
-        assert_eq!(shell_risk("Remove-Item -Recurse -Force build"), Risk::High);
-        assert_eq!(shell_risk("rm -rf target"), Risk::High);
-        assert_eq!(shell_risk("cargo build"), Risk::Medium);
-        assert_eq!(shell_grant("rm -rf target"), None);
+        let ws = ws();
+        assert_eq!(
+            shell_grant("cargo test -p x", &ws),
+            Some("shell:cargo".into())
+        );
+        assert_eq!(shell_grant("cargo test; rm -rf /", &ws), None);
+        assert_eq!(shell_grant("ls | sort", &ws), None);
+        // Deleting is never covered by "always".
+        assert_eq!(shell_grant("rm -rf target", &ws), None);
+        assert_eq!(shell_grant("rm notes.txt", &ws), None);
+    }
+
+    #[test]
+    fn everyday_commands_are_low_risk() {
+        let ws = ws();
+        for command in [
+            "cargo build",
+            "py -V",
+            "cd tiny-notes; py server.py",
+            "curl.exe -s http://127.0.0.1:8766/health",
+            "Get-ItemProperty HKCU:\\Software\\Thrall",
+            "py format_rd.py --del-old",
+        ] {
+            assert_eq!(shell_risk(command, &ws), Risk::Low, "{command}");
+        }
+    }
+
+    #[test]
+    fn deleting_installing_and_stopping_a_program_need_a_look() {
+        let ws = ws();
+        for command in [
+            "Remove-Item body1.json,body2.json",
+            "Remove-Item -Recurse -Force build",
+            "rm -rf target",
+            "pip install requests",
+            "npm i left-pad",
+            "Stop-Process -Id 20852 -Force",
+            "git push origin main",
+        ] {
+            assert_eq!(shell_risk(command, &ws), Risk::Medium, "{command}");
+        }
+    }
+
+    #[test]
+    fn risky_commands_are_high_risk() {
+        let ws = ws();
+        let elsewhere = if cfg!(windows) {
+            r"Remove-Item -Recurse -Force C:\Users\me\Projects\old"
+        } else {
+            "rm -rf /home/me/Projects/old"
+        };
+        for command in [
+            elsewhere,
+            "Remove-Item -Recurse ..\\other",
+            "cd ..; rm -r build",
+            "Remove-Item -Recurse $env:TEMP\\x",
+            "Stop-Process -Name python",
+            "taskkill /IM node.exe /F",
+            "git push --force",
+            "Restart-Computer",
+            "Format-Volume -DriveLetter E",
+            "reg add HKCU\\Software\\X /v Y /d 1",
+            "Set-ItemProperty -Path HKLM:\\Software\\X -Name Y -Value 1",
+        ] {
+            assert_eq!(shell_risk(command, &ws), Risk::High, "{command}");
+        }
     }
 
     #[test]
     fn a_delete_chained_onto_something_harmless_is_named_first() {
-        let card =
-            shell_summary("Remove-Item old.py -ErrorAction SilentlyContinue; py -m pytest -q");
+        let first = card("Remove-Item old.py -ErrorAction SilentlyContinue; py -m pytest -q");
         assert!(
-            card.starts_with("Deletes files: Run `Remove-Item"),
-            "{card}"
+            first.starts_with("Deletes files: Run `Remove-Item"),
+            "{first}"
         );
-        assert!(shell_summary("cargo test && rm notes.txt").starts_with("Deletes files: "));
-        assert!(shell_summary("git reset --hard").starts_with("Risky: "));
-        assert_eq!(shell_summary("cargo build"), "Run `cargo build`");
+        assert!(card("cargo test && rm notes.txt").starts_with("Deletes files: "));
+        assert!(card("git reset --hard").starts_with("Risky: "));
+        assert_eq!(card("cargo build"), "Run `cargo build`");
         // Words that only contain a deleter's name don't count.
         assert_eq!(
-            shell_summary("py format_rd.py --del-old"),
+            card("py format_rd.py --del-old"),
             "Run `py format_rd.py --del-old`"
         );
+    }
+
+    #[test]
+    fn a_system_change_needs_its_outcome_and_a_backup_to_undo_it() {
+        let ws = std::env::temp_dir().join("thrall-system-change");
+        std::fs::create_dir_all(&ws).unwrap();
+        let backup = ws.join("before.reg");
+        let _ = std::fs::remove_file(&backup);
+        let command = "reg add HKCU\\Software\\ThrallTest /v Shown /d 1 /f";
+        let with = |outcome: &str, undo: &str| json!({ "command": command, "outcome": outcome, "undo": undo });
+        // Nothing said, or a backup that isn't there: refused before anyone is asked.
+        assert!(system_change_blocked(&json!({ "command": command }), &ws).is_some());
+        let args = with("Shows the test value", "reg import before.reg");
+        assert!(system_change_blocked(&args, &ws).is_some());
+        // With the backup made, it can be asked about, and the card says both.
+        std::fs::write(&backup, "Windows Registry Editor Version 5.00").unwrap();
+        assert_eq!(system_change_blocked(&args, &ws), None);
+        let shown = shell_summary(&args, &ws);
+        assert!(
+            shown.starts_with("Changes the system: Run `reg add"),
+            "{shown}"
+        );
+        assert!(shown.contains("Outcome: Shows the test value"), "{shown}");
+        assert!(shown.contains("Undo: reg import before.reg"), "{shown}");
+        // Reading the registry, or an ordinary command, needs none of it.
+        let read = json!({ "command": "reg query HKCU\\Software\\ThrallTest" });
+        assert_eq!(system_change_blocked(&read, &ws), None);
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn changing_files_in_the_system_folders_is_a_system_change() {
+        let ws = ws();
+        assert!(system_change(
+            r"Copy-Item hosts C:\Windows\System32\drivers\etc\hosts",
+            &ws
+        ));
+        assert!(system_change(r"echo x > C:\Windows\x.txt", &ws));
+        // Only looking isn't.
+        assert!(!system_change(
+            r"Get-Content C:\Windows\System32\drivers\etc\hosts",
+            &ws
+        ));
+        assert!(!system_change(r"Copy-Item a.txt b.txt", &ws));
     }
 
     fn finished(code: Option<i32>, timed_out: bool) -> Finished {
@@ -553,21 +854,65 @@ mod tests {
             output: "done\n".into(),
             timed_out,
             cancelled: false,
+            left: None,
         }
     }
 
     #[test]
     fn a_nonzero_exit_is_a_warning_and_a_timeout_a_failure() {
-        let ok = describe(finished(Some(0), false), 60, "The command");
+        let ok = describe(finished(Some(0), false), 60, "The command", "dir");
         assert!(ok.ok && !ok.warn);
         // It ran to the end: its output may still be what was asked.
-        let exit1 = describe(finished(Some(1), false), 60, "The command");
+        let exit1 = describe(finished(Some(1), false), 60, "The command", "dir");
         assert!(!exit1.ok && exit1.warn);
         assert_eq!(exit1.summary, "Exit code 1");
         assert!(exit1.content.contains("done"));
-        let late = describe(finished(None, true), 60, "The command");
+        let late = describe(finished(None, true), 60, "The command", "dir");
         assert!(!late.ok && !late.warn);
-        let killed = describe(finished(None, false), 60, "The command");
+        let killed = describe(finished(None, false), 60, "The command", "dir");
         assert!(!killed.ok && !killed.warn);
+    }
+
+    #[test]
+    fn a_stop_warns_of_escaped_programs_only_when_the_command_starts_one() {
+        let search = describe(
+            finished(None, true),
+            180,
+            "The command",
+            "Get-ChildItem -Recurse",
+        );
+        assert!(search.content.contains(STOPPED_NOTE));
+        assert!(!search.content.contains("may still be running"));
+        let launch = describe(
+            finished(None, true),
+            180,
+            "The command",
+            "Start-Process app.exe",
+        );
+        assert!(launch.content.contains("may still be running"));
+    }
+
+    #[test]
+    fn only_starting_a_program_counts_not_naming_it() {
+        for started in [
+            "Start-Process python -ArgumentList app.py",
+            "$p = Start-Process python -PassThru; $p.Id",
+            "(Start-Process notepad -PassThru).Id",
+            "cd app; .venv\\Scripts\\pythonw.exe cast.py",
+            "& \"C:\\My App\\.venv\\Scripts\\pythonw.exe\" cast.py",
+            "start /b server.exe",
+            "nohup ./server &",
+        ] {
+            assert!(starts_untracked(started), "{started}");
+        }
+        for named in [
+            "Get-Process pythonw | Select-Object Id, StartTime",
+            "Get-Help Start-Process",
+            "Stop-Process -Name pythonw",
+            "Start-Sleep 2",
+            "Get-Content start.log",
+        ] {
+            assert!(!starts_untracked(named), "{named}");
+        }
     }
 }

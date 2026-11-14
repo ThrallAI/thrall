@@ -129,16 +129,19 @@ impl Tool for Clipboard {
                 summary: "Read the clipboard".to_owned(),
                 risk: Risk::Low,
                 grant: Some("clipboard".to_owned()),
+                everyday: false,
             },
             "delete" => Effect::Run {
                 summary: format!("Delete snippet {}", arg_str(args, "name")),
                 risk: Risk::Low,
                 grant: Some("clipboard".to_owned()),
+                everyday: false,
             },
             _ => Effect::Run {
                 summary: "Change the clipboard".to_owned(),
                 risk: Risk::Low,
                 grant: Some("clipboard".to_owned()),
+                everyday: false,
             },
         }
     }

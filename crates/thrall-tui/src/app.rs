@@ -574,14 +574,15 @@ impl App {
                 };
             }
             let reply = if p.plan {
+                // Approving goes on in Auto edits; a keeps asking before each change.
                 match key.code {
                     KeyCode::Char('y' | 'Y') => Some(Reply::Plan {
                         approve: true,
-                        auto_edits: false,
+                        auto_edits: true,
                     }),
                     KeyCode::Char('a' | 'A') => Some(Reply::Plan {
                         approve: true,
-                        auto_edits: true,
+                        auto_edits: false,
                     }),
                     KeyCode::Char('n' | 'N') | KeyCode::Esc => Some(Reply::Plan {
                         approve: false,
@@ -1136,7 +1137,7 @@ fn draw_permission(frame: &mut Frame<'_>, area: Rect, p: &Permission) {
         buttons.push(Span::styled("[y] Approve", bold(theme::OK)));
         buttons.push(Span::raw("   "));
         buttons.push(Span::styled(
-            "[a] Approve, auto-accept edits",
+            "[a] Approve, ask before each change",
             bold(theme::ACCENT),
         ));
         buttons.push(Span::raw("   "));
@@ -1380,12 +1381,23 @@ mod tests {
         });
         pause_for_card();
         assert_eq!(
-            app.on_key(key(KeyCode::Char('a'))),
+            app.on_key(key(KeyCode::Char('y'))),
             Some(Action::Answer(
                 "p1".into(),
                 Reply::Plan {
                     approve: true,
                     auto_edits: true
+                }
+            ))
+        );
+        pause_for_card();
+        assert_eq!(
+            app.on_key(key(KeyCode::Char('a'))),
+            Some(Action::Answer(
+                "p1".into(),
+                Reply::Plan {
+                    approve: true,
+                    auto_edits: false
                 }
             ))
         );

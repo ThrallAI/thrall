@@ -1,5 +1,5 @@
 //! `edit_spreadsheet`, `edit_word`, `edit_pdf` and `make_pdf`: make and change office documents
-//! inside the working folder. Each shows what it will change before asking, like any file edit.
+//! wherever they're asked. Each shows what it will change before asking, like any file edit.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
