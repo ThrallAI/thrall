@@ -604,7 +604,10 @@ private fun valueAt(config: JsonObject, key: String): JsonPrimitive? {
 
 /** The settings shown on the phone, by section: (dotted key, label). Others stay on the computer. */
 private val PHONE_SETTINGS: List<Pair<String, List<Pair<String, String>>>> = listOf(
-    "Model" to listOf("provider.model" to "Model (an OpenRouter id, like openai/gpt-6-luna)"),
+    "Model" to listOf(
+        "provider.model" to "Model (an OpenRouter id, like openai/gpt-6-luna)",
+        "provider.low_balance_warn_cents" to "Low credit warning, in US cents (100 is \$1.00; 0: never)",
+    ),
     "Check-ins" to listOf(
         "heartbeat.enabled" to "Check in now and then",
         "heartbeat.every_minutes" to "Every (minutes)",

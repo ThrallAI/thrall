@@ -12,7 +12,7 @@ use thrall_core::ids::new_id;
 use thrall_gates::{Effect, Mode};
 use thrall_llm::fal::{self, Progress};
 use thrall_protocol::{Event, Risk, StepStatus, Usage};
-use thrall_tools::paths::{display, inside, resolve};
+use thrall_tools::paths::{display, resolve};
 use thrall_tools::{Cancel, ToolOutput};
 
 use crate::constants::{
@@ -22,7 +22,7 @@ use crate::constants::{
 };
 use crate::error::AgentError;
 use crate::state::AppState;
-use crate::steps::gate_call;
+use crate::steps::{gate_call, save_in_system};
 use crate::turn::Emitter;
 
 const ASPECTS: &[&str] = &["auto", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
@@ -164,6 +164,8 @@ pub(crate) async fn make_video(
             Err(e) => return fail(format!("can't read {shown}: {e}")),
         }
     }
+    // A copy can go in any folder; the system's folders make the card High risk.
+    let mut system = false;
     let save_to = match a
         .save_as
         .as_deref()
@@ -178,8 +180,9 @@ pub(crate) async fn make_video(
             {
                 path.set_extension("mp4");
             }
-            if !inside(workspace, &path) {
-                return fail(format!("{name} is outside this session's folder"));
+            match save_in_system(state, workspace, &path) {
+                Ok(s) => system = s,
+                Err(why) => return fail(why),
             }
             Some(path)
         }
@@ -204,7 +207,7 @@ pub(crate) async fn make_video(
     );
     let effect = Effect::AlwaysAsk {
         summary,
-        risk: Risk::Low,
+        risk: if system { Risk::High } else { Risk::Low },
         diff: None,
     };
     if let Err(no) = gate_call(emitter, state, step_id, "make_video", &effect, mode, cancel).await?
@@ -323,17 +326,22 @@ pub(crate) async fn make_video(
     let mut content = format!(
         "Made a {seconds} s {resolution} video with Seedance 2.0 (${price:.2}). The user can watch it in the chat."
     );
+    let mut copied = None;
     if let Some(copy) = &save_to {
         if let Some(parent) = copy.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
         match std::fs::write(copy, &video) {
-            Ok(()) => content.push_str(&format!(" Saved as {}.", display(workspace, copy))),
+            Ok(()) => {
+                content.push_str(&format!(" Saved as {}.", display(workspace, copy)));
+                copied = Some(copy.clone());
+            }
             Err(e) => content.push_str(&format!(" Couldn't save the copy in the folder: {e}.")),
         }
     }
     let mut output = ToolOutput::ok(content, format!("{seconds} s {resolution} · ${price:.2}"));
     output.files = vec![crate::extras::file_ref(&path)];
+    output.saved.extend(copied);
     Ok(Ok(output))
 }
 

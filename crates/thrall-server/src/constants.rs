@@ -204,6 +204,23 @@ pub const REMOTE_CHECK: Duration = Duration::from_secs(2);
 /// Most entries one `folder.list` returns (the rest are left out, and the reply says so).
 pub const FOLDER_LIST_MAX: usize = 500;
 
+/// Largest file a step wrote that `step.file.read` sends to a phone or browser (1 GiB).
+pub const STEP_FILE_MAX_BYTES: u64 = 1024 * 1024 * 1024;
+
+/// `step.file.open` asks not yet passed to a desktop app (a burst of clicks; older ones drop).
+pub const OPEN_ASKED_QUEUE: usize = 16;
+
+/// Why a file a step wrote can't be opened from where the person is.
+pub const OPEN_NEEDS_DESKTOP: &str =
+    "Files open in Thrall's desktop app on the computer Thrall runs on, and it isn't running.";
+
+/// Why a file a step wrote isn't there to open or fetch.
+pub const STEP_FILE_GONE: &str = "That file isn't there any more (moved, renamed or deleted).";
+
+/// Why a file a step wrote is too big to fetch.
+pub const STEP_FILE_TOO_BIG: &str =
+    "That file is too big to send here: open it on the computer Thrall runs on.";
+
 /// How many folders down `folder.read` looks for a file named without its folder.
 pub const FIND_DEPTH: usize = 4;
 

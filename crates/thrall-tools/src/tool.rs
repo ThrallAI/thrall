@@ -144,6 +144,8 @@ pub struct ToolOutput {
     pub restart: bool,
     /// Files the step made, shown to the user (pictures).
     pub files: Vec<thrall_protocol::FileRef>,
+    /// Files it wrote on the computer, for the person to open or fetch (full paths).
+    pub saved: Vec<PathBuf>,
     /// A fact it saved to long-term memory, so the person is told (and can forget it).
     pub remembered: Option<SavedFact>,
     /// Not `ok`, but it ran to the end (a command whose exit code wasn't 0): shown as a warning,
@@ -173,6 +175,7 @@ impl ToolOutput {
             tasks: None,
             restart: false,
             files: Vec::new(),
+            saved: Vec::new(),
             remembered: None,
             warn: false,
         }
@@ -189,6 +192,7 @@ impl ToolOutput {
             tasks: None,
             restart: false,
             files: Vec::new(),
+            saved: Vec::new(),
             remembered: None,
             warn: false,
         }

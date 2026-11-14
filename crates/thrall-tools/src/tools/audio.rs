@@ -14,10 +14,10 @@ use thrall_protocol::Risk;
 
 use crate::constants::{
     CAPTION_PARAGRAPH_SECS, CAPTION_REPEAT_WINDOW, CAPTIONS_TEMP_PREFIX, CAPTIONS_TIMEOUT_SECS,
-    DOWNLOAD_TIMEOUT_SECS, EXTRA_PROGRAM_DIRS, LISTEN_BITRATE, LISTEN_SAMPLE_RATE,
-    RESULT_MAX_CHARS, SPLIT_TIMEOUT_SECS,
+    DOWNLOAD_SYSTEM_FOLDER, DOWNLOAD_TIMEOUT_SECS, EXTRA_PROGRAM_DIRS, LISTEN_BITRATE,
+    LISTEN_SAMPLE_RATE, RESULT_MAX_CHARS, SPLIT_TIMEOUT_SECS,
 };
-use crate::paths::{display, inside, resolve};
+use crate::paths::{display, resolve};
 use crate::tool::{Cancel, Tool, ToolContext, ToolOutput, arg_str, cap, parse_args};
 
 /// The `speak` tool's name.
@@ -37,7 +37,8 @@ impl Tool for Speak {
     fn description(&self) -> &'static str {
         "Read text aloud: makes a recording the user can play in the chat. voice (optional): \
          alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer, verse. save_as also \
-         puts the .wav in the working folder. Costs a fraction of a cent."
+         saves the .wav (a name in the working folder, or a full path). Costs a fraction of a \
+         cent."
     }
     fn parameters(&self) -> Value {
         json!({
@@ -45,7 +46,7 @@ impl Tool for Speak {
             "properties": {
                 "text": { "type": "string", "description": "What to say" },
                 "voice": { "type": "string", "description": "Voice name (default from settings)" },
-                "save_as": { "type": "string", "description": "Also save it in the working folder (a .wav name)" }
+                "save_as": { "type": "string", "description": "Also save it: a .wav name in the working folder, or a full path" }
             },
             "required": ["text"]
         })
@@ -466,8 +467,8 @@ fn check_video(ctx: &ToolContext, args: &Value) -> Option<String> {
             .and_then(Value::as_str)
             .unwrap_or("downloads"),
     );
-    if !inside(&ctx.workspace, &folder) {
-        return Some("downloads go inside the working folder".to_owned());
+    if thrall_gates::system_folder(&folder.to_string_lossy(), &ctx.workspace.to_string_lossy()) {
+        return Some(DOWNLOAD_SYSTEM_FOLDER.to_owned());
     }
     if yt_dlp().is_none() {
         return Some(
@@ -484,9 +485,9 @@ impl Tool for DownloadVideo {
         "download_video"
     }
     fn description(&self) -> &'static str {
-        "Download a video (YouTube and most video sites) into the working folder with yt-dlp, \
-         or just its audio (audio_only: true, as mp3). folder: where in the working folder \
-         (default: downloads). Only for things the user may download. To know what a video \
+        "Download a video (YouTube and most video sites) with yt-dlp, or just its audio \
+         (audio_only: true, as mp3). folder: where (a folder in the working folder, or a full \
+         path; default: downloads). Only for things the user may download. To know what a video \
          says, use video_transcript instead."
     }
     fn parameters(&self) -> Value {
@@ -495,7 +496,7 @@ impl Tool for DownloadVideo {
             "properties": {
                 "url": { "type": "string" },
                 "audio_only": { "type": "boolean", "description": "Only the sound, as mp3" },
-                "folder": { "type": "string", "description": "Folder inside the working folder (default: downloads)" }
+                "folder": { "type": "string", "description": "Folder in the working folder, or a full path (default: downloads)" }
             },
             "required": ["url"]
         })
@@ -531,12 +532,14 @@ impl Tool for DownloadVideo {
             let folder = resolve(&ctx.workspace, a.folder.as_deref().unwrap_or("downloads"));
             match download(&a.url, &folder, a.audio_only, &ctx.cancel).await {
                 Ok(saved) => {
-                    let saved: Vec<String> =
+                    let shown: Vec<String> =
                         saved.iter().map(|p| display(&ctx.workspace, p)).collect();
-                    ToolOutput::ok(
-                        format!("Downloaded: {}", saved.join(", ")),
-                        format!("Saved {}", saved.join(", ")),
-                    )
+                    let mut output = ToolOutput::ok(
+                        format!("Downloaded: {}", shown.join(", ")),
+                        format!("Saved {}", shown.join(", ")),
+                    );
+                    output.saved = saved;
+                    output
                 }
                 Err(e) => ToolOutput::error(e),
             }
@@ -555,8 +558,8 @@ impl Tool for VideoTranscript {
     fn description(&self) -> &'static str {
         "What a video says (YouTube and most video sites), as text. Uses the video's own captions \
          when it has them (free and instant); only when it has none does it download the sound \
-         and transcribe it (long recordings are cut into parts). Saves the transcript in the \
-         working folder. language: the captions' language code (default en). Use this rather \
+         and transcribe it (long recordings are cut into parts). Saves the transcript in folder \
+         (default: downloads in the working folder). language: the captions' language code (default en). Use this rather \
          than download_video and transcribe."
     }
     fn parameters(&self) -> Value {
@@ -565,7 +568,7 @@ impl Tool for VideoTranscript {
             "properties": {
                 "url": { "type": "string" },
                 "language": { "type": "string", "description": "Captions language code, e.g. en, de, ja (default en)" },
-                "folder": { "type": "string", "description": "Folder inside the working folder for the transcript (default: downloads)" }
+                "folder": { "type": "string", "description": "Folder for the transcript: in the working folder, or a full path (default: downloads)" }
             },
             "required": ["url"]
         })

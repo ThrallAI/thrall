@@ -1163,6 +1163,10 @@ impl Hub {
         }
         session::set_mode(&state, session_id, mode).await?;
         self.announce_mode(&state, session_id, mode).await;
+        // A card left open that Full auto wouldn't have asked about is answered yes now.
+        if mode == Mode::FullAuto {
+            self.state().prompts.answer_for_full_auto(session_id, user);
+        }
         Ok(())
     }
 

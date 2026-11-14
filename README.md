@@ -11,7 +11,19 @@ commands off, what you can see) are there when you want them, and off until you 
 
 > **Preview (0.x).** Early and actively changing; see the [changelog](CHANGELOG.md) for what's new. Windows is used day to day; Linux
 > (Ubuntu, Omarchy) is new; **macOS builds are made automatically but haven't been tested by hand
-> yet: Mac users, your feedback is very welcome** (see [Contributing](CONTRIBUTING.md)).
+> yet: Mac users, your feedback is very welcome** (see [Contributing](CONTRIBUTING.md)). Things we
+> know aren't right yet are on the [known issues](KNOWN-ISSUES.md) page.
+
+## Quick start
+
+1. Download Thrall for your system from the [latest release](../../releases) and install it
+   ([details](#install)).
+2. Make an [OpenRouter key](https://openrouter.ai/keys) (give it a spending limit) and paste it in
+   when Thrall asks. No key? Use a [local model](#local-models-no-key-no-cost).
+3. Start a new session on a **throwaway folder** and stay in **Ask** mode for now.
+4. Ask for something in plain words, for example *"make a to-do list app as one HTML file"*, and
+   read each card before you press Allow.
+5. Want it on your phone? Settings → Phones → **Add a phone** ([more](#first-run)).
 
 ## What you get
 
@@ -152,6 +164,7 @@ the files in it. On Linux and macOS, remove Thrall's keys in your keychain app (
   use the window; Hyprland/Omarchy show it in Waybar.
 - **The phone says "Reconnecting"**: check the computer is on and Thrall is running, then tap
   **Try now**.
+- Something else odd? Check the [known issues](KNOWN-ISSUES.md) first.
 - Logs are in the `logs` folder of the data folder above. Please attach the relevant lines (with
   any keys removed) to bug reports.
 

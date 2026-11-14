@@ -12,7 +12,7 @@ use thrall_core::ids::new_id;
 use thrall_gates::{Effect, Mode};
 use thrall_llm::{ImagePart, ImageRequest, ModelPrices};
 use thrall_protocol::{Risk, StepStatus, Usage};
-use thrall_tools::paths::{display, inside, resolve};
+use thrall_tools::paths::{display, resolve};
 use thrall_tools::{Cancel, ToolOutput};
 
 use crate::constants::{
@@ -21,7 +21,7 @@ use crate::constants::{
 };
 use crate::error::AgentError;
 use crate::state::AppState;
-use crate::steps::gate_call;
+use crate::steps::{gate_call, save_in_system};
 use crate::turn::Emitter;
 
 #[derive(Deserialize)]
@@ -123,7 +123,8 @@ pub(crate) async fn make_image(
                 .unwrap_or(shown),
         );
     }
-    // A copy in the working folder must stay inside it.
+    // A copy can go in any folder; the system's folders make the card High risk.
+    let mut system = false;
     let save_to = match a
         .save_as
         .as_deref()
@@ -132,10 +133,9 @@ pub(crate) async fn make_image(
     {
         Some(name) => {
             let path = resolve(workspace, name);
-            if !inside(workspace, &path) {
-                return Ok(Ok(ToolOutput::error(format!(
-                    "{name} is outside this session's folder"
-                ))));
+            match save_in_system(state, workspace, &path) {
+                Ok(s) => system = s,
+                Err(why) => return Ok(Ok(ToolOutput::error(why))),
             }
             Some(path)
         }
@@ -163,7 +163,7 @@ pub(crate) async fn make_image(
         .unwrap_or_default();
     let effect = Effect::AlwaysAsk {
         summary: format!("{what} with {model} · {price}{saving}"),
-        risk: Risk::Low,
+        risk: if system { Risk::High } else { Risk::Low },
         diff: None,
     };
     if let Err(no) = gate_call(emitter, state, step_id, "make_image", &effect, mode, cancel).await?
@@ -225,6 +225,7 @@ pub(crate) async fn make_image(
         |s| s.to_string_lossy().into_owned(),
     );
     let mut saved: Vec<PathBuf> = Vec::new();
+    let mut copied: Option<PathBuf> = None;
     for (n, image) in reply.images.iter().enumerate() {
         let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&image.base64) else {
             continue;
@@ -254,8 +255,9 @@ pub(crate) async fn make_image(
             if let Some(parent) = copy.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
-            if let Err(e) = std::fs::write(copy, &bytes) {
-                tracing::warn!(%e, "couldn't save the picture in the working folder");
+            match std::fs::write(copy, &bytes) {
+                Ok(()) => copied = Some(copy.clone()),
+                Err(e) => tracing::warn!(%e, "couldn't save the picture in the working folder"),
             }
         }
         saved.push(path);
@@ -288,6 +290,7 @@ pub(crate) async fn make_image(
     }
     let mut output = ToolOutput::ok(content, format!("Made with {model} · {cost_text}"));
     output.files = saved.iter().map(|p| crate::extras::file_ref(p)).collect();
+    output.saved.extend(copied);
     Ok(Ok(output))
 }
 

@@ -1,7 +1,7 @@
 // The web app: a client of Thrall's one engine. It holds no agent state of its own; it sends
 // protocol requests and draws the events that come back.
 
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { CommandPalette, type PaletteItem } from "./components/CommandPalette";
 import { Settings } from "./components/Settings";
@@ -16,6 +16,7 @@ import { StatusBar } from "./components/StatusBar";
 import { TaskPanel } from "./components/TaskPanel";
 import { TranscriptItem } from "./components/TranscriptItem";
 import { FileLoader, forgetFiles } from "./components/Attachments";
+import { SavedFileActionsContext, type SavedFileActions } from "./components/SavedFiles";
 import {
   ARCHIVED_SESSIONS,
   ASK_NOTE_MS,
@@ -45,6 +46,7 @@ import { Tour } from "./components/Tour";
 import { Welcome } from "./components/Welcome";
 import type { Session } from "./types";
 import { applyTheme, flipTheme, readTheme } from "./theme";
+import { terminalOnly } from "./slash";
 import { apply, emptyView, localId, markForgotten, openedView, shownActivity, type Item, type View } from "./transcript";
 
 type Action =
@@ -139,6 +141,25 @@ export function App() {
   useEffect(() => applyTheme(theme), [theme]);
 
   const currentId = useRef<string | null>(null);
+  // File cards act on the session on screen; the engine finds each file from its step.
+  const savedFiles = useMemo<SavedFileActions>(() => {
+    const ready = () => {
+      const e = engine.current;
+      const session = currentId.current;
+      if (!e || !session) throw new EngineError("closed", "Not connected to Thrall's engine yet.");
+      return { e, session };
+    };
+    return {
+      open: async (step, index, reveal) => {
+        const { e, session } = ready();
+        return e.request<"ack">({ type: "step.file.open", session, step, index, reveal });
+      },
+      read: async (step, index) => {
+        const { e, session } = ready();
+        return e.readStepFile(session, step, index);
+      },
+    };
+  }, []);
   const viewRef = useRef(view);
   viewRef.current = view;
   const composer = useRef<ComposerHandle>(null);
@@ -356,6 +377,17 @@ export function App() {
         ev.preventDefault();
         setSettingsOpen(true);
       }
+      // Shift+Tab: next mode, wherever the focus is (the message box handles its own; other
+      // text fields keep Shift+Tab for moving back a field).
+      if (ev.shiftKey && ev.key === "Tab" && !ev.defaultPrevented) {
+        const el = document.activeElement;
+        const typing = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement;
+        const inDialog = el instanceof HTMLElement && el.closest('[role="dialog"]') !== null;
+        if (!typing && !inDialog) {
+          ev.preventDefault();
+          cycleModeRef.current();
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -509,10 +541,16 @@ export function App() {
   const setMode = useCallback(
     async (mode: string, until?: string, minutes?: number) => {
       const before = viewRef.current.mode;
-      const id = currentId.current;
+      let id = currentId.current;
+      // Full auto belongs to a session in the engine, so a new chat is started now (as the phone
+      // does) rather than waiting for its first message.
       if (!id && mode === "full_auto") {
-        note("Send a message first; then Full auto can be switched on for this chat.");
-        return;
+        try {
+          id = await ensureSession();
+        } catch (err) {
+          fail(err);
+          return;
+        }
       }
       dispatch({ type: "patch", patch: { mode, offerAsk: false } });
       if (mode !== before) note(`${MODE_LABELS[mode] ?? mode}: ${MODE_COVERS[mode] ?? ""}`);
@@ -524,7 +562,7 @@ export function App() {
         fail(err);
       }
     },
-    [fail, note],
+    [ensureSession, fail, note],
   );
 
   const cycleMode = useCallback(() => {
@@ -532,6 +570,8 @@ export function App() {
     const next = MODE_CYCLE[(i + 1) % MODE_CYCLE.length] ?? "ask";
     void setMode(next);
   }, [setMode]);
+  const cycleModeRef = useRef(cycleMode);
+  cycleModeRef.current = cycleMode;
 
   const command = useCallback(
     async (name: string, args: string) => {
@@ -540,6 +580,11 @@ export function App() {
       atBottom.current = true;
       if (name === "new") {
         newSession();
+        return;
+      }
+      const terminal = terminalOnly(name, commands);
+      if (terminal) {
+        note(terminal);
         return;
       }
       const session = currentId.current;
@@ -565,7 +610,7 @@ export function App() {
         fail(err);
       }
     },
-    [fail, newSession, note, setMode],
+    [commands, fail, newSession, note, setMode],
   );
 
   const stop = useCallback(() => {
@@ -965,6 +1010,7 @@ export function App() {
               </div>
             ) : (
               <FileLoader.Provider value={loadFile}>
+              <SavedFileActionsContext.Provider value={savedFiles}>
               <div className="th-transcript">
                 {shown.map((item) => (
                   <TranscriptItem
@@ -985,6 +1031,7 @@ export function App() {
                   />
                 ))}
               </div>
+              </SavedFileActionsContext.Provider>
               </FileLoader.Provider>
             )}
           </div>

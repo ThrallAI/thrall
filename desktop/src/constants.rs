@@ -20,6 +20,9 @@ pub const SHORTCUT_TAKEN_TITLE: &str = "Shortcut not available";
 pub const SHORTCUT_TAKEN: &str = "{shortcut} is already used by another program, so Thrall left it \
 off. Pick a different one in Settings → Startup → Show or hide shortcut.";
 
+/// Shown when a file card's Open or Show in folder didn't work.
+pub const OPEN_FAILED_TITLE: &str = "Couldn't open the file";
+
 /// This app's log file name in Thrall's logs folder (a date is appended each day).
 pub const LOG_FILE_PREFIX: &str = "desktop";
 

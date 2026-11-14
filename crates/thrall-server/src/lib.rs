@@ -15,6 +15,7 @@ pub mod people;
 pub mod remote;
 mod runner_link;
 pub mod signin;
+pub mod step_files;
 pub mod token;
 pub mod uploads;
 pub mod web;
@@ -38,7 +39,8 @@ pub use error::ServerError;
 pub use thrall_core::EngineFile;
 
 use crate::constants::{
-    DESKTOP_ORIGINS, FILE_PATH, FILES_PATH, HEALTH_PATH, LOCAL_HOST, MAX_UPLOAD_BYTES, SIGNIN_PATH,
+    DESKTOP_ORIGINS, FILE_PATH, FILES_PATH, HEALTH_PATH, LOCAL_HOST, MAX_UPLOAD_BYTES,
+    OPEN_ASKED_QUEUE, SIGNIN_PATH,
 };
 
 /// How to run the server.
@@ -103,6 +105,7 @@ pub async fn start(hub: Arc<Hub>, options: Options) -> Result<Running, ServerErr
             signins: signin::SignIns::default(),
             update_asked: tokio::sync::watch::Sender::new(0),
             desktops: std::sync::atomic::AtomicUsize::new(0),
+            open_asked: tokio::sync::broadcast::Sender::new(OPEN_ASKED_QUEUE),
         }),
         origins: Arc::new(origins),
     };
