@@ -146,7 +146,17 @@ describe("apply", () => {
       "web",
       CLIENT_LABELS,
     );
-    expect(done.items[0]).toMatchObject({ status: "ok", summary: "Passed", output: "ok\n" });
+    expect(done.items[0]).toMatchObject({ status: "ok", summary: "Passed", output: "ok\n", saved: [] });
+  });
+
+  it("keeps the files a step wrote, for its file cards", () => {
+    seq = 0;
+    const file = { path: "C:\\Users\\me\\Desktop\\cat.png", name: "cat.png", size: 2048 };
+    const v = run(emptyView(), [
+      ev({ type: "step.started", turn: "t1", step: "p1", tool: "make_image", title: "Making a picture" }),
+      ev({ type: "step.completed", step: "p1", status: "ok", summary: "Made", saved: [file] }),
+    ]);
+    expect(v.items[0]).toMatchObject({ saved: [file] });
   });
 
   it("lists each helper's steps under its own row when helpers work side by side", () => {

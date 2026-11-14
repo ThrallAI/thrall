@@ -2,7 +2,7 @@
 // `apply` returns a new view and leaves unchanged items as they were, so React redraws only
 // what changed (long sessions stay fast while text streams in).
 
-import type { Diff, EventFrame, FileRef, ModeLimit, QuestionItem, TaskItem, Usage } from "./protocol";
+import type { Diff, EventFrame, FileRef, ModeLimit, QuestionItem, SavedFile, TaskItem, Usage } from "./protocol";
 import type { Session as SessionInfo } from "./types";
 import { CHECK_IN_AGENT, MODE_UNTIL_TASK_END, QUESTION_TIMEOUT } from "./constants";
 
@@ -22,6 +22,8 @@ export type Item =
       diff: Diff | null;
       /** Files the step made (pictures). */
       files: FileRef[];
+      /** Files it wrote on the computer, to open or download by their place in this list. */
+      saved: SavedFile[];
       /** The step of the helper that took this step; it's listed under that one. */
       helper: string | null;
     }
@@ -276,6 +278,7 @@ export function apply(view: View, frame: EventFrame, by: string, labels: Record<
         output: "",
         diff: null,
         files: [],
+        saved: [],
         helper: frame.helper ?? null,
       };
       v = setActivity({ ...v, items: underHelper(v.items, step) }, "tool", at);
@@ -297,6 +300,7 @@ export function apply(view: View, frame: EventFrame, by: string, labels: Record<
             summary: frame.summary,
             diff: frame.diff ?? null,
             files: frame.files ?? [],
+            saved: frame.saved ?? [],
           })),
         },
         "thinking",

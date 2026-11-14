@@ -7,8 +7,10 @@ use std::sync::Arc;
 use serde_json::json;
 use thrall_protocol::{DiffKind, Risk};
 use thrall_store::{NewSession, SqliteStore, Store};
+use thrall_tools::constants::DOWNLOAD_SYSTEM_FOLDER;
 use thrall_tools::tools::{
-    EditFile, Glob, Grep, ListDir, McpCall, ReadFile, Shell, TodoWrite, WriteFile,
+    DownloadVideo, EditFile, Glob, Grep, ListDir, McpCall, ReadFile, Shell, ShowFile, TodoWrite,
+    WriteFile,
 };
 use thrall_tools::{Cancel, Effect, Tool, ToolContext};
 use tokio::sync::mpsc;
@@ -85,6 +87,28 @@ async fn write_edit_read_round_trip() {
 
     let listed = ListDir.run(&ctx, json!({})).await;
     assert!(listed.content.contains("notes/"));
+}
+
+#[tokio::test]
+async fn a_file_already_there_is_shown_as_a_card() {
+    let (mut ctx, _rx) = ctx("show").await;
+    std::fs::write(ctx.workspace.join("sheet.pdf"), b"%PDF-1.4").unwrap();
+
+    let shown = ShowFile.run(&ctx, json!({"path": "sheet.pdf"})).await;
+    assert!(shown.ok, "{}", shown.content);
+    assert_eq!(shown.saved, vec![ctx.workspace.join("sheet.pdf")]);
+
+    // A missing file or a folder isn't shown.
+    let missing = ShowFile.run(&ctx, json!({"path": "gone.pdf"})).await;
+    assert!(!missing.ok && missing.saved.is_empty());
+    let folder = ShowFile.run(&ctx, json!({"path": "."})).await;
+    assert!(!folder.ok && folder.saved.is_empty());
+
+    // A chat working on a companion PC: the file is there, so no card here.
+    ctx.pc = Some("KIDS-PC".into());
+    let on_pc = ShowFile.run(&ctx, json!({"path": "sheet.pdf"})).await;
+    assert!(on_pc.ok && on_pc.saved.is_empty());
+    assert!(on_pc.content.contains("KIDS-PC"), "{}", on_pc.content);
 }
 
 #[tokio::test]
@@ -397,4 +421,31 @@ async fn memory_refuses_secrets() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn downloads_go_anywhere_but_the_system_folders() {
+    let (ctx, _rx) = ctx("download-folder").await;
+    let system = if cfg!(windows) {
+        "C:\\Windows\\Temp"
+    } else {
+        "/etc/thrall"
+    };
+    let refused = DownloadVideo.precheck(
+        &ctx,
+        &json!({"url": "https://example.com/v", "folder": system}),
+    );
+    assert_eq!(refused.as_deref(), Some(DOWNLOAD_SYSTEM_FOLDER));
+    // A folder of the person's outside the working folder isn't refused for where it is (only,
+    // on a PC without yt-dlp, for that).
+    let elsewhere = ctx
+        .workspace
+        .parent()
+        .unwrap()
+        .join("thrall-downloads-elsewhere");
+    let other = DownloadVideo.precheck(
+        &ctx,
+        &json!({"url": "https://example.com/v", "folder": elsewhere.to_string_lossy()}),
+    );
+    assert_ne!(other.as_deref(), Some(DOWNLOAD_SYSTEM_FOLDER));
 }

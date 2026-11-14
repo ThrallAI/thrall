@@ -1,7 +1,7 @@
 //! One tool call as a step: precheck, the tool gate (by permission mode), asking the user, the
 //! plan flow, live output, the context gate, and the audit log.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 use thrall_core::constants::id_prefix;
@@ -9,7 +9,7 @@ use thrall_core::ids::{new_id, now_ms};
 use thrall_gates::constants::{decision, gate};
 use thrall_gates::{Decision, EDIT_GRANT, Effect, Mode, tool_gate};
 use thrall_llm::ToolCall;
-use thrall_protocol::{Event, PermissionChoice, Risk, StepStatus};
+use thrall_protocol::{Event, PermissionChoice, Risk, SavedFile, StepStatus};
 use thrall_store::{AuditEntry, NewStep};
 use thrall_tools::companion::{Call, Checked, Ran};
 use thrall_tools::tool::arg_str;
@@ -475,6 +475,10 @@ pub(crate) async fn run_step(
                                 path,
                             )
                             .await;
+                            // A file on this computer: the person can open or fetch it.
+                            if pc.is_none() {
+                                result.saved.push(path.clone());
+                            }
                         }
                         if result.ok
                             && let Some(note) = written.as_deref().and_then(crate::writing::review)
@@ -537,6 +541,7 @@ pub(crate) async fn run_step(
             summary: summary.clone(),
             diff: output.diff.clone(),
             files: output.files.clone(),
+            saved: saved_files(&output.saved),
         })
         .await?;
     // The person is told about every fact saved, and can forget it.
@@ -829,8 +834,19 @@ pub(crate) async fn gate_call(
                 } => (summary.clone(), *risk, diff.clone()),
                 Effect::Read => (String::new(), Risk::Low, None),
             };
+            // Switching Full auto on answers the card if Full auto wouldn't have asked.
+            let full_auto_ok = tool_gate(Mode::FullAuto, effect, granted) == Decision::Allow;
             let asked = ask(
-                emitter, state, step_id, tool, summary, risk, diff, always, cancel,
+                emitter,
+                state,
+                step_id,
+                tool,
+                summary,
+                risk,
+                diff,
+                always,
+                full_auto_ok,
+                cancel,
             )
             .await?;
             match asked {
@@ -887,6 +903,66 @@ fn system_edit(effect: &Effect, workspace: &Path) -> Option<Effect> {
     })
 }
 
+/// Whether a tool may save what it made (a picture, a clip, a recording, a transcript) at `path`:
+/// any folder, like edit_file. `Ok(true)` when it's in the system's folders (asks every time,
+/// High risk); `Err` when this Thrall's owner keeps this person out of them.
+pub(crate) fn save_in_system(
+    state: &AppState,
+    workspace: &Path,
+    path: &Path,
+) -> Result<bool, String> {
+    let system = thrall_gates::system_folder(&path.to_string_lossy(), &workspace.to_string_lossy());
+    if system && state.companions.rules(&state.user_id).no_system_folders {
+        return Err(SYSTEM_FOLDERS_OFF.to_owned());
+    }
+    Ok(system)
+}
+
+/// The permission for saving what a tool made at `path`: an edit, asked every time (High risk)
+/// in the system's folders. `Err` as [`save_in_system`].
+pub(crate) fn save_effect(
+    state: &AppState,
+    workspace: &Path,
+    path: &Path,
+) -> Result<Effect, String> {
+    let edit = Effect::Edit {
+        path: thrall_tools::paths::display(workspace, path),
+        diff: None,
+    };
+    Ok(if save_in_system(state, workspace, path)? {
+        Effect::AlwaysAsk {
+            summary: format!("{SYSTEM_EDIT_NOTE}{}", path.to_string_lossy()),
+            risk: Risk::High,
+            diff: None,
+        }
+    } else {
+        edit
+    })
+}
+
+/// The files a step wrote, as clients see them: each once, only those that are files now (a
+/// deleted file, or an unpacked folder, has nothing to open).
+pub(crate) fn saved_files(paths: &[PathBuf]) -> Vec<SavedFile> {
+    let mut out: Vec<SavedFile> = Vec::new();
+    for path in paths {
+        let Ok(meta) = std::fs::metadata(path) else {
+            continue;
+        };
+        let shown = path.to_string_lossy().into_owned();
+        if !meta.is_file() || out.iter().any(|f| f.path == shown) {
+            continue;
+        }
+        out.push(SavedFile {
+            name: path
+                .file_name()
+                .map_or_else(|| shown.clone(), |n| n.to_string_lossy().into_owned()),
+            path: shown,
+            size: meta.len(),
+        });
+    }
+    out
+}
+
 fn effect_name(effect: &Effect) -> &'static str {
     match effect {
         Effect::Read => "read",
@@ -908,6 +984,7 @@ async fn ask(
     risk: Risk,
     diff: Option<thrall_protocol::Diff>,
     always: bool,
+    full_auto_ok: bool,
     cancel: &Cancel,
 ) -> Result<Asked, AgentError> {
     // One card at a time: a helper working beside another waits until that one is answered.
@@ -917,7 +994,11 @@ async fn ask(
         () = waiting.cancelled() => return Ok(Asked::Interrupted),
     };
     let request = new_id(id_prefix::REQUEST);
-    let answer = state.prompts.register(&request, &state.user_id);
+    let answer = state.prompts.register_card(
+        &request,
+        &state.user_id,
+        full_auto_ok.then_some(emitter.session_id),
+    );
     let mut choices = vec![PermissionChoice::Yes];
     if always {
         choices.push(PermissionChoice::Always);

@@ -247,6 +247,10 @@ pub const INSTALL_PIECES: &[&str] = &[
     "npm i ",
     "msiexec",
     "add-appxpackage",
+    "yarn add",
+    "pnpm add",
+    "bun add",
+    "uv add",
 ];
 
 /// Pieces that make an install fetch from somewhere other than the official place (PyPI, the npm
@@ -282,6 +286,33 @@ pub const PIP_NAMES: &[&str] = &["pip", "pip3", "uv"];
 pub const SHORT_SOURCE_FLAGS: &[&str] = &["-s"];
 pub const SHORT_SOURCE_PROGRAMS: &[&str] = &["winget", "choco"];
 pub const OFFICIAL_SOURCES: &[&str] = &["winget", "msstore", "chocolatey", "psgallery"];
+
+/// Programs whose installs are looked at word by word for a local folder (`pip install .`,
+/// `cargo install --path .`), and for npm's family a `user/repo` (GitHub) shorthand.
+pub const PACKAGE_PROGRAMS: &[&str] = &["pip", "pip3", "uv", "npm", "pnpm", "yarn", "bun", "cargo"];
+pub const NPM_NAMES: &[&str] = &["npm", "pnpm", "yarn", "bun"];
+/// The word after which an install's packages are named.
+pub const INSTALL_VERBS: &[&str] = &["install", "i", "add"];
+/// Flags that install the folder named after them.
+pub const LOCAL_INSTALL_FLAGS: &[&str] = &["-e", "--editable", "--path"];
+/// Install flags whose value is a folder that isn't a package (`--target ./lib`).
+pub const INSTALL_VALUE_FLAGS: &[&str] = &[
+    "--prefix",
+    "--target",
+    "-t",
+    "--root",
+    "--cache-dir",
+    "--src",
+    "--log",
+    "--cwd",
+    "--dir",
+];
+/// pip flags naming a requirements or constraints file: its lines are checked like the command.
+pub const PIP_REQUIREMENT_FLAGS: &[&str] = &["-r", "--requirement", "-c", "--constraint"];
+/// How many files deep `-r` inside a requirements file is followed; deeper asks.
+pub const REQUIREMENTS_DEPTH_MAX: usize = 3;
+/// A requirements file bigger than this isn't read, and the install asks.
+pub const REQUIREMENTS_MAX_BYTES: u64 = 256 * 1024;
 
 /// Programs that delete files (lower-case, matched as whole words). A command using one says so at
 /// the start of its permission card, so a delete chained onto something harmless isn't missed.
@@ -430,6 +461,12 @@ pub const SNIPPETS_FILE: &str = "snippets.json";
 /// The browser's own profile (cookies, logins), in the data folder; never the user's everyday one.
 pub const BROWSER_PROFILE_DIR: &str = "browser-profile";
 
+/// A browser nothing has used for this long is stopped (it holds hundreds of MB while it waits).
+pub const BROWSER_IDLE_SECS: u64 = 10 * 60;
+
+/// How often the engine looks for browsers to stop.
+pub const BROWSER_IDLE_CHECK_SECS: u64 = 60;
+
 /// Browser window size (also the page size for screenshots).
 pub const BROWSER_WINDOW_WIDTH: u32 = 1280;
 /// Browser window height.
@@ -488,6 +525,11 @@ pub const BROWSER_POLL_MS: u64 = 100;
 
 /// Longest a video download may take, in seconds.
 pub const DOWNLOAD_TIMEOUT_SECS: u64 = 900;
+
+/// Why a download or a video's transcript can't go in the system's folders (any other folder
+/// can).
+pub const DOWNLOAD_SYSTEM_FOLDER: &str =
+    "downloads can't go in the system's folders; pick a folder of the user's";
 
 /// Longest fetching a video's captions may take, in seconds.
 pub const CAPTIONS_TIMEOUT_SECS: u64 = 120;
@@ -573,6 +615,9 @@ pub const PDF_PREVIEW_SCALE: f64 = 0.5;
 pub const PDF_PREVIEW_QUALITY: i64 = 70;
 /// Where previews are kept, in Thrall's data folder.
 pub const PDF_PREVIEW_DIR: &str = "previews";
+/// Previews older than this are cleared out (seconds): they're for checking a PDF just made, and
+/// an old one may not match its file any more.
+pub const PDF_PREVIEW_KEEP_SECS: u64 = 24 * 60 * 60;
 /// CSS pixels per inch.
 pub const CSS_PX_PER_IN: f64 = 96.0;
 /// A picture named in a page: `src="…"` or `src='…'`.

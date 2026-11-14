@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chromiumoxide::cdp::browser_protocol::page::{
     CaptureScreenshotFormat, DialogType, EventJavascriptDialogOpening, HandleJavaScriptDialogParams,
@@ -16,10 +16,11 @@ use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures::StreamExt;
 
 use crate::constants::{
-    BROWSER_ACTION_SECS, BROWSER_DIALOG_MAX_CHARS, BROWSER_LAUNCH_SECS, BROWSER_OPEN_SECS,
-    BROWSER_POLL_MS, BROWSER_PRINT_SECS, BROWSER_PROFILE_DIR, BROWSER_SETTLE_MS,
-    BROWSER_TIMEOUT_SECS, BROWSER_WINDOW_HEIGHT, BROWSER_WINDOW_WIDTH, CSS_PX_PER_IN,
-    LINUX_BROWSERS, MAC_BROWSERS, PDF_MIN_SCALE, PDF_PREVIEW_QUALITY, PDF_SCALE_STEP,
+    BROWSER_ACTION_SECS, BROWSER_DIALOG_MAX_CHARS, BROWSER_IDLE_CHECK_SECS, BROWSER_IDLE_SECS,
+    BROWSER_LAUNCH_SECS, BROWSER_OPEN_SECS, BROWSER_POLL_MS, BROWSER_PRINT_SECS,
+    BROWSER_PROFILE_DIR, BROWSER_SETTLE_MS, BROWSER_TIMEOUT_SECS, BROWSER_WINDOW_HEIGHT,
+    BROWSER_WINDOW_WIDTH, CSS_PX_PER_IN, LINUX_BROWSERS, MAC_BROWSERS, PDF_MIN_SCALE,
+    PDF_PREVIEW_QUALITY, PDF_SCALE_STEP,
 };
 
 struct Running {
@@ -27,6 +28,8 @@ struct Running {
     handler: tokio::task::JoinHandle<()>,
     visible: bool,
     pages: HashMap<String, Page>,
+    /// When something last used it (an unused browser is stopped after a while).
+    last_used: Instant,
 }
 
 /// Each person's browser (by its profile folder, so people never share web sign-ins), started
@@ -177,9 +180,10 @@ impl Browsers {
             |d| d.join(BROWSER_PROFILE_DIR),
         );
         let mut running = self.running.lock().await;
-        if let Some(r) = running.get(&profile) {
+        if let Some(r) = running.get_mut(&profile) {
             let alive = !r.handler.is_finished();
             if alive && visible.is_none_or(|v| v == r.visible) {
+                r.last_used = Instant::now();
                 return Ok(profile);
             }
         }
@@ -226,6 +230,7 @@ impl Browsers {
                 handler,
                 visible,
                 pages: HashMap::new(),
+                last_used: Instant::now(),
             },
         );
         Ok(profile)
@@ -261,11 +266,19 @@ impl Browsers {
 
     /// The session's tab if it has one.
     async fn existing(&self, session: &str) -> Result<Page, String> {
-        let running = self.running.lock().await;
+        let mut running = self.running.lock().await;
         running
-            .values()
-            .find_map(|r| r.pages.get(session).cloned())
-            .ok_or_else(|| "no page is open in this session; open one first".to_owned())
+            .values_mut()
+            .find_map(|r| {
+                let page = r.pages.get(session).cloned()?;
+                r.last_used = Instant::now();
+                Some(page)
+            })
+            .ok_or_else(|| {
+                "no page is open in this session (the browser stops when unused for a while); \
+                 open one first"
+                    .to_owned()
+            })
     }
 
     /// Open `url` in the session's tab; its title and address after loading.
@@ -589,6 +602,35 @@ impl Browsers {
         let _ = page.close().await;
         result
     }
+    /// Stop the browsers nothing has used for `idle`; the next use starts them again.
+    pub async fn close_idle(&self, idle: Duration) {
+        let mut running = self.running.lock().await;
+        let quiet: Vec<PathBuf> = running
+            .iter()
+            .filter(|(_, r)| r.last_used.elapsed() >= idle)
+            .map(|(p, _)| p.clone())
+            .collect();
+        for profile in quiet {
+            if let Some(mut old) = running.remove(&profile) {
+                let _ = old.browser.close().await;
+                let _ = old.browser.wait().await;
+                old.handler.abort();
+            }
+        }
+    }
+
+    /// Keep stopping browsers that sit unused (for as long as the engine runs).
+    pub fn stop_when_idle(self: Arc<Self>) {
+        tokio::spawn(async move {
+            let mut check = tokio::time::interval(Duration::from_secs(BROWSER_IDLE_CHECK_SECS));
+            loop {
+                check.tick().await;
+                self.close_idle(Duration::from_secs(BROWSER_IDLE_SECS))
+                    .await;
+            }
+        });
+    }
+
     /// Stop every browser (the engine is stopping).
     pub async fn close_all(&self) {
         let all: Vec<Running> = self.running.lock().await.drain().map(|(_, r)| r).collect();
@@ -627,8 +669,28 @@ impl Browsers {
 
 /// End browser processes using Thrall's profile (left by an engine that crashed or was killed).
 fn close_leftovers(profile: &Path) {
-    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
     let marker = profile.to_string_lossy().to_lowercase();
+    close_matching(|arg| arg.contains(&marker));
+}
+
+/// End browser processes using any of Thrall's profiles in the data folder `home` (each
+/// person's is inside it): an engine that was stopped hard leaves its browser running.
+pub fn close_leftovers_under(home: &Path) {
+    let home = home.to_string_lossy().to_lowercase();
+    close_matching(|arg| is_thrall_profile(arg, &home));
+}
+
+/// A browser's `--user-data-dir` argument naming one of Thrall's profiles in `home`
+/// (both lowercase).
+fn is_thrall_profile(arg: &str, home: &str) -> bool {
+    arg.starts_with("--user-data-dir")
+        && arg.contains(home)
+        && arg.contains(&BROWSER_PROFILE_DIR.to_lowercase())
+}
+
+/// End processes with an argument (lowercased) that `ours` picks out.
+fn close_matching(ours: impl Fn(&str) -> bool) {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
     let mut sys = System::new();
     sys.refresh_processes_specifics(
         ProcessesToUpdate::All,
@@ -636,11 +698,11 @@ fn close_leftovers(profile: &Path) {
         ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
     );
     for process in sys.processes().values() {
-        let ours = process
+        if process
             .cmd()
             .iter()
-            .any(|arg| arg.to_string_lossy().to_lowercase().contains(&marker));
-        if ours {
+            .any(|arg| ours(&arg.to_string_lossy().to_lowercase()))
+        {
             process.kill();
         }
     }
@@ -729,6 +791,33 @@ async fn mark_target(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_thrall_profiles_count_as_leftovers() {
+        let home = r"c:\users\you\appdata\roaming\thrall";
+        // The owner's profile, and another person's inside the data folder.
+        assert!(is_thrall_profile(
+            r"--user-data-dir=c:\users\you\appdata\roaming\thrall\browser-profile",
+            home
+        ));
+        assert!(is_thrall_profile(
+            r"--user-data-dir=c:\users\you\appdata\roaming\thrall\people\sam\browser-profile",
+            home
+        ));
+        // The person's everyday Chrome, another app's profile, or the folder in another argument.
+        assert!(!is_thrall_profile(
+            r"--user-data-dir=c:\users\you\appdata\local\google\chrome\user data",
+            home
+        ));
+        assert!(!is_thrall_profile(
+            r"--user-data-dir=c:\users\you\appdata\local\other\browser-profile",
+            home
+        ));
+        assert!(!is_thrall_profile(
+            r"c:\users\you\appdata\roaming\thrall\browser-profile\file.html",
+            home
+        ));
+    }
 
     #[test]
     fn only_web_pages_open() {

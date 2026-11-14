@@ -31,13 +31,14 @@ use tauri_plugin_dialog::{
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_opener::OpenerExt;
 use tokio::sync::mpsc;
 
 use crate::constants::{
     DEFAULT_LOG_LEVEL, DESKTOP_QUERY, DONE_HOLD, HIDDEN_ARG, JOIN_CODE_JS, LOG_FILE_PREFIX,
     LOG_LEVEL_ENV, MAIN_WINDOW, MENU_AUTOSTART, MENU_OPEN, MENU_QUIT, MENU_UPDATE, NOTE_TAP,
-    NOTES_REMEMBERED, OPEN_SESSION_JS, QUIT_CANCEL, QUIT_KEEP, QUIT_PHONES_WAIT, QUIT_STOP,
-    RECONNECT_DELAY, REJOIN_JS, SETUP_RECHECK, SHORTCUT_RECHECK, SHORTCUT_TAKEN,
+    NOTES_REMEMBERED, OPEN_FAILED_TITLE, OPEN_SESSION_JS, QUIT_CANCEL, QUIT_KEEP, QUIT_PHONES_WAIT,
+    QUIT_STOP, RECONNECT_DELAY, REJOIN_JS, SETUP_RECHECK, SHORTCUT_RECHECK, SHORTCUT_TAKEN,
     SHORTCUT_TAKEN_TITLE, SHOW_SETUP_JS, TITLE_LOOKUP, TRAY_FRAME, TRAY_ID, TRAY_PX,
     UPDATE_CHECK_LABEL,
 };
@@ -340,6 +341,7 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_opener::init())
         .plugin(
             // The shortcut itself comes from the settings (follow_shortcut).
             tauri_plugin_global_shortcut::Builder::new()
@@ -578,6 +580,26 @@ fn ask_to_quit(app: &AppHandle, phones: usize) {
         });
 }
 
+/// Open a file a step wrote with its usual program, or show it selected in its folder. A file that
+/// can't be opened (no program for it, gone since) is said in a notification.
+fn open_file(app: &AppHandle, path: &str, reveal: bool) {
+    let opener = app.opener();
+    let done = if reveal {
+        opener.reveal_item_in_dir(path)
+    } else {
+        opener.open_path(path, None::<&str>)
+    };
+    if let Err(e) = done {
+        tracing::warn!(%e, reveal, "couldn't open a file");
+        let _ = app
+            .notification()
+            .builder()
+            .title(OPEN_FAILED_TITLE)
+            .body(format!("{path}: {e}"))
+            .show();
+    }
+}
+
 /// Show a message on the window's loading page (before the web app takes over).
 fn loading_message(app: &AppHandle, text: &str) {
     if let Some(w) = app.get_webview_window(MAIN_WINDOW)
@@ -673,6 +695,13 @@ async fn run_engine(app: AppHandle) {
                         && matches!(frame.event, Event::UpdateRequested {})
                     {
                         tauri::async_runtime::spawn(update::install(app.clone()));
+                        continue;
+                    }
+                    // Open on a file card: the engine found the file from the step that wrote it.
+                    if let Incoming::Event(frame) = &msg
+                        && let Event::FileOpen { path, reveal } = &frame.event
+                    {
+                        open_file(&app, path, *reveal);
                         continue;
                     }
                     let (note, unknown) = match app.state::<Shared>().watch.lock() {

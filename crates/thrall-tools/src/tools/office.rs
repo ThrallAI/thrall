@@ -10,8 +10,8 @@ use serde_json::{Value, json};
 use thrall_gates::Effect;
 
 use crate::constants::{
-    CUSTOM_MARGIN_MM, PDF_LAYOUTS, PDF_PREVIEW_DIR, PDF_PREVIEW_MAX_PAGES, PDF_PREVIEW_SCALE,
-    PICTURES_MARGIN_MM,
+    CUSTOM_MARGIN_MM, PDF_LAYOUTS, PDF_PREVIEW_DIR, PDF_PREVIEW_KEEP_SECS, PDF_PREVIEW_MAX_PAGES,
+    PDF_PREVIEW_SCALE, PICTURES_MARGIN_MM,
 };
 use crate::diff;
 use crate::office::{embed, layout, markdown, pdf, pictures, print, sheets, word};
@@ -24,6 +24,38 @@ fn has_ext(path: &Path, exts: &[&str]) -> bool {
     path.extension()
         .map(|e| e.to_string_lossy().to_lowercase())
         .is_some_and(|e| exts.contains(&e.as_str()))
+}
+
+/// Keep `jpeg` as the preview of the PDF named `stem` in `dir`. Without one, the PDF's old preview
+/// goes, so nothing shows a picture of an earlier version as this one.
+fn keep_preview(dir: &Path, stem: &str, jpeg: Option<Vec<u8>>) -> Option<PathBuf> {
+    let file = dir.join(format!("{stem}-preview.jpg"));
+    let Some(jpeg) = jpeg else {
+        let _ = std::fs::remove_file(&file);
+        return None;
+    };
+    std::fs::create_dir_all(dir).ok()?;
+    std::fs::write(&file, jpeg).ok()?;
+    Some(file)
+}
+
+/// Remove previews in `dir` made more than `keep` ago: an old one may not match its PDF any more.
+fn clear_old_previews(dir: &Path, keep: std::time::Duration) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let old = entry
+            .metadata()
+            .ok()
+            .filter(std::fs::Metadata::is_file)
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age > keep);
+        if old {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
 }
 
 /// Run blocking document work off the async runtime.
@@ -978,7 +1010,7 @@ impl Tool for MakePdf {
             } else {
                 setup.width_in
             };
-            let preview = match ctx
+            let jpeg = ctx
                 .browser
                 .print_preview(
                     ctx.data_dir.as_deref(),
@@ -989,18 +1021,15 @@ impl Tool for MakePdf {
                     PDF_PREVIEW_SCALE,
                 )
                 .await
-            {
-                Ok(jpeg) => ctx.data_dir.as_ref().and_then(|d| {
-                    let stem = path
-                        .file_stem()
-                        .map_or_else(|| "pdf".to_owned(), |s| s.to_string_lossy().into_owned());
-                    let file = d.join(PDF_PREVIEW_DIR).join(format!("{stem}-preview.jpg"));
-                    std::fs::create_dir_all(file.parent()?).ok()?;
-                    std::fs::write(&file, jpeg).ok()?;
-                    Some(file)
-                }),
-                Err(_) => None,
-            };
+                .ok();
+            let preview = ctx.data_dir.as_ref().and_then(|d| {
+                let dir = d.join(PDF_PREVIEW_DIR);
+                clear_old_previews(&dir, std::time::Duration::from_secs(PDF_PREVIEW_KEEP_SECS));
+                let stem = path
+                    .file_stem()
+                    .map_or_else(|| "pdf".to_owned(), |s| s.to_string_lossy().into_owned());
+                keep_preview(&dir, &stem, jpeg)
+            });
             let check = preview.as_ref().map_or_else(
                 || " Before you tell the user it's ready, check it with read_document.".to_owned(),
                 |file| {
@@ -1030,5 +1059,41 @@ impl Tool for MakePdf {
             }
             out
         })
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::time::{Duration, SystemTime};
+
+    use super::{clear_old_previews, keep_preview};
+
+    #[test]
+    fn old_previews_go_and_a_failed_one_leaves_no_stale_picture() {
+        let dir = std::env::temp_dir().join(format!("thrall-previews-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // A new preview is kept under the PDF's name.
+        let fresh = keep_preview(&dir, "sheet", Some(b"jpeg".to_vec())).unwrap();
+        assert_eq!(fresh, dir.join("sheet-preview.jpg"));
+
+        // One from weeks ago is cleared; today's stays.
+        let old = dir.join("old-preview.jpg");
+        std::fs::write(&old, b"jpeg").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&old)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(20 * 24 * 60 * 60))
+            .unwrap();
+        clear_old_previews(&dir, Duration::from_secs(24 * 60 * 60));
+        assert!(!old.exists());
+        assert!(fresh.exists());
+
+        // No new preview: the PDF's earlier one goes too.
+        assert!(keep_preview(&dir, "sheet", None).is_none());
+        assert!(!fresh.exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

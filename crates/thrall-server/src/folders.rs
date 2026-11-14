@@ -167,15 +167,69 @@ pub fn make_in(parent: &str, name: &str, own: &[&str]) -> Result<String, String>
 
 /// Whether a new session can work in `path`: a folder that exists, or Thrall's default (made now).
 pub fn usable(path: &str) -> Result<(), String> {
+    let default = Paths::default_work_folder();
+    if default.as_deref() == Some(Path::new(path)) && !Path::new(path).is_dir() {
+        return std::fs::create_dir_all(path)
+            .map_err(|e| format!("Couldn't make the folder `{path}`: {e}"));
+    }
+    let home = default.map(|d| d.display().to_string()).unwrap_or_default();
+    usable_from(path, &home)
+}
+
+/// [`usable`] for a person whose own folder is `home`: a folder that exists, or a new one (made
+/// now) inside a folder that does, outside the system's folders. One level only, so a mistyped
+/// path doesn't quietly make a tree of wrong folders.
+fn usable_from(path: &str, home: &str) -> Result<(), String> {
     let folder = Path::new(path);
     if folder.is_dir() {
         return Ok(());
     }
-    if Paths::default_work_folder().as_deref() == Some(folder) {
-        return std::fs::create_dir_all(folder)
-            .map_err(|e| format!("Couldn't make the folder `{path}`: {e}"));
+    if folder.exists() {
+        return Err(format!("`{path}` is a file, not a folder."));
     }
-    Err(format!("There's no folder `{path}` on this computer."))
+    let missing = || format!("There's no folder `{path}` on this computer.");
+    let (Some(parent), Some(name)) = (folder.parent(), folder.file_name()) else {
+        return Err(missing());
+    };
+    if !folder.is_absolute() || !parent.is_dir() {
+        return Err(missing());
+    }
+    // A name Windows would change or refuse (a trailing dot, `:`, CON).
+    if let Some(why) = bad_name(&name.to_string_lossy()) {
+        return Err(why);
+    }
+    // Where the folder above really is: `..`, short names (PROGRA~1), `\\?\` and folder links all
+    // resolve, so none of them can dress up a system folder as one of the person's own.
+    let real = std::fs::canonicalize(parent)
+        .map_err(|e| format!("Couldn't look at `{}`: {e}", parent.display()))?
+        .join(name);
+    let real_shown = plain_shown(&real);
+    // A network place (`\\server\share`, or `\\localhost\c$` back to this computer) can't be told
+    // apart from the system's folders: make the folder there first.
+    if real_shown.starts_with(r"\\") {
+        return Err(format!(
+            "New folders aren't made on network places; make `{path}` there first."
+        ));
+    }
+    if thrall_gates::system_folder(path, home) || thrall_gates::system_folder(&real_shown, home) {
+        return Err(format!(
+            "`{path}` would be in the system's folders; pick a folder of your own."
+        ));
+    }
+    std::fs::create_dir(&real).map_err(|e| format!("Couldn't make the folder `{path}`: {e}"))
+}
+
+/// A resolved path as people write it: Windows' `\\?\C:\…` and `\\?\UNC\server\…` forms without
+/// their prefix, so it compares with the system's folders.
+fn plain_shown(path: &Path) -> String {
+    let shown = path.display().to_string();
+    if let Some(rest) = shown.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = shown.strip_prefix(r"\\?\") {
+        rest.to_owned()
+    } else {
+        shown
+    }
 }
 
 /// A path the client asked for, made real and checked to be inside `workspace`.
@@ -349,6 +403,81 @@ mod tests {
         let (shown, items, _) = list(&ws, "docs").unwrap();
         assert_eq!(shown, "docs");
         assert_eq!(items[0].name, "notes.md");
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn a_new_sessions_folder_is_made_one_level_down_outside_the_system() {
+        let ws = workspace("usable");
+        let home = ws.display().to_string();
+        let show = |p: &Path| p.display().to_string();
+
+        // A folder that isn't there yet, in one that is: made.
+        let new = ws.join("test-1114");
+        assert_eq!(usable_from(&show(&new), &home), Ok(()));
+        assert!(new.is_dir());
+        // There already: fine.
+        assert_eq!(usable_from(&show(&new), &home), Ok(()));
+
+        // Two levels that aren't there (a typo higher up): nothing made.
+        let deep = ws.join("typo").join("test");
+        assert!(usable_from(&show(&deep), &home).is_err());
+        assert!(!ws.join("typo").exists());
+
+        // A file, or a bare name, isn't a folder to work in.
+        assert!(usable_from(&show(&ws.join("board.dxf")), &home).is_err());
+        assert!(usable_from("test-1114", &home).is_err());
+
+        // The system's folders are never made.
+        assert!(usable_from(r"C:\Windows\thrall-test-usable", &home).is_err());
+        assert!(!Path::new(r"C:\Windows\thrall-test-usable").exists());
+
+        // Names Windows would change or keep for itself aren't made.
+        for name in ["trailing.", "CON", "a:b"] {
+            assert!(usable_from(&show(&ws.join(name)), &home).is_err(), "{name}");
+        }
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_system_folder_dressed_up_as_another_path_is_still_refused() {
+        let ws = workspace("dressed");
+        let home = ws.display().to_string();
+        let windir = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_owned());
+        let drive = &windir[..2];
+        for path in [
+            // Climbing out of the person's own folder with `..`.
+            format!(
+                r"{}\..\..\..\..\..\..\..\Windows\thrall-dressed",
+                ws.display()
+            ),
+            // The long-path form.
+            format!(r"\\?\{windir}\thrall-dressed"),
+            // A network path back to this computer.
+            format!(r"\\localhost\{}$\Windows\thrall-dressed", &drive[..1]),
+            // Forward slashes.
+            format!("{}/Windows/thrall-dressed", drive),
+        ] {
+            assert!(usable_from(&path, &home).is_err(), "{path}");
+        }
+
+        // A folder link (junction) in the person's own folder that leads into Windows.
+        let link = ws.join("shortcut");
+        let made = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(&link)
+            .arg(&windir)
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if made {
+            let through = link.join("thrall-dressed");
+            let refused = usable_from(&through.display().to_string(), &home).is_err();
+            // The link itself goes first, so nothing below can reach through it.
+            let _ = std::fs::remove_dir(&link);
+            assert!(refused, "a junction into Windows");
+        }
+        assert!(!Path::new(&windir).join("thrall-dressed").exists());
         let _ = std::fs::remove_dir_all(&ws);
     }
 

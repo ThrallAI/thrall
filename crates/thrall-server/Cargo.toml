@@ -12,6 +12,7 @@ thrall-protocol = { path = "../thrall-protocol" }
 thrall-store = { path = "../thrall-store" }
 thrall-agent = { path = "../thrall-agent" }
 thrall-tools = { path = "../thrall-tools" }
+thrall-gates = { path = "../thrall-gates" }
 axum.workspace = true
 tokio.workspace = true
 futures.workspace = true

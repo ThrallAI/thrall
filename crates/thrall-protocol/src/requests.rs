@@ -678,6 +678,34 @@ pub enum Request {
         #[serde(default)]
         offset: u64,
     },
+    /// Open a file a step wrote (`step.completed`'s `saved`), or show it in its folder, in the
+    /// desktop app on the computer Thrall runs on. Answered by `ack`.
+    #[serde(rename = "step.file.open")]
+    StepFileOpen {
+        /// The session.
+        session: String,
+        /// The step that wrote it.
+        step: String,
+        /// Its place in the step's `saved` list.
+        index: u32,
+        /// Show it in its folder instead of opening it.
+        #[serde(default)]
+        reveal: bool,
+    },
+    /// Read a file a step wrote (`step.completed`'s `saved`), a piece at a time. Answered by
+    /// `folder.part`.
+    #[serde(rename = "step.file.read")]
+    StepFileRead {
+        /// The session.
+        session: String,
+        /// The step that wrote it.
+        step: String,
+        /// Its place in the step's `saved` list.
+        index: u32,
+        /// Where to start, in bytes.
+        #[serde(default)]
+        offset: u64,
+    },
     /// Read a file attached to a message, a piece at a time. Answered by `file.part`.
     #[serde(rename = "file.get")]
     FileGet {
@@ -793,6 +821,8 @@ impl Request {
             Self::DeviceList { .. } => "device.list",
             Self::DeviceRemove { .. } => "device.remove",
             Self::FilePut { .. } => "file.put",
+            Self::StepFileOpen { .. } => "step.file.open",
+            Self::StepFileRead { .. } => "step.file.read",
             Self::FileGet { .. } => "file.get",
             Self::FolderPlaces {} => "folder.places",
             Self::FolderList { .. } => "folder.list",
@@ -1229,12 +1259,13 @@ pub enum Reply {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         more: bool,
     },
-    /// Answer to `folder.read`: one piece of a file in a session's folder.
+    /// Answer to `folder.read` and `step.file.read`: one piece of a file in a session's folder,
+    /// or of a file a step wrote.
     #[serde(rename = "folder.part")]
     FolderPart {
         /// The session.
         session: String,
-        /// The file, relative to the session's folder.
+        /// The file, relative to the session's folder (for `step.file.read`, its name).
         path: String,
         /// Where this piece starts.
         offset: u64,

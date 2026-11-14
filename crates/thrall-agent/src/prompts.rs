@@ -8,6 +8,8 @@ use std::sync::Mutex;
 use thrall_protocol::PermissionChoice;
 use tokio::sync::oneshot;
 
+use crate::constants::FULL_AUTO_ANSWERER;
+
 /// What the user decided.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reply {
@@ -36,6 +38,9 @@ pub struct Answer {
 /// A request waiting: whose it is, and where the answer goes.
 struct Pending {
     user: String,
+    /// The session of a permission card that Full auto wouldn't have asked about (it's
+    /// answered yes when Full auto goes on there).
+    full_auto_session: Option<String>,
     answer: oneshot::Sender<Answer>,
 }
 
@@ -49,17 +54,54 @@ impl Prompts {
     /// Register a request asked of `user` (the session's person); the returned receiver gets
     /// the answer.
     pub fn register(&self, request_id: &str, user: &str) -> oneshot::Receiver<Answer> {
+        self.register_card(request_id, user, None)
+    }
+
+    /// Register a permission card; `full_auto_session` is its session when Full auto wouldn't
+    /// have asked, so switching Full auto on there answers it.
+    pub fn register_card(
+        &self,
+        request_id: &str,
+        user: &str,
+        full_auto_session: Option<&str>,
+    ) -> oneshot::Receiver<Answer> {
         let (tx, rx) = oneshot::channel();
         if let Ok(mut pending) = self.pending.lock() {
             pending.insert(
                 request_id.to_owned(),
                 Pending {
                     user: user.to_owned(),
+                    full_auto_session: full_auto_session.map(str::to_owned),
                     answer: tx,
                 },
             );
         }
         rx
+    }
+
+    /// Full auto went on in `session_id`: answer yes to `user`'s cards there that it wouldn't
+    /// have asked about. Cards it still asks about (High risk) stay open. How many were answered.
+    pub fn answer_for_full_auto(&self, session_id: &str, user: &str) -> usize {
+        let Ok(mut pending) = self.pending.lock() else {
+            return 0;
+        };
+        let ids: Vec<String> = pending
+            .iter()
+            .filter(|(_, p)| p.user == user && p.full_auto_session.as_deref() == Some(session_id))
+            .map(|(id, _)| id.clone())
+            .collect();
+        ids.iter()
+            .filter_map(|id| pending.remove(id))
+            .map(|p| {
+                p.answer
+                    .send(Answer {
+                        reply: Reply::Permission(PermissionChoice::Yes),
+                        answered_by: FULL_AUTO_ANSWERER.to_owned(),
+                    })
+                    .is_ok()
+            })
+            .filter(|sent| *sent)
+            .count()
     }
 
     /// Answer a request as `user`. False if it was already answered, never existed, or isn't
@@ -118,6 +160,23 @@ mod tests {
         let answer = rx.await.unwrap();
         assert_eq!(answer.reply, Reply::Permission(PermissionChoice::Yes));
         assert_eq!(answer.answered_by, "tui");
+    }
+
+    #[tokio::test]
+    async fn full_auto_answers_only_the_cards_it_would_not_ask() {
+        let prompts = Prompts::default();
+        let medium = prompts.register_card("r1", "u_me", Some("s1"));
+        let _high = prompts.register_card("r2", "u_me", None);
+        let _elsewhere = prompts.register_card("r3", "u_me", Some("s2"));
+        // Someone else's Full auto answers nothing of mine.
+        assert_eq!(prompts.answer_for_full_auto("s1", "u_other"), 0);
+        assert_eq!(prompts.answer_for_full_auto("s1", "u_me"), 1);
+        let answer = medium.await.unwrap();
+        assert_eq!(answer.reply, Reply::Permission(PermissionChoice::Yes));
+        assert_eq!(answer.answered_by, FULL_AUTO_ANSWERER);
+        // The High-risk card and the other chat's card still wait for the person.
+        assert!(prompts.answer("r2", "u_me", Reply::Permission(PermissionChoice::No), "web"));
+        assert!(prompts.answer("r3", "u_me", Reply::Permission(PermissionChoice::No), "web"));
     }
 
     #[test]

@@ -36,7 +36,7 @@ pub use control::{
     find_skill, skill_text,
 };
 pub use documents::ReadDocument;
-pub use files::{EditFile, ListDir, ReadFile, WriteFile};
+pub use files::{EditFile, ListDir, ReadFile, ShowFile, WriteFile};
 pub use images::{MAKE_IMAGE, MAKE_VIDEO, MakeImage, MakeVideo, VIEW_IMAGE, ViewImage};
 pub use mcp::{MCP_CALL, MCP_SEARCH, McpCall, McpSearch};
 pub use office::{EditPdf, EditSpreadsheet, EditWord, MakePdf};
@@ -65,6 +65,7 @@ pub fn core() -> Vec<Arc<dyn Tool>> {
         Arc::new(WriteFile),
         Arc::new(EditFile),
         Arc::new(ListDir),
+        Arc::new(ShowFile),
         Arc::new(Glob),
         Arc::new(Grep),
         Arc::new(Calc),
@@ -121,4 +122,6 @@ pub const NOT_FOR_HELPERS: &[&str] = &[
     // Pictures cost money; only Thrall itself asks for them.
     MAKE_IMAGE,
     MAKE_VIDEO,
+    // Only Thrall puts files in front of the person.
+    "show_file",
 ];

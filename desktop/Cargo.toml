@@ -24,6 +24,8 @@ tauri-plugin-notification = "2.6.0"
 tauri-plugin-global-shortcut = "2.4.1"
 tauri-plugin-dialog = "2.8.2"
 tauri-plugin-updater = "2.14.1"
+# Opening a file a step wrote, or showing it in its folder, on Windows, macOS and Linux alike.
+tauri-plugin-opener = "2.7.2"
 # Running `thrall join` for the first-run page.
 tokio = { workspace = true, features = ["process", "io-util"] }
 tokio-tungstenite.workspace = true

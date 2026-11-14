@@ -5,6 +5,7 @@ import app.thrall.protocol.Event
 import app.thrall.protocol.FileRef
 import app.thrall.protocol.ModeLimit
 import app.thrall.protocol.QuestionItem
+import app.thrall.protocol.SavedFile
 
 /** One row of a conversation. */
 sealed interface ChatItem {
@@ -34,6 +35,8 @@ sealed interface ChatItem {
         val files: List<FileRef> = emptyList(),
         /** The file in the session's folder it made or changed, if it did. */
         val changed: Diff? = null,
+        /** Files it wrote on the computer, wherever they are (fetched by their place in this list). */
+        val saved: List<SavedFile> = emptyList(),
     ) : ChatItem
 
     /** Thrall is waiting on a permission or a plan decision. */
@@ -159,7 +162,7 @@ class ChatModel {
             is Event.StepStarted -> items[event.step] = ChatItem.Step(event.step, event.turn, event.tool, event.title, RUNNING)
             is Event.StepOutput -> step(event.step) { it.copy(output = (it.output + event.text).takeLast(OUTPUT_KEEP)) }
             is Event.StepCompleted -> step(event.step) {
-                it.copy(status = event.status, summary = event.summary, files = event.files, changed = event.diff)
+                it.copy(status = event.status, summary = event.summary, files = event.files, changed = event.diff, saved = event.saved)
             }
             is Event.PermissionRequest ->
                 items[event.request] = ChatItem.Waiting(event.request, event.turn, event.summary, plan = false, choices = event.choices)

@@ -8,6 +8,7 @@ import { Attachments } from "./Attachments";
 import { CopyButton } from "./CopyButton";
 import { DiffView } from "./DiffView";
 import { Markdown } from "./Markdown";
+import { SavedFiles } from "./SavedFiles";
 
 function money(usd: number): string {
   return usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`;
@@ -141,6 +142,7 @@ export const TranscriptItem = memo(function TranscriptItem({
           ) : null}
         </details>
         {item.files.length > 0 ? <Attachments files={item.files} align="start" /> : null}
+        <SavedFiles step={item.id} files={item.saved} />
         </>
       );
     }

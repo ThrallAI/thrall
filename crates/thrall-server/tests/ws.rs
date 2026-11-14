@@ -119,10 +119,11 @@ fn workspace(name: &str) -> String {
     dir.to_string_lossy().into_owned()
 }
 
-/// A folder that isn't there.
+/// A folder that isn't there, in one that isn't either (a new folder one level down is made).
 fn nowhere() -> String {
     std::env::temp_dir()
         .join("thrall-no-such-folder")
+        .join("inside")
         .to_string_lossy()
         .into_owned()
 }
@@ -1661,4 +1662,106 @@ async fn full_auto_until_switched_off_outlasts_the_task_and_one_chat_has_it() {
             "{until:?} {minutes:?}: {r:?}"
         );
     }
+}
+
+#[tokio::test]
+async fn a_file_a_step_wrote_is_fetched_and_opened_by_its_step() {
+    let (url, _hub) = engine(vec![
+        tool_call("write_file", r#"{"path":"out/note.txt","content":"hello"}"#),
+        reply("Written."),
+        reply("Title"),
+    ])
+    .await;
+    let mut web = Client::connect(&url, ClientKind::Web).await;
+    let folder = workspace("step-files");
+    let session = opened(
+        web.request(Request::SessionCreate {
+            workspace: Some(folder.clone()),
+            title: None,
+            mode: None,
+        })
+        .await,
+    );
+    web.request(set_mode(&session, "auto_edits", None, None))
+        .await;
+    web.request(Request::TurnSend {
+        session: session.clone(),
+        text: "write it".into(),
+        files: Vec::new(),
+    })
+    .await;
+    let events = web
+        .events_until(|e| matches!(e, Event::StepCompleted { .. }))
+        .await;
+    let Some(Event::StepCompleted { step, saved, .. }) = events.last() else {
+        panic!("{events:?}");
+    };
+    assert_eq!(saved.len(), 1, "{saved:?}");
+    assert_eq!(saved[0].name, "note.txt");
+    assert_eq!(saved[0].size, 5);
+
+    // A browser fetches it by its step and its place in the list, never by a path.
+    let read = |index: u32| Request::StepFileRead {
+        session: session.clone(),
+        step: step.clone(),
+        index,
+        offset: 0,
+    };
+    let Reply::FolderPart {
+        path, size, data, ..
+    } = web.request(read(0)).await
+    else {
+        panic!("expected folder.part");
+    };
+    assert_eq!((path.as_str(), size), ("note.txt", 5));
+    assert_eq!(data, "aGVsbG8=");
+    assert!(matches!(
+        web.request(read(1)).await,
+        Reply::Error {
+            code: ErrorCode::NotFound,
+            ..
+        }
+    ));
+    let elsewhere = Request::StepFileRead {
+        session: session.clone(),
+        step: "p_not_here".into(),
+        index: 0,
+        offset: 0,
+    };
+    assert!(matches!(web.request(elsewhere).await, Reply::Error { .. }));
+
+    // Opening it is the desktop app's: a browser is told so.
+    let open = Request::StepFileOpen {
+        session: session.clone(),
+        step: step.clone(),
+        index: 0,
+        reveal: true,
+    };
+    assert!(matches!(
+        web.request(open.clone()).await,
+        Reply::Error {
+            code: ErrorCode::Invalid,
+            ..
+        }
+    ));
+    // From the desktop app's window, the desktop app is asked to show it in its folder.
+    let mut app = Client::connect(&url, ClientKind::Desktop).await;
+    let mut window = Client::connect(&url, ClientKind::Desktop).await;
+    assert_eq!(window.request(open).await, Reply::Ack {});
+    let asked = app
+        .events_until(|e| matches!(e, Event::FileOpen { .. }))
+        .await;
+    let Some(Event::FileOpen { path, reveal }) = asked.last() else {
+        panic!("{asked:?}");
+    };
+    assert!(*reveal);
+    assert!(path.ends_with("note.txt"), "{path}");
+    assert!(std::path::Path::new(path).starts_with(&folder), "{path}");
+
+    // Gone since: said so.
+    std::fs::remove_file(std::path::Path::new(&folder).join("out/note.txt")).unwrap();
+    let Reply::Error { message, .. } = web.request(read(0)).await else {
+        panic!("expected an error");
+    };
+    assert!(message.contains("isn't there any more"), "{message}");
 }
