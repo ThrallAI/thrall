@@ -125,6 +125,8 @@ pub struct AppState {
     pub(crate) last_beat: Arc<AtomicI64>,
     /// Held while Home's current page is found or started, so only one fresh page starts.
     pub(crate) home_lock: Arc<tokio::sync::Mutex<()>>,
+    /// People already warned their credit is low (until it's topped up again).
+    low_balance_warned: Arc<Mutex<HashSet<String>>>,
 }
 
 impl AppState {
@@ -194,7 +196,22 @@ impl AppState {
             check_ins: Arc::new(Mutex::new(HashMap::new())),
             last_beat: Arc::new(AtomicI64::new(thrall_core::ids::now_ms())),
             home_lock: Arc::new(tokio::sync::Mutex::new(())),
+            low_balance_warned: Arc::new(Mutex::new(HashSet::new())),
         })
+    }
+
+    /// Whether to warn this copy's person that their credit is low: only the first time it's
+    /// `low`, and again only after it was topped up in between.
+    pub(crate) fn first_low_balance(&self, low: bool) -> bool {
+        let Ok(mut warned) = self.low_balance_warned.lock() else {
+            return false;
+        };
+        if low {
+            warned.insert(self.user_id.clone())
+        } else {
+            warned.remove(&self.user_id);
+            false
+        }
     }
 
     /// The same engine, acting for `user_id`.

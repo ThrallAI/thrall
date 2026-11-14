@@ -588,6 +588,15 @@ pub struct ProviderConfig {
     /// A Stable Diffusion web UI on this computer (AUTOMATIC1111 or Forge, started with `--api`)
     /// for `program/sd-webui` pictures: free.
     pub sd_webui_url: String,
+    /// Below this much OpenRouter credit, in US cents, Thrall warns once after a turn (0: never).
+    pub low_balance_warn_cents: u32,
+}
+
+impl ProviderConfig {
+    /// The credit, in US dollars, below which Thrall warns, if it should.
+    pub fn low_balance_warn_usd(&self) -> Option<f64> {
+        (self.low_balance_warn_cents > 0).then(|| f64::from(self.low_balance_warn_cents) / 100.0)
+    }
 }
 
 impl Default for ProviderConfig {
@@ -606,6 +615,7 @@ impl Default for ProviderConfig {
             fal_base_url: DEFAULT_FAL_BASE_URL.to_owned(),
             local_base_url: DEFAULT_LOCAL_BASE_URL.to_owned(),
             sd_webui_url: DEFAULT_SD_WEBUI_URL.to_owned(),
+            low_balance_warn_cents: crate::constants::DEFAULT_LOW_BALANCE_WARN_CENTS,
         }
     }
 }

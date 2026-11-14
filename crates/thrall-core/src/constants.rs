@@ -37,6 +37,10 @@ pub const MAX_HELPERS_AT_ONCE: u32 = 8;
 /// helper_cost_limit_cents` says otherwise (0: no limit).
 pub const DEFAULT_HELPER_COST_LIMIT_CENTS: u32 = 100;
 
+/// Below this much OpenRouter credit, in US cents, Thrall warns once after a turn, unless
+/// `[provider] low_balance_warn_cents` says otherwise (0: never).
+pub const DEFAULT_LOW_BALANCE_WARN_CENTS: u32 = 100;
+
 /// Most steps (model calls) in one turn, unless `[agent] max_steps` says otherwise. Each step can
 /// run several tools.
 pub const DEFAULT_MAX_STEPS: u32 = 100;
@@ -261,6 +265,7 @@ pub const EDITABLE_SETTINGS: &[&str] = &[
     "provider.fal_base_url",
     "provider.local_base_url",
     "provider.sd_webui_url",
+    "provider.low_balance_warn_cents",
     "agent.verify",
     "agent.claim_check",
     "agent.questions",

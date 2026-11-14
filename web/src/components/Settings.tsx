@@ -882,6 +882,9 @@ export function Settings({
             <Row label="Longest reply" hint="Tokens">
               <Field k="provider.max_tokens" v={provider.max_tokens} label="Longest reply" onSave={save} number />
             </Row>
+            <Row label="Low credit warning" hint="In US cents: 100 is $1.00. Below this much OpenRouter credit, Thrall warns you once after a reply. 0 means never. /cost shows what's left.">
+              <Field k="provider.low_balance_warn_cents" v={provider.low_balance_warn_cents} label="Low credit warning, in cents" onSave={save} number />
+            </Row>
             {chatgptRow}
           </Group>
           <Group title="Profiles" note="Named models to switch between with /model @name.">

@@ -15,7 +15,7 @@ import { Sidebar, type HomePages } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { TaskPanel } from "./components/TaskPanel";
 import { TranscriptItem } from "./components/TranscriptItem";
-import { FileLoader } from "./components/Attachments";
+import { FileLoader, forgetFiles } from "./components/Attachments";
 import {
   ARCHIVED_SESSIONS,
   ASK_NOTE_MS,
@@ -29,6 +29,9 @@ import {
   MODE_COVERS,
   MODE_CYCLE,
   MODE_LABELS,
+  MORE_ITEMS,
+  NEAR_TOP_PX,
+  SHOWN_ITEMS,
   SIDEBAR_REFRESH_MS,
   SIDEBAR_SESSIONS,
   WORKSPACE_KEY,
@@ -141,6 +144,11 @@ export function App() {
   const composer = useRef<ComposerHandle>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
+  // The first item drawn: only the latest SHOWN_ITEMS when a session opens, more as the person
+  // scrolls up (null until the session has loaded).
+  const [from, setFrom] = useState<number | null>(null);
+  // The transcript's height before older items were drawn, so the view stays where it was.
+  const heightBefore = useRef<number | null>(null);
 
   const note = useCallback((text: string, level: "info" | "warning" = "info") => {
     dispatch({ type: "local", item: { kind: "notice", id: localId("n"), level, text } });
@@ -303,11 +311,28 @@ export function App() {
     return () => clearTimeout(t);
   }, [view.activity, view.activityAt]);
 
-  // Follow the conversation unless the person has scrolled up.
+  // Once a session has loaded, draw only its latest items.
+  useEffect(() => {
+    if (from === null && !view.replay) setFrom(Math.max(0, view.items.length - SHOWN_ITEMS));
+  }, [from, view.replay, view.items.length]);
+
+  // Follow the conversation unless the person has scrolled up. Following it, the oldest drawn
+  // items are let go again once there are well over SHOWN_ITEMS.
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el && atBottom.current) el.scrollTop = el.scrollHeight;
-  }, [view.items, view.card]);
+    if (atBottom.current && from !== null && view.items.length - from > SHOWN_ITEMS + MORE_ITEMS)
+      setFrom(view.items.length - SHOWN_ITEMS);
+  }, [view.items, view.card, view.replay, from]);
+
+  // Older items were drawn above: keep the view on what the person was reading.
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (el && heightBefore.current !== null) {
+      el.scrollTop += el.scrollHeight - heightBefore.current;
+      heightBefore.current = null;
+    }
+  }, [from]);
 
   // Ctrl+O shows or hides every step's details, as in the terminal.
   useEffect(() => {
@@ -362,6 +387,8 @@ export function App() {
     detach();
     inHome.current = false;
     currentId.current = null;
+    setFrom(null);
+    forgetFiles();
     setCurrent(null);
     dispatch({ type: "reset", view: emptyView(viewRef.current.model) });
     setSidebarOpen(false);
@@ -380,6 +407,8 @@ export function App() {
       detach();
       currentId.current = id;
       atBottom.current = true;
+      setFrom(null);
+      forgetFiles();
       setUnread((u) => {
         if (!u.has(id)) return u;
         const next = new Set(u);
@@ -796,7 +825,10 @@ export function App() {
   }
 
   const workspace = current?.workspace ?? (current ? "" : folder);
-  const empty = view.items.length === 0 && !view.card;
+  // While a session's history is still arriving it isn't drawn, so it opens at its latest message.
+  const empty = view.items.length === 0 && !view.card && !view.replay;
+  const start = Math.min(from ?? Infinity, Math.max(0, view.items.length - SHOWN_ITEMS));
+  const shown = view.replay ? [] : view.items.slice(start);
   const title = view.title || (current ? "New session" : "");
 
   return (
@@ -875,6 +907,11 @@ export function App() {
           onScroll={(ev) => {
             const el = ev.currentTarget;
             atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+            // Near the top with older items not drawn: draw some more.
+            if (el.scrollTop < NEAR_TOP_PX && start > 0 && heightBefore.current === null) {
+              heightBefore.current = el.scrollHeight;
+              setFrom(Math.max(0, start - MORE_ITEMS));
+            }
           }}
         >
           <div className="column">
@@ -929,7 +966,7 @@ export function App() {
             ) : (
               <FileLoader.Provider value={loadFile}>
               <div className="th-transcript">
-                {view.items.map((item) => (
+                {shown.map((item) => (
                   <TranscriptItem
                     key={`${item.kind}-${item.id}`}
                     item={item}

@@ -240,6 +240,49 @@ pub const SHELL_CAREFUL: &[&str] = &[
     "git push",
 ];
 
+/// Pieces of a shell command that install something (lower-case match).
+pub const INSTALL_PIECES: &[&str] = &[
+    " install",
+    "install-",
+    "npm i ",
+    "msiexec",
+    "add-appxpackage",
+];
+
+/// Pieces that make an install fetch from somewhere other than the official place (PyPI, the npm
+/// registry, crates.io, winget, the PowerShell Gallery): a web or git address, another index or
+/// registry, or a package file. Such an install is high-risk, so it asks even in Full auto.
+pub const INSTALL_CUSTOM_SOURCES: &[&str] = &[
+    "http://",
+    "https://",
+    "git+",
+    "git:",
+    "github:",
+    "gitlab:",
+    "bitbucket:",
+    "file:",
+    "--index",
+    "--extra-index-url",
+    "--find-links",
+    "--registry",
+    "--git",
+    ".whl",
+    ".tgz",
+    ".tar.gz",
+    ".zip",
+    ".nupkg",
+];
+
+/// Flags (whole words) that name where an install comes from, and the official names they may
+/// give without asking. `-i` and `-f` count only for pip, and `-s` only for winget and choco,
+/// as other programs use those letters for something else.
+pub const INSTALL_SOURCE_FLAGS: &[&str] = &["--source", "-source", "--repository", "-repository"];
+pub const PIP_SOURCE_FLAGS: &[&str] = &["-i", "-f"];
+pub const PIP_NAMES: &[&str] = &["pip", "pip3", "uv"];
+pub const SHORT_SOURCE_FLAGS: &[&str] = &["-s"];
+pub const SHORT_SOURCE_PROGRAMS: &[&str] = &["winget", "choco"];
+pub const OFFICIAL_SOURCES: &[&str] = &["winget", "msstore", "chocolatey", "psgallery"];
+
 /// Programs that delete files (lower-case, matched as whole words). A command using one says so at
 /// the start of its permission card, so a delete chained onto something harmless isn't missed.
 pub const SHELL_DELETERS: &[&str] = &["rm", "rmdir", "remove-item", "ri", "del", "erase", "rd"];
@@ -330,6 +373,7 @@ pub const REG_EXE_WRITES: &[&str] = &[
 /// one that changes the registry or system files.
 pub const SHELL_DELETES_NOTE: &str = "Deletes files: ";
 pub const SHELL_RISKY_NOTE: &str = "Risky: ";
+pub const SHELL_CUSTOM_SOURCE_NOTE: &str = "Installs from an unofficial source: ";
 pub const SHELL_SYSTEM_NOTE: &str = "Changes the system: ";
 
 /// Why a change to the registry or system files can't go ahead yet: it needs its outcome, how to

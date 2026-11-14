@@ -1,25 +1,54 @@
 // Files attached to a message: pictures as thumbnails (click to enlarge), everything else as a
-// chip with its kind and size. Pictures are fetched once with the access token and kept as
-// object URLs, so scrolling a long session doesn't fetch them again.
+// chip with its kind and size. Pictures and clips are fetched with the access token and kept as
+// object URLs, so scrolling a session doesn't fetch them again; only the latest few are kept,
+// and switching sessions lets them all go.
 
 import { createContext, useContext, useEffect, useState } from "react";
 
+import { KEPT_FILES } from "../constants";
 import type { FileRef } from "../protocol";
 
 /** Fetches an attached file's bytes (the engine client's `download`). */
 export const FileLoader = createContext<((file: string) => Promise<Blob>) | null>(null);
 
+// Least recently used first (a Map keeps the order things were added in).
 const urls = new Map<string, Promise<string>>();
 
-function pictureUrl(load: (file: string) => Promise<Blob>, file: string): Promise<string> {
+function letGo(file: string, url: Promise<string>): void {
+  if (urls.get(file) === url) urls.delete(file);
+  url.then((u) => URL.revokeObjectURL(u), () => undefined);
+}
+
+export function pictureUrl(load: (file: string) => Promise<Blob>, file: string): Promise<string> {
   let url = urls.get(file);
-  if (!url) {
-    url = load(file).then((blob) => URL.createObjectURL(blob));
-    // A failed fetch can be tried again later.
-    url.catch(() => urls.delete(file));
+  if (url) {
+    // Used again: it moves to the newest end, so the ones let go are the ones not looked at.
+    urls.delete(file);
     urls.set(file, url);
+  } else {
+    const fetched = load(file).then((blob) => URL.createObjectURL(blob));
+    // A failed fetch can be tried again later.
+    fetched.catch(() => {
+      if (urls.get(file) === fetched) urls.delete(file);
+    });
+    urls.set(file, fetched);
+    url = fetched;
+    for (const [old, u] of urls) {
+      if (urls.size <= KEPT_FILES) break;
+      letGo(old, u);
+    }
   }
   return url;
+}
+
+/** Lets go of every loaded picture and clip (a different session is opening). */
+export function forgetFiles(): void {
+  for (const [file, url] of urls) letGo(file, url);
+}
+
+/** How many pictures and clips are loaded (for tests). */
+export function keptFiles(): number {
+  return urls.size;
 }
 
 export function size(bytes: number): string {

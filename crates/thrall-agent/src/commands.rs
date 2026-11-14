@@ -5,7 +5,7 @@
 use thrall_core::ids::now_ms;
 use thrall_gates::Mode;
 
-use crate::constants::MEMORY_COMMAND_LIMIT;
+use crate::constants::{COST_BALANCE_LINE, COST_BALANCE_UNAVAILABLE, MEMORY_COMMAND_LIMIT};
 use crate::error::AgentError;
 use crate::session;
 use crate::state::AppState;
@@ -277,7 +277,7 @@ async fn cost(state: &AppState, session_id: &str) -> Result<String, AgentError> 
         .usage_totals(&state.user_id, Some(session_id))
         .await?;
     let all = state.store.usage_totals(&state.user_id, None).await?;
-    Ok(format!(
+    let mut out = format!(
         "**This session:** {} · {} in · {} out\n\n**All time:** {} · {} in · {} out",
         money(here.cost_usd),
         here.input_tokens,
@@ -285,7 +285,19 @@ async fn cost(state: &AppState, session_id: &str) -> Result<String, AgentError> 
         money(all.cost_usd),
         all.input_tokens,
         all.output_tokens
-    ))
+    );
+    // Only when the model spends OpenRouter credit; ChatGPT plans, local models and own keys don't.
+    if thrall_llm::Routed::goes_to_main(&state.model()) {
+        let line = match state.llm.credit_left().await {
+            Some(left) => COST_BALANCE_LINE
+                .replace("{provider}", state.llm.name())
+                .replace("{left}", &money(left.max(0.0))),
+            None => COST_BALANCE_UNAVAILABLE.replace("{provider}", state.llm.name()),
+        };
+        out.push_str("\n\n");
+        out.push_str(&line);
+    }
+    Ok(out)
 }
 
 async fn model(state: &AppState, args: &str) -> String {
