@@ -7,8 +7,27 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-11-15
+
+Files Thrall makes come to you as cards, risky actions ask in every mode, and long jobs get more
+room. The 0.2.4 installers were never published (the build failed on GitHub's side), so 0.2.5
+includes everything listed under 0.2.4 too. Phone app: 0.5.1.
+
 ### Added
 
+- File cards: every step that writes a file shows a card for it. In the desktop app, Open opens it
+  in its usual program and Show in folder opens it in Explorer, Finder or the Linux file manager.
+  In a browser it downloads; on the phone, tap to open it and hold to share it.
+- Ask Thrall to show you a file that's already there and it puts it in the chat as a card, instead
+  of opening a browser or taking a screenshot.
+- `/cost` shows how much OpenRouter credit you have left, and Thrall warns you once when it drops
+  below the amount set in Settings → Model (also on the phone).
+- Terminal commands typed in the app (`/settings`, `/rewind`, `/quit` and the like) say where that
+  is in the app instead of "Unknown command", on the desktop and the phone.
+- Full auto can be picked in a brand-new chat, and Shift+Tab changes the mode from anywhere in the
+  window, not only from the message box.
+- A new session can start on a folder that doesn't exist yet: Thrall makes it if the folder above
+  it is there and it isn't in the system's folders.
 - Settings → Steps: how many steps Thrall may take on one message before it stops and asks you
   to say "carry on" (100 by default, 250 in Full auto, up to 500). In the terminal:
   `/settings agent.max_steps <number>` and `agent.full_auto_max_steps`.
@@ -31,6 +50,16 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ### Changed
 
+- Installs from an unofficial source ask in every mode, Full auto included: a web or git address,
+  another package index, a package file, a local folder, a `user/repo` shorthand, or a
+  requirements file that names one. Installs by name from the official registries don't.
+- Pictures, clips, speech and transcripts can be saved in any folder. In the system's folders they
+  ask every time, and downloads there are refused.
+- Switching a chat to Full auto answers the permission card waiting in it, unless Full auto would
+  have asked too.
+- Long chats open at the latest messages and load older ones as you scroll up, so the desktop app
+  holds less in memory.
+- Thrall's browser closes after 10 minutes unused, and leftovers from an earlier run are cleaned up.
 - Thrall was stopped after 60 steps; long jobs now get 100 (250 in Full auto).
 - Thrall's file tools work in any folder, not just the session's: asked to work somewhere else, it
   writes and edits files there with the file tools (read first, undoable) instead of going round
@@ -53,6 +82,10 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ### Fixed
 
+- Phone: scrolling up while Thrall writes stays where you are, and "New messages" takes you to the
+  very end of the reply.
+- An old preview of a PDF could be shown as the current one. Old previews are now cleared, and a
+  preview that can't be made leaves no stale picture behind.
 - A command that started a program on its own (like Start-Process with its output saved to a file)
   made Thrall wait the full timeout. It now hands back as soon as the command ends and says a
   program it started is still running.
@@ -282,7 +315,8 @@ The first public preview.
 - First-run key setup in the desktop app, a welcome screen and a one-minute tour.
 - Installers built by CI for every release, with `SHA256SUMS.txt`.
 
-[Unreleased]: https://github.com/ThrallAI/thrall/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/ThrallAI/thrall/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/ThrallAI/thrall/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/ThrallAI/thrall/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/ThrallAI/thrall/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/ThrallAI/thrall/compare/v0.2.1...v0.2.2
