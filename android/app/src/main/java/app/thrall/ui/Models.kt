@@ -296,6 +296,8 @@ class ChatModelView(
         val modeLimit: ModeLimit? = null,
         /** A task just ended in a mode that doesn't ask: offer to go back to Ask. */
         val offerAsk: Boolean = false,
+        /** The history replayed on opening is all in ([rows] stay empty until then). */
+        val loaded: Boolean = false,
     )
 
     private val _shown = MutableStateFlow(Shown())
@@ -303,6 +305,11 @@ class ChatModelView(
     private var title = ""
     private var workspace: String? = null
     private var mode = "ask"
+
+    // The history the engine replays on opening is drawn once, when it's all in (up to this seq),
+    // instead of row by row; it stays drawn on reconnects.
+    private var historyUntil: Long? = null
+    private var loaded = false
 
     private val _replies = MutableSharedFlow<ChatItem.Message>(extraBufferCapacity = REPLIES_BUFFER)
     /** Thrall's replies as they finish while the chat is open (for reading aloud). */
@@ -321,7 +328,7 @@ class ChatModelView(
                     model.apply(f.event, f.seq)
                     model.takeFinished()
                 }
-                publish()
+                if (caughtUp()) publish()
                 finished.forEach { _replies.tryEmit(it) }
             }
         }
@@ -400,19 +407,42 @@ class ChatModelView(
                 workspace = opened.workspace
                 mode = opened.mode
                 synchronized(model) { model.opened(opened.mode, opened.modeLimit) }
+                if (historyUntil == null) historyUntil = opened.lastSeq
+            } else {
+                loaded = true
+            }
+            if (!caughtUp()) {
+                // A replayed event that never arrives mustn't leave the chat blank.
+                scope.launch {
+                    delay(HISTORY_WAIT_MS)
+                    if (!loaded) {
+                        loaded = true
+                        publish()
+                    }
+                }
             }
             publish(problem = null)
             if (_commands.value.isEmpty()) loadCommands()
         } catch (e: Exception) {
+            loaded = true
             publish(problem = e.message)
         }
+    }
+
+    /** Whether the history replayed on opening is all in; once it is, it stays so. */
+    private fun caughtUp(): Boolean {
+        if (!loaded) {
+            val until = historyUntil ?: return false
+            loaded = synchronized(model) { model.lastSeq } >= until
+        }
+        return loaded
     }
 
     private fun publish(problem: String? = _shown.value.problem) {
         _shown.value = synchronized(model) {
             Shown(
-                model.rows, model.title ?: title, model.state, model.model, problem, model.workspace ?: workspace,
-                model.mode ?: mode, model.modeLimit, model.offerAsk,
+                if (loaded) model.rows else emptyList(), model.title ?: title, model.state, model.model, problem,
+                model.workspace ?: workspace, model.mode ?: mode, model.modeLimit, model.offerAsk, loaded,
             )
         }
     }
@@ -467,6 +497,12 @@ class ChatModelView(
                 if (_commands.value.isEmpty()) loadCommands()
                 if (SlashCommands.runsOnEngine(typed, _commands.value)) {
                     run(typed)
+                    return@launch
+                }
+                // A terminal command isn't a message for Thrall: say where it is on the phone.
+                SlashCommands.terminalOnly(typed, _commands.value)?.let { note ->
+                    synchronized(model) { model.commandResult(text.trim(), note) }
+                    publish()
                     return@launch
                 }
             }
@@ -570,5 +606,7 @@ class ChatModelView(
         const val ALREADY_ANSWERED = "already_answered"
         /** Finished replies held for a slow listener. */
         const val REPLIES_BUFFER = 8
+        /** Longest wait for the replayed history before the chat is drawn anyway. */
+        const val HISTORY_WAIT_MS = 5_000L
     }
 }

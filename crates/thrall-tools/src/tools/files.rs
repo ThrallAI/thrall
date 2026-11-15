@@ -490,6 +490,80 @@ impl Tool for ListDir {
     }
 }
 
+// ---------- show_file ----------
+
+/// Put a file that's already there in front of the person: a card under the step to open it, show
+/// it in its folder, download it or open it on the phone.
+pub struct ShowFile;
+
+#[derive(Deserialize)]
+struct ShowArgs {
+    path: String,
+}
+
+impl Tool for ShowFile {
+    fn name(&self) -> &'static str {
+        "show_file"
+    }
+    fn description(&self) -> &'static str {
+        "Show the person a file that's already there (one made earlier, or one they ask to see): \
+         it appears as a card in the chat that they can open, show in its folder, download, or \
+         open on their phone. Use this whenever they ask to see, open or have a file; never open \
+         it in the browser, serve it or screenshot it. Paths are relative to the session folder \
+         unless absolute."
+    }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "File to show" }
+            },
+            "required": ["path"]
+        })
+    }
+    fn title(&self, args: &Value) -> String {
+        format!("Showing {}", arg_str(args, "path"))
+    }
+    fn run<'a>(&'a self, ctx: &'a ToolContext, args: Value) -> BoxFuture<'a, ToolOutput> {
+        Box::pin(async move {
+            let a: ShowArgs = match parse_args(self.name(), args) {
+                Ok(a) => a,
+                Err(e) => return ToolOutput::error(e),
+            };
+            // A chat that works on a companion PC: the file is there, not on this computer.
+            if let Some(pc) = &ctx.pc {
+                return ToolOutput::ok(
+                    format!(
+                        "This chat works on {pc}, so the file is on that PC, not here. Tell the \
+                         person where it is ({}) so they can open it there.",
+                        a.path
+                    ),
+                    "On the person's PC".to_owned(),
+                );
+            }
+            let path = resolve(&ctx.workspace, &a.path);
+            let shown = display(&ctx.workspace, &path);
+            match tokio::fs::metadata(&path).await {
+                Ok(m) if m.is_dir() => {
+                    ToolOutput::error(format!("{shown} is a folder; show the files in it"))
+                }
+                Ok(_) => {
+                    let mut out = ToolOutput::ok(
+                        format!(
+                            "{shown} is shown to the person as a card under this step: they can \
+                             open it from there. Don't open it any other way."
+                        ),
+                        format!("Showing {shown}"),
+                    );
+                    out.saved.push(path);
+                    out
+                }
+                Err(e) => ToolOutput::error(format!("can't show {shown}: {e}")),
+            }
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::text_of;

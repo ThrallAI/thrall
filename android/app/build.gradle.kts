@@ -26,8 +26,8 @@ android {
         targetSdk = 37
         // Raise versionCode for every APK that goes to a phone: the app only offers an update that's
         // newer than itself, and Android refuses to install an older one over it.
-        versionCode = 7
-        versionName = "0.5.0"
+        versionCode = 8
+        versionName = "0.5.1"
     }
 
     signingConfigs {

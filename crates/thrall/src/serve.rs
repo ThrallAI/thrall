@@ -29,6 +29,9 @@ pub async fn run(paths: &Paths, config: Config, args: EngineArgs) -> anyhow::Res
     };
     let hub = Hub::new(state, Some(rebuild(paths.clone())));
     hub.end_full_auto_from_before().await;
+    // A browser left by an engine that was stopped hard holds hundreds of MB doing nothing.
+    thrall_tools::browser::close_leftovers_under(&paths.home);
+    hub.state().browsers.clone().stop_when_idle();
     let version = env!("CARGO_PKG_VERSION");
     let running = thrall_server::start(
         hub.clone(),

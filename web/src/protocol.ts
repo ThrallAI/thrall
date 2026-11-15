@@ -732,6 +732,44 @@ export type RequestFrame = {
     }
   | {
       /**
+       * Its place in the step's `saved` list.
+       */
+      index: number;
+      /**
+       * Show it in its folder instead of opening it.
+       */
+      reveal?: boolean;
+      /**
+       * The session.
+       */
+      session: string;
+      /**
+       * The step that wrote it.
+       */
+      step: string;
+      type: "step.file.open";
+    }
+  | {
+      /**
+       * Its place in the step's `saved` list.
+       */
+      index: number;
+      /**
+       * Where to start, in bytes.
+       */
+      offset?: number;
+      /**
+       * The session.
+       */
+      session: string;
+      /**
+       * The step that wrote it.
+       */
+      step: string;
+      type: "step.file.read";
+    }
+  | {
+      /**
        * The file's id.
        */
       file: string;
@@ -1245,7 +1283,7 @@ export type ReplyFrame = {
        */
       offset: number;
       /**
-       * The file, relative to the session's folder.
+       * The file, relative to the session's folder (for `step.file.read`, its name).
        */
       path: string;
       /**
@@ -1432,6 +1470,12 @@ export type EventFrame1 =
        * Files the step made (pictures), fetched with `GET /v1/files/{file}`.
        */
       files?: FileRef[];
+      /**
+       * Files the step wrote on the computer (a saved document, a picture's copy, a download):
+       * the desktop app opens them with `step.file.open`, other clients fetch them with
+       * `step.file.read`, both by their place in this list.
+       */
+      saved?: SavedFile[];
       /**
        * How it went.
        */
@@ -1651,6 +1695,17 @@ export type EventFrame1 =
     }
   | {
       type: "update.requested";
+    }
+  | {
+      /**
+       * The file's full path.
+       */
+      path: string;
+      /**
+       * Show it in its folder instead of opening it.
+       */
+      reveal?: boolean;
+      type: "file.open";
     }
   | {
       type: "pc.asked";
@@ -1863,6 +1918,12 @@ export type EventFrame2 = {
        */
       files?: FileRef[];
       /**
+       * Files the step wrote on the computer (a saved document, a picture's copy, a download):
+       * the desktop app opens them with `step.file.open`, other clients fetch them with
+       * `step.file.read`, both by their place in this list.
+       */
+      saved?: SavedFile[];
+      /**
        * How it went.
        */
       status: "ok" | "error" | "warn" | "denied" | "cancelled";
@@ -2081,6 +2142,17 @@ export type EventFrame2 = {
     }
   | {
       type: "update.requested";
+    }
+  | {
+      /**
+       * The file's full path.
+       */
+      path: string;
+      /**
+       * Show it in its folder instead of opening it.
+       */
+      reveal?: boolean;
+      type: "file.open";
     }
   | {
       type: "pc.asked";
@@ -2751,6 +2823,23 @@ export interface Diff {
    * Standard unified diff.
    */
   unified: string;
+}
+/**
+ * A file a step wrote on the computer.
+ */
+export interface SavedFile {
+  /**
+   * Its name.
+   */
+  name: string;
+  /**
+   * Where it is, as a full path.
+   */
+  path: string;
+  /**
+   * Size in bytes, when it was written.
+   */
+  size: number;
 }
 /**
  * One entry in the task list.

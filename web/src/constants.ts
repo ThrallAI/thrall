@@ -87,6 +87,23 @@ export const CLIENT_COMMANDS: ReadonlyArray<{ name: string; summary: string }> =
   { name: "new", summary: "Start a new session" },
 ];
 
+/** Commands only the terminal app runs, and where this app has the same thing (`/new` is ours). */
+export const TERMINAL_ONLY: Readonly<Record<string, string>> = {
+  settings: "Here it's Settings at the bottom of the sidebar (Ctrl+,).",
+  group: "Here, open a session's ⋯ menu in the sidebar and pick Move to group.",
+  forget: "Here it's Settings → Learning, or Forget on a fact Thrall just saved.",
+  skills: "Here they're in Settings → Learning.",
+  skill: "Here they're in Settings → Learning.",
+  lessons: "Here they're in Settings → Learning.",
+  home: "Here Home is at the top of the sidebar.",
+  resume: "Here every session is in the sidebar (Ctrl+K finds one).",
+  retry: "Here, press Retry under Thrall's last reply.",
+  edit: "Here, press Edit under your last message.",
+  rewind: "Here, press Rewind under the message to go back to.",
+  expand: "Here, press Ctrl+O, or click a step to see its details.",
+  quit: "Here, close the window; Quit Thrall… in the tray icon's menu stops it.",
+};
+
 /** Permission modes in Shift+Tab order (full auto is never reached by toggling). */
 export const MODE_CYCLE = ["ask", "auto_edits", "plan"] as const;
 

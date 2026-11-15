@@ -303,6 +303,7 @@ async fn finish_step(
             summary: summary.to_owned(),
             diff: None,
             files: Vec::new(),
+            saved: Vec::new(),
         })
         .await?;
     if emitter.records() {

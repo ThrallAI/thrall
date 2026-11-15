@@ -23,7 +23,7 @@ impl Tool for MakeImage {
          younger\", \"put a hat on the dog\", \"turn this into a watercolour\"). Pass the pictures \
          to change in images (paths, e.g. where an attached picture is saved). Each picture costs \
          money: the user sees the price and approves it first. The result is shown to the user; \
-         save_as also puts a copy in the working folder."
+         save_as also saves a copy (a name in the working folder, or a full path)."
     }
     fn parameters(&self) -> Value {
         json!({
@@ -44,7 +44,7 @@ impl Tool for MakeImage {
                 },
                 "save_as": {
                     "type": "string",
-                    "description": "Also save it in the working folder under this name (e.g. cat-hat.png)"
+                    "description": "Also save it: a name in the working folder (e.g. cat-hat.png), or a full path"
                 }
             },
             "required": ["prompt"]
@@ -146,7 +146,7 @@ impl Tool for MakeVideo {
                 "aspect_ratio": { "type": "string", "enum": ["auto", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"] },
                 "audio": { "type": "boolean", "description": "Generate sound (default true)" },
                 "fast": { "type": "boolean", "description": "The cheaper fast variant" },
-                "save_as": { "type": "string", "description": "Also save it in the working folder (an .mp4 name)" }
+                "save_as": { "type": "string", "description": "Also save it: an .mp4 name in the working folder, or a full path" }
             },
             "required": ["prompt"]
         })

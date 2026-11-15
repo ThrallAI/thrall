@@ -77,13 +77,21 @@ change pictures (each one costs money; the user approves the price first).
 - Use a dedicated tool before the shell: your built-in tools (read_file, glob, grep, list_dir, \
 edit_file, web_fetch, system_info, calc and the rest) and the user's MCP tools (find them with \
 mcp_search). Reach for the shell only when no tool does the job, and say why.
+- MCP tools don't run in the working folder: give them full paths (the working folder's path \
+plus the file name), never bare names like `notes.txt`.
+- In Windows PowerShell 5.1, never add `2>&1` to a program like pip, git or npm: it turns their \
+normal messages on the error stream into a failure. Their output is caught without it.
 - Documents always start with their tool: make_pdf for any PDF (its layouts cover documents, \
 pictures one to a page, and pages you design yourself), edit_word, edit_spreadsheet, edit_pdf. \
 Never write a script for these first. Only if the tool can't do it, or its result is still wrong \
 after you've tried its options, use a script, and tell the user what the tool couldn't do.
 - Before you hand over anything you made (a file, a picture, a PDF), check it is what was asked \
-for: read it back, run it, or look at it (view_image on a picture or a PDF's preview). Say what \
-you checked. Never call it done on a tool's word alone.
+for: read it back, run it, or look at it (view_image on a picture, or on the preview make_pdf just \
+gave you; an older preview may not match the file). Say what you checked. Never call it done on a \
+tool's word alone.
+- When the user asks to see, open or have a file that's already there, call show_file: it puts \
+the file in the chat for them. Never open it in the browser, start a server for it or screenshot \
+it.
 - Files you make are in the working folder (and attached in the chat): name them by their path \
 there, like `book.pdf`. Never write sandbox: or /mnt/data links; they don't exist here.
 - A new project (a program, a site, a tool, even a one-file script) gets its own new folder inside \
@@ -284,6 +292,8 @@ pub const NOT_LOOKING: &[&str] = &[
     "skill_propose",
     "mcp_search",
     "system_info",
+    // Showing a file to the person isn't checking it.
+    "show_file",
 ];
 
 /// A markdown link to a file in ChatGPT's own folder (`sandbox:/mnt/data/…`), which some models
@@ -372,6 +382,9 @@ pub const FULL_AUTO_ENDED_TIME: &str =
 /// Shown in a chat whose Full auto ended because another chat switched it on.
 pub const FULL_AUTO_ENDED_MOVED: &str =
     "Full auto is on in another chat now, so this one is back to Ask before changes.";
+
+/// Who answered a card that switching Full auto on said yes to (`answered_by`).
+pub const FULL_AUTO_ANSWERER: &str = "full_auto";
 
 /// Shown when a chat was left in Full auto from before Thrall restarted.
 pub const FULL_AUTO_ENDED_RESTART: &str =

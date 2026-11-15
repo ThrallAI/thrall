@@ -5,7 +5,10 @@ import app.thrall.protocol.Request
 import java.io.File
 import java.util.Base64
 
-/** Where a file comes from: a session's folder, or an upload (attached to a message, made by a step). */
+/**
+ * Where a file comes from: a session's folder, an upload (attached to a message, made by a step), or
+ * a file a step wrote anywhere on the computer (by its place in the step's `saved` list).
+ */
 sealed interface FileSource {
     /** The file's name, for showing and for its type. */
     val name: String
@@ -15,6 +18,8 @@ sealed interface FileSource {
     }
 
     data class Upload(val file: String, override val name: String) : FileSource
+
+    data class Step(val session: String, val step: String, val index: Int, override val name: String) : FileSource
 }
 
 /**
@@ -56,17 +61,24 @@ class Downloads(private val cache: File, private val connection: Connection) {
                     ?: throw RequestFailed("Thrall sent something else instead of the file.")
                 Triple(r.offset, r.size, r.data)
             }
+            is FileSource.Step -> {
+                val r = connection.request(Request.StepFileRead(source.session, source.step, source.index, offset)) as? Reply.FolderPart
+                    ?: throw RequestFailed("Thrall sent something else instead of the file.")
+                Triple(r.offset, r.size, r.data)
+            }
         }
 
     /** Where a source's copy lives: one folder per session or upload, the file's own name inside. */
     fun target(source: FileSource): File = when (source) {
         is FileSource.Folder -> File(File(cache, FOLDERS_DIR + "/" + safe(source.session)), safePath(source.path))
         is FileSource.Upload -> File(File(cache, UPLOADS_DIR + "/" + safe(source.file)), safe(source.name))
+        is FileSource.Step -> File(File(cache, STEPS_DIR + "/" + safe(source.step) + "/" + source.index), safe(source.name))
     }
 
     companion object {
         const val FOLDERS_DIR = "files/sessions"
         const val UPLOADS_DIR = "files/uploads"
+        const val STEPS_DIR = "files/steps"
         private const val PART_SUFFIX = ".part"
 
         /** One path part, safe as a file name on the phone. */

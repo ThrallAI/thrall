@@ -33,6 +33,19 @@ class SlashCommandsTest {
     }
 
     @Test
+    fun terminalCommandsSayWhereTheyAreOnThePhone() {
+        val note = SlashCommands.terminalOnly(SlashCommands.Typed("settings", ""), known)
+        assertTrue(note!!.startsWith("`/settings` is a terminal command."))
+        assertTrue(note.contains("⋮ menu"))
+        // Engine commands, skills and other names aren't terminal commands.
+        assertNull(SlashCommands.terminalOnly(SlashCommands.Typed("model", "x"), known))
+        assertNull(SlashCommands.terminalOnly(SlashCommands.Typed("my-skill", ""), known))
+        // A skill of the person's own with a terminal command's name stays theirs.
+        val withSkill = known + CommandItem("settings", "My skill", "", skill = true)
+        assertNull(SlashCommands.terminalOnly(SlashCommands.Typed("settings", ""), withSkill))
+    }
+
+    @Test
     fun typingASlashOffersCommands() {
         assertEquals(listOf("model", "mode"), SlashCommands.suggestions("/mo", known).map { it.name })
         assertEquals(4, SlashCommands.suggestions("/", known).size)

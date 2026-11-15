@@ -1699,6 +1699,29 @@ button.th-file-chip:focus-visible {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* A file a step wrote on the computer: Open / Show in folder in the desktop app, Download elsewhere. */
+.th-saved {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  min-width: 0;
+  font: 500 12px/16px var(--font-sans);
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+}
+.th-saved.is-failed {
+  border-color: var(--danger);
+}
+.th-saved-why {
+  flex-basis: 100%;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
 .th-lightbox {
   position: fixed;
   inset: 0;

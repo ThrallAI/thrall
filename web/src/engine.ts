@@ -134,6 +134,21 @@ export class Engine {
     return res.blob();
   }
 
+  /** Fetch a file a step wrote (its place in the step's `saved` list), a piece at a time. */
+  async readStepFile(session: string, step: string, index: number): Promise<Blob> {
+    const pieces: Uint8Array<ArrayBuffer>[] = [];
+    let offset = 0;
+    for (;;) {
+      const part = await this.request<"folder.part">({ type: "step.file.read", session, step, index, offset });
+      const text = atob(part.data);
+      const bytes = new Uint8Array(text.length);
+      for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+      pieces.push(bytes);
+      offset += bytes.length;
+      if (offset >= part.size || bytes.length === 0) return new Blob(pieces);
+    }
+  }
+
   /** Send a request; resolves with its reply, rejects with an EngineError on `error`. */
   request<T extends Reply["type"] = Reply["type"]>(request: Request): Promise<ReplyOf<T>> {
     if (!this.ready && request.type !== "hello") {

@@ -77,8 +77,12 @@ import app.thrall.voice.VoiceSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.graphics.ImageDecoder
 import android.net.Uri
+import android.os.Build
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.size
@@ -92,6 +96,14 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.TextStyle
 import app.thrall.chat.Attachment
 import app.thrall.chat.Attachments
+import app.thrall.chat.Follow
+import app.thrall.chat.Scroll
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.lazy.LazyListState
 
 /** Permission modes anyone can pick on the phone; Full auto is added for the owner. */
 private val MODES = listOf("ask" to "Ask", "auto_edits" to "Auto-accept edits", "plan" to "Plan")
@@ -255,10 +267,52 @@ fun ChatScreen(
     LaunchedEffect(replies) {
         replies.collect { if (reading) speaker.speak(it.key, it.text, after = true) }
     }
-    // Follow the conversation as it grows (including text streaming into the last row).
+    // Open at the latest message once the history is in; then follow the conversation as it grows
+    // (text streaming into the last row too) only while its end is in view, else offer a jump down.
+    var jumped by remember { mutableStateOf(false) }
+    var following by remember { mutableStateOf(true) }
+    var newBelow by remember { mutableStateOf(false) }
+    val rowCount by rememberUpdatedState(shown.rows.size)
+    val endInView by remember {
+        derivedStateOf {
+            val info = list.layoutInfo
+            val seen = info.visibleItemsInfo.lastOrNull()
+            Follow.endShown(seen?.index ?: -1, rowCount, (seen?.offset ?: 0) + (seen?.size ?: 0), info.viewportEndOffset)
+        }
+    }
+    // A finger on the list stops following at once, so text still streaming in can't pull it down.
+    LaunchedEffect(list) {
+        list.interactionSource.interactions.collect { if (it is DragInteraction.Start) following = false }
+    }
+    LaunchedEffect(list) {
+        snapshotFlow { list.isScrollInProgress }.collect { moving ->
+            if (!moving) {
+                following = endInView
+                if (following) newBelow = false
+            }
+        }
+    }
     val last = shown.rows.lastOrNull()
-    LaunchedEffect(shown.rows.size, (last as? ChatItem.Message)?.text?.length) {
-        if (shown.rows.isNotEmpty()) list.animateScrollToItem(shown.rows.lastIndex)
+    LaunchedEffect(shown.loaded, shown.rows.size, (last as? ChatItem.Message)?.text?.length) {
+        if (shown.rows.isEmpty()) {
+            if (shown.loaded) jumped = true
+            return@LaunchedEffect
+        }
+        when (Follow.next(shown.loaded, jumped, following, mine = (last as? ChatItem.Message)?.fromUser == true)) {
+            Scroll.NONE -> {}
+            Scroll.JUMP -> {
+                list.scrollToItem(shown.rows.lastIndex)
+                list.scrollBy(list.belowEnd())
+                jumped = true
+            }
+            Scroll.FOLLOW -> {
+                following = true
+                newBelow = false
+                list.animateScrollToItem(shown.rows.lastIndex)
+                list.animateScrollBy(list.belowEnd())
+            }
+            Scroll.MARK_NEW -> newBelow = true
+        }
     }
     Column(Modifier.fillMaxSize().imePadding()) {
         // The folder the chat works in; tap it to move the chat somewhere else.
@@ -286,45 +340,62 @@ fun ChatScreen(
             TextButton(onClick = onFiles) { Text("Files", color = t.accent) }
         }
         ModeBar(shown, onMode, extras.onKeepMode)
-        LazyColumn(
-            state = list,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            val lastMine = shown.rows.lastOrNull { it is ChatItem.Message && it.fromUser }?.key
-            items(shown.rows, key = { it.key }) { row ->
-                val menu = (row as? ChatItem.Message)?.takeIf { it.fromUser && connected }?.let { m ->
-                    MessageMenu(
-                        last = m.key == lastMine,
-                        idle = shown.state == "idle",
-                        onEdit = { extras.onEdit(m.text) },
-                        onRetry = extras.onRetry,
-                        onRewind = {
-                            val turn = m.turn ?: return@MessageMenu
-                            scope.launch { rewinding = extras.previewRewind(turn) }
-                        },
-                    )
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            LazyColumn(
+                state = list,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                val lastMine = shown.rows.lastOrNull { it is ChatItem.Message && it.fromUser }?.key
+                items(shown.rows, key = { it.key }) { row ->
+                    val menu = (row as? ChatItem.Message)?.takeIf { it.fromUser && connected }?.let { m ->
+                        MessageMenu(
+                            last = m.key == lastMine,
+                            idle = shown.state == "idle",
+                            onEdit = { extras.onEdit(m.text) },
+                            onRetry = extras.onRetry,
+                            onRewind = {
+                                val turn = m.turn ?: return@MessageMenu
+                                scope.launch { rewinding = extras.previewRewind(turn) }
+                            },
+                        )
+                    }
+                    ChatRow(row, connected, onAnswer, onDecide, onQuestion, files, shown.workspace, speaking == row.key, menu) { m -> speaker.toggle(m.key, m.text) }
                 }
-                ChatRow(row, connected, onAnswer, onDecide, onQuestion, files, shown.workspace, speaking == row.key, menu) { m -> speaker.toggle(m.key, m.text) }
-            }
-            // Typed while offline: shown as waiting, sent when Thrall's back (✕ takes one back).
-            items(extras.queued, key = { it.id }) { q ->
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
-                    Text(
-                        q.text,
-                        color = t.inkMuted,
-                        fontSize = 15.sp,
-                        modifier = Modifier
-                            .widthIn(max = 320.dp)
-                            .border(1.dp, t.line, RoundedCornerShape(14.dp))
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Waiting to send: it goes when Thrall's back", color = t.inkMuted, fontSize = 11.sp)
-                        TextButton(onClick = { extras.onUnqueue(q.id) }) { Text("✕", color = t.inkMuted) }
+                // Typed while offline: shown as waiting, sent when Thrall's back (✕ takes one back).
+                items(extras.queued, key = { it.id }) { q ->
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
+                        Text(
+                            q.text,
+                            color = t.inkMuted,
+                            fontSize = 15.sp,
+                            modifier = Modifier
+                                .widthIn(max = 320.dp)
+                                .border(1.dp, t.line, RoundedCornerShape(14.dp))
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Waiting to send: it goes when Thrall's back", color = t.inkMuted, fontSize = 11.sp)
+                            TextButton(onClick = { extras.onUnqueue(q.id) }) { Text("✕", color = t.inkMuted) }
+                        }
                     }
                 }
+            }
+            if (newBelow) {
+                Button(
+                    onClick = {
+                        newBelow = false
+                        following = true
+                        scope.launch {
+                            if (shown.rows.isNotEmpty()) {
+                                list.animateScrollToItem(shown.rows.lastIndex)
+                                list.animateScrollBy(list.belowEnd())
+                            }
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
+                ) { Text("↓ New messages") }
             }
         }
         shown.problem?.let {
@@ -429,7 +500,15 @@ private fun RewindDialog(preview: Reply.CheckpointShown, onDone: (Boolean?) -> U
 /** Files named in the rewind dialog before "…and N more". */
 private const val REWIND_FILES_SHOWN = 8
 
-/** What holding down one of your messages offers: the last can be edited or sent again; any can be rewound to. */
+/** Puts [text] on the phone's clipboard. Android 13 and later show their own "copied" note. */
+private fun copyText(context: Context, text: String) {
+    context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Thrall", text))
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+    }
+}
+
+/** What holding down one of your messages offers besides Copy: the last can be edited or sent again; any can be rewound to. */
 private class MessageMenu(val last: Boolean, val idle: Boolean, val onEdit: () -> Unit, val onRetry: () -> Unit, val onRewind: () -> Unit)
 
 @Composable
@@ -446,6 +525,7 @@ private fun ChatRow(
     onRead: (ChatItem.Message) -> Unit,
 ) {
     val t = LocalTokens.current
+    val context = LocalContext.current
     val openPath: (String) -> Unit = { files.open(FileSource.Folder(files.session, it)) }
     val pathOf: (String) -> String? = { FileKinds.pathIn(it, folder) }
     when (item) {
@@ -461,11 +541,12 @@ private fun ChatRow(
                             modifier = Modifier
                                 .widthIn(max = 320.dp)
                                 .background(t.accentSoft, RoundedCornerShape(14.dp))
-                                .combinedClickable(enabled = menu != null, onClick = {}, onLongClick = { open = true })
+                                .combinedClickable(onClick = {}, onLongClick = { open = true })
                                 .padding(horizontal = 14.dp, vertical = 10.dp),
                         )
-                        if (menu != null) {
-                            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                            DropdownMenuItem(text = { Text("Copy") }, onClick = { open = false; copyText(context, item.text) })
+                            if (menu != null) {
                                 if (menu.last && menu.idle) {
                                     DropdownMenuItem(text = { Text("Edit and send again") }, onClick = { open = false; menu.onEdit() })
                                     DropdownMenuItem(text = { Text("Send again") }, onClick = { open = false; menu.onRetry() })
@@ -488,19 +569,29 @@ private fun ChatRow(
                 Markdown(item.text + if (item.streaming) " ▍" else "", onPath = openPath, pathOf = pathOf)
                 Attached(item.files, files)
                 if (!item.streaming) {
-                    Text(
-                        if (beingRead) "■ Stop reading" else "🔊 Read aloud",
-                        color = if (beingRead) t.accent else t.inkMuted,
-                        fontSize = 12.sp,
-                        modifier = Modifier.clickable { onRead(item) }.padding(vertical = 4.dp),
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Text(
+                            if (beingRead) "■ Stop reading" else "🔊 Read aloud",
+                            color = if (beingRead) t.accent else t.inkMuted,
+                            fontSize = 12.sp,
+                            modifier = Modifier.clickable { onRead(item) }.padding(vertical = 4.dp),
+                        )
+                        Text(
+                            "⧉ Copy",
+                            color = t.inkMuted,
+                            fontSize = 12.sp,
+                            modifier = Modifier.clickable { copyText(context, item.text) }.padding(vertical = 4.dp),
+                        )
+                    }
                 }
             }
         }
         is ChatItem.Step -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Step(item)
             Attached(item.files, files)
-            item.changed?.takeIf { item.status == "ok" }?.let { ChangedFile(it, files) }
+            // Files it wrote anywhere on the computer; without them, the one it changed in the folder.
+            if (item.saved.isNotEmpty()) SavedFiles(item, files)
+            else item.changed?.takeIf { item.status == "ok" }?.let { ChangedFile(it, files) }
         }
         is ChatItem.Waiting -> if (item.questions.isNotEmpty()) Questions(item, connected, onQuestion) else Waiting(item, connected, onAnswer, onDecide)
         is ChatItem.Note -> Text(item.text, color = if (item.warning) t.warn else t.inkMuted, fontSize = 13.sp)
@@ -874,7 +965,7 @@ private fun Waiting(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(if (item.plan) "Plan waiting for approval" else "Asks permission", color = t.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Text(if (item.plan) "Approve this plan?" else "Asks permission", color = t.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         val settled = item.settled
         // Once answered, a long command shrinks to a few lines; tap to see it all again.
         var expanded by remember(item.key) { mutableStateOf(false) }
@@ -897,9 +988,10 @@ private fun Waiting(
             sent -> Text("Sending…", color = t.inkMuted, fontSize = 12.sp)
             else -> FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (item.plan) {
-                    Button(onClick = { sent = true; onDecide(item.key, true, false) }, enabled = connected) { Text("Approve") }
-                    OutlinedButton(onClick = { sent = true; onDecide(item.key, true, true) }, enabled = connected) { Text("Approve + auto edits") }
-                    TextButton(onClick = { sent = true; onDecide(item.key, false, false) }, enabled = connected) { Text("Not yet") }
+                    // Same choices as the computer: Approve lets the plan's edits through without asking.
+                    Button(onClick = { sent = true; onDecide(item.key, true, true) }, enabled = connected) { Text("Approve") }
+                    OutlinedButton(onClick = { sent = true; onDecide(item.key, true, false) }, enabled = connected) { Text("Approve, ask before each change") }
+                    TextButton(onClick = { sent = true; onDecide(item.key, false, false) }, enabled = connected) { Text("Keep planning") }
                 } else {
                     if ("yes" in item.choices) {
                         Button(onClick = { sent = true; onAnswer(item.key, "yes") }, enabled = connected) { Text("Yes") }
@@ -1035,6 +1127,30 @@ private fun ChangedFile(diff: Diff, files: FileActions) {
     FileChip("📄 ${source.name} · $what", source, files)
 }
 
+/**
+ * Files a step wrote on the computer, wherever they are, as cards: tap fetches and opens one, hold
+ * for more. A picture already shown on the step (the one Thrall made) is a card, not shown twice.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SavedFiles(step: ChatItem.Step, files: FileActions) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        step.saved.forEachIndexed { index, saved ->
+            val source = FileSource.Step(files.session, step.key, index, saved.name)
+            if (step.files.isEmpty() && FileKinds.kind(saved.name) == FileKind.Image) {
+                Picture(files, source)
+            } else {
+                val what = when (step.changed?.kind) {
+                    "create" -> "New file"
+                    "modify" -> "Changed"
+                    else -> "Saved"
+                }
+                FileChip("📄 ${saved.name} · $what", source, files)
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FileChip(label: String, source: FileSource, files: FileActions) {
@@ -1102,3 +1218,9 @@ private fun PictureBox(downloads: Downloads, source: FileSource, onOpen: () -> U
 
 /** Longest side of a picture shown in the conversation, in pixels. */
 private const val PICTURE_THUMB_PX = 1024
+
+/** How far (px) the end of the last row drawn sits below the bottom of the list (0 if it's on screen). */
+private fun LazyListState.belowEnd(): Float {
+    val seen = layoutInfo.visibleItemsInfo.lastOrNull() ?: return 0f
+    return (seen.offset + seen.size - layoutInfo.viewportEndOffset).coerceAtLeast(0).toFloat()
+}

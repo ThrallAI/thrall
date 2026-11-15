@@ -362,6 +362,7 @@ impl App {
                 summary,
                 diff,
                 files,
+                ..
             } => {
                 // The terminal can't show pictures: name what the step made.
                 let mut summary = summary;
@@ -513,7 +514,7 @@ impl App {
             // A check-in's message is already here.
             Event::AgentCompleted { agent, .. } if agent == CHECK_IN_AGENT => {}
             // Only the desktop app installs updates.
-            Event::UpdateRequested {} => {}
+            Event::UpdateRequested {} | Event::FileOpen { .. } => {}
             // PCs asking to join are answered in the desktop app's Settings.
             Event::PcAsked {} => {}
             // Only a companion PC's runner gets these.

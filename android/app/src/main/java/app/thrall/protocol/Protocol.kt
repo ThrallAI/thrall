@@ -114,6 +114,10 @@ data class Diff(val path: String, val kind: String, val added: Int = 0, val remo
 @Serializable
 data class FileRef(val file: String, val name: String, val kind: String = "other", val size: Long = 0)
 
+/** A file a step wrote on the computer (anywhere, not only in the session's folder). */
+@Serializable
+data class SavedFile(val path: String, val name: String, val size: Long = 0)
+
 @Serializable
 data class Usage(
     @SerialName("input_tokens") val inputTokens: Long = 0,
@@ -203,6 +207,10 @@ sealed class Request {
     /** A piece of a file inside a session's folder. */
     @Serializable @SerialName("folder.read")
     data class FolderRead(val session: String, val path: String, @EncodeDefault val offset: Long = 0) : Request()
+
+    /** A piece of a file a step wrote: its place ([index]) in the step's `saved` list. */
+    @Serializable @SerialName("step.file.read")
+    data class StepFileRead(val session: String, val step: String, val index: Int, @EncodeDefault val offset: Long = 0) : Request()
 
     /** A piece of a file attached to a message or made by a step. */
     @Serializable @SerialName("file.get")
@@ -558,6 +566,7 @@ sealed class Event {
         val summary: String,
         val files: List<FileRef> = emptyList(),
         val diff: Diff? = null,
+        val saved: List<SavedFile> = emptyList(),
     ) : Event()
 
     @Serializable @SerialName("permission.request")
@@ -633,9 +642,11 @@ object ProtocolTypes {
         "home.clear", "heartbeat.get", "heartbeat.set", "heartbeat.run", "checkpoint.preview", "turn.rewind",
         "turn.retry", "turn.edit", "memory.list", "memory.forget", "skill.remove", "settings.get", "settings.set",
         "personality.get", "personality.set",
-        "people.list", "people.key",
+        "people.list", "people.key", "step.file.read",
     )
     val requestsLater = setOf(
+        // Opening a file with its program happens in the computer's desktop app; the phone fetches it.
+        "step.file.open",
         // Stopping the engine is for the computer; the phone dictates with its own speech recognition.
         "engine.stop", "audio.transcribe",
         // Managed on the computer only: refused over the phone link.
@@ -676,5 +687,5 @@ object ProtocolTypes {
         "question.resolved", "session.updated",
         "status", "notice", "error", "agent.completed",
     )
-    val eventsLater = setOf("tasks.updated", "agent.started", "memory.saved", "update.requested", "pc.asked", "runner.call")
+    val eventsLater = setOf("tasks.updated", "agent.started", "memory.saved", "update.requested", "file.open", "pc.asked", "runner.call")
 }

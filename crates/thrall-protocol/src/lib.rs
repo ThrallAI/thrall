@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 pub use events::{
     Diff, DiffKind, ErrorCode, Event, EventFrame, FileRef, NoticeLevel, PermissionChoice,
-    QuestionItem, Risk, Role, StepStatus, TaskItem, TaskStatus, TurnStatus, Usage,
+    QuestionItem, Risk, Role, SavedFile, StepStatus, TaskItem, TaskStatus, TurnStatus, Usage,
 };
 pub use requests::{
     AppRelease, BlockedPcInfo, ClientInfo, ClientKind, CommandItem, DeviceInfo, EngineInfo,

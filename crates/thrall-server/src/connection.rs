@@ -27,8 +27,8 @@ use thrall_tools::companion::Call;
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::constants::{
-    CAPABILITIES, DEFAULT_SESSION_LIST, MAX_UPLOAD_BYTES, PHONE_APP_FILE_ID, REPLAY_PAGE,
-    SILENCE_CHECK, SKILL_ARGS_HINT,
+    CAPABILITIES, DEFAULT_SESSION_LIST, MAX_UPLOAD_BYTES, OPEN_NEEDS_DESKTOP, PHONE_APP_FILE_ID,
+    REPLAY_PAGE, SILENCE_CHECK, SKILL_ARGS_HINT,
 };
 use crate::uploads;
 
@@ -52,6 +52,20 @@ pub struct Shared {
     pub update_asked: tokio::sync::watch::Sender<u64>,
     /// The owner's desktop apps connected now (`update.install` needs one).
     pub desktops: AtomicUsize,
+    /// Files someone asked to open (`step.file.open`); their desktop app on this computer opens
+    /// them.
+    pub open_asked: tokio::sync::broadcast::Sender<OpenAsk>,
+}
+
+/// A file someone asked to open, or to see in its folder.
+#[derive(Debug, Clone)]
+pub struct OpenAsk {
+    /// Whose desktop app opens it.
+    pub person: String,
+    /// The file's full path.
+    pub path: String,
+    /// Show it in its folder instead.
+    pub reveal: bool,
 }
 
 /// Counts a connection for as long as it lives.
@@ -146,6 +160,9 @@ where
     let owner_here =
         conn.peer == Peer::Local && conn.person.role == thrall_core::constants::person_role::OWNER;
     let mut pc_asked = shared.remote.asked.subscribe();
+    // A desktop app on this computer opens the files its person asks to open.
+    let opens_files = kind == ClientKind::Desktop && conn.peer == Peer::Local;
+    let mut open_asked = shared.open_asked.subscribe();
     let mut heard = Instant::now();
     let mut check = tokio::time::interval(SILENCE_CHECK);
     loop {
@@ -190,6 +207,20 @@ where
                     Event::UpdateRequested {},
                 ))]
             }
+            ask = open_asked.recv(), if opens_files => match ask {
+                Ok(ask) if ask.person == conn.person.id => {
+                    vec![ServerFrame::Event(EventFrame::new(
+                        "",
+                        None,
+                        now_ms(),
+                        Event::FileOpen {
+                            path: ask.path,
+                            reveal: ask.reveal,
+                        },
+                    ))]
+                }
+                _ => Vec::new(),
+            },
             Ok(()) = pc_asked.changed(), if owner_here => {
                 vec![ServerFrame::Event(EventFrame::new(
                     "",
@@ -1481,6 +1512,72 @@ impl Connection {
                         });
                     }
                     match crate::folders::read(&ws, &path, offset).await {
+                        Ok((path, offset, size, bytes)) => vec![reply(
+                            id,
+                            Reply::FolderPart {
+                                session,
+                                path,
+                                offset,
+                                size,
+                                data: BASE64.encode(bytes),
+                            },
+                        )],
+                        Err(why) => vec![error(id, ErrorCode::NotFound, why)],
+                    }
+                }
+                Request::StepFileOpen {
+                    session,
+                    step,
+                    index,
+                    reveal,
+                } => {
+                    let s = session::get(&self.me(), &session).await?;
+                    if s.pc.is_some() {
+                        return Ok(vec![error(
+                            id,
+                            ErrorCode::Invalid,
+                            "That file is on the PC this chat works on: open it there.",
+                        )]);
+                    }
+                    if self.kind != ClientKind::Desktop || self.peer != Peer::Local {
+                        return Ok(vec![error(id, ErrorCode::Invalid, OPEN_NEEDS_DESKTOP)]);
+                    }
+                    match crate::step_files::find(&self.me(), &session, &step, index).await {
+                        Ok(path) => {
+                            let ask = OpenAsk {
+                                person: self.person.id.clone(),
+                                path: path.to_string_lossy().into_owned(),
+                                reveal,
+                            };
+                            if self.shared.open_asked.send(ask).is_ok() {
+                                vec![reply(id, Reply::Ack {})]
+                            } else {
+                                vec![error(id, ErrorCode::Invalid, OPEN_NEEDS_DESKTOP)]
+                            }
+                        }
+                        Err(why) => vec![error(id, ErrorCode::NotFound, why)],
+                    }
+                }
+                Request::StepFileRead {
+                    session,
+                    step,
+                    index,
+                    offset,
+                } => {
+                    let s = session::get(&self.me(), &session).await?;
+                    if s.pc.is_some() {
+                        return Ok(vec![error(
+                            id,
+                            ErrorCode::NotFound,
+                            "That file is on the PC this chat works on.",
+                        )]);
+                    }
+                    let found = crate::step_files::find(&self.me(), &session, &step, index).await;
+                    let read = match found {
+                        Ok(path) => crate::step_files::read(&path, offset).await,
+                        Err(why) => Err(why),
+                    };
+                    match read {
                         Ok((path, offset, size, bytes)) => vec![reply(
                             id,
                             Reply::FolderPart {

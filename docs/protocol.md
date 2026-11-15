@@ -187,7 +187,7 @@ A turn is one user message and everything Thrall does about it.
 |---|---|
 | `step.started {turn, step, tool, title, helper?}` | `title` is plain language: "Reading src/main.rs", "Running cargo test". `helper` is set on a helper's steps: the step of the `agent` call (or skill, or split-mode hand-off) that started it, so clients list them under that row. Helpers asked for together in one reply work at the same time (`[agent] helpers_at_once`, default 3), so their steps interleave; each helper type (`researcher`, `coder`, `reviewer`, `planner`, or the person's own in `agents/<name>.md`, or the project's in `.thrall/agents/`) has its own instructions, and the ones that only look work in plan mode. A helper that spends more than `[agent] helper_cost_limit_cents` (default 100; 0 = no limit) is stopped and hands back what it has |
 | `step.output {step, text}` | Optional live output (shell). Live-only, capped; the model gets the full result |
-| `step.completed {step, status, summary, diff?, files?}` | `status`: `ok` · `error` · `denied` · `cancelled`. `diff` for file edits (below). `files`: pictures the step made (`make_image`), as in `message.completed` |
+| `step.completed {step, status, summary, diff?, files?, saved?}` | `status`: `ok` · `error` · `denied` · `cancelled`. `diff` for file edits (below). `files`: pictures the step made (`make_image`), as in `message.completed`. `saved`: files the step wrote on the computer, anywhere (`[{path, name, size}]`, `path` in full): a written or edited file, a picture/clip/recording's `save_as` copy, a saved transcript, a downloaded video. Clients show them as file cards: the desktop app opens one with `step.file.open`, others fetch it with `step.file.read` (§13a) |
 
 **Diffs**: `{path, kind: "create"|"modify"|"delete", unified, added, removed}`. `unified` is a standard
 unified diff; clients render it. Diffs over the frame limit carry a file id instead of `unified`.
@@ -203,6 +203,8 @@ folder (`/folder <path>`).
 `state`: `idle` · `working` · `waiting_for_you`. Sent when any of these change.
 
 **Updates**: `update.requested {}` (live only, empty `session`) goes only to the owner's desktop app, after the owner sends `update.install`. The desktop app checks for the newest version, downloads it, stops the engine, installs it and starts again; other clients ignore it.
+
+**Opening files**: `file.open {path, reveal?}` (live only, empty `session`) goes only to the asking person's desktop app on the engine's computer, after its window sends `step.file.open`. The desktop app opens the file with its usual program, or (`reveal`) shows it selected in its folder; other clients ignore it.
 
 **Facts**: `memory.saved {fact, topic, content}` (stored) whenever Thrall saves a lasting fact about the person; clients show it with a Forget action (`memory.forget`). Saving needs no approval unless `memory.save_facts` is off; proposing a skill (`skill_propose`) always asks, with the `SKILL.md` as the request's `diff`.
 
@@ -228,6 +230,8 @@ engine → permission.resolved { request, choice, answered_by: "desktop" }
   workspace, anything that sends or publishes). The engine refuses an `always` it didn't offer.
 - The first answer wins. `permission.resolved` goes to every attached client so the others close the
   card. A late second answer gets `error {code: "already_answered"}`.
+- Switching a session to `full_auto` answers its open card `yes` (`answered_by: "full_auto"`) when
+  Full auto wouldn't have asked; a card it still asks about (High risk) stays open.
 - Edits in *Ask* mode come as a permission request carrying the `diff`: accept is `yes`, reject is `no`.
 
 **Permission modes** (`session.set_mode`): `ask` (default) · `auto_edits` (file edits inside the
@@ -380,10 +384,12 @@ turns work in (the one the engine was started in).
 
 | Request | Reply |
 |---|---|
-| `folder.places {}` | `folder.places {recent: [path], default?, new_in?}`: folders sessions use, most recently active first (up to 8, only ones still there), and Thrall's own folder (`Documents\Thrall`) for `session.create`; the engine makes that one when a session is created in it. `new_in` is where a new folder goes unless another is picked (the `folders.new_in` setting, else `default`). Any other `workspace` given to `session.create` must exist, or the answer is `error {invalid}` |
+| `folder.places {}` | `folder.places {recent: [path], default?, new_in?}`: folders sessions use, most recently active first (up to 8, only ones still there), and Thrall's own folder (`Documents\Thrall`) for `session.create`; the engine makes that one when a session is created in it. `new_in` is where a new folder goes unless another is picked (the `folders.new_in` setting, else `default`). Any other `workspace` given to `session.create` must exist, or be a new folder (made then) inside one that does and outside the system's folders; otherwise the answer is `error {invalid}` |
 | `folder.create {parent, name}` | `folder.created {path}`: the one change allowed here, a new empty folder. `parent` must be one `folder.places` offers (`recent`, `default` or `new_in`; the last two are made if missing); `name` is one plain folder name (no `\ / : * ? " < > \|`, not dots, not a name Windows keeps like `CON`). Something already called that is never replaced: `error {invalid}` |
 | `folder.list {session, path}` | `folder.listed {session, path, items: [{name, folder?, size, modified}], more?}`: folders first, then files, each newest first; at most 500 entries (`more` when some were left out). `path` "" is the folder itself |
 | `folder.read {session, path, offset}` | `folder.part {session, path, offset, size, data}`: like `file.part`, up to 512 KiB of base64 from `offset`. A file that isn't at `path` is looked for a few folders down (Thrall often names a file without the folder it made it in): one match is read and its real `path` returned; several is a `not_found` error naming them |
+| `step.file.read {session, step, index, offset}` | `folder.part {session, path, offset, size, data}` (`path` is the file's name): a piece of a file a step wrote, wherever it is. The file is looked up from the session's own stored `step.completed` (its `saved` list, by `index`), never from a path the client sends, so only files Thrall wrote in that session can be fetched. `not_found` when there's no such step or file, or it's gone since; files over 1 GiB aren't sent |
+| `step.file.open {session, step, index, reveal?}` | `ack`: the desktop app is sent `file.open` (§8). Only from the desktop app's own window on the engine's computer (`error {invalid}` from anywhere else, or when the session works on a companion PC) |
 
 ## 13a1. Companion PCs
 

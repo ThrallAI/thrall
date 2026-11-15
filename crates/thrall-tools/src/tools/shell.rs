@@ -12,14 +12,15 @@ use thrall_protocol::Risk;
 use crate::constants::{
     BACKGROUND_MAX_PER_PERSON, BACKGROUND_READ_MAX_CHARS, COMMAND_SEPARATORS, GIT_READ_ONLY,
     GIT_RISKY, GIT_TIMEOUT_SECS, GIT_WRITE_FLAGS, INSTALL_CUSTOM_SOURCES, INSTALL_PIECES,
-    INSTALL_SOURCE_FLAGS, KEEP_RUNNING_SETTLE_SECS, LEFT_RUNNING_NOTE, LEFT_TRACKED_NOTE,
-    NONZERO_EXIT_NOTE, OFFICIAL_SOURCES, PIP_NAMES, PIP_SOURCE_FLAGS, REG_EXE_WRITES,
-    REGISTRY_NAMES, REGISTRY_WRITERS, RESULT_MAX_CHARS, SHELL_BY_NAME, SHELL_CAREFUL,
-    SHELL_CHAINING, SHELL_CUSTOM_SOURCE_NOTE, SHELL_DEFAULT_TIMEOUT_SECS, SHELL_DELETERS,
-    SHELL_DELETES_NOTE, SHELL_MAX_TIMEOUT_SECS, SHELL_MOVERS, SHELL_RECURSIVE, SHELL_RISKY,
-    SHELL_RISKY_NOTE, SHELL_STOPPERS, SHELL_SYSTEM_NOTE, SHELL_WRITERS, SHORT_SOURCE_FLAGS,
-    SHORT_SOURCE_PROGRAMS, STOPPED_DETACHED_NOTE, STOPPED_NOTE, SYSTEM_CHANGE_NEEDS,
-    UNTRACKED_PROGRAMS, UNTRACKED_STARTS,
+    INSTALL_SOURCE_FLAGS, INSTALL_VALUE_FLAGS, INSTALL_VERBS, KEEP_RUNNING_SETTLE_SECS,
+    LEFT_RUNNING_NOTE, LEFT_TRACKED_NOTE, LOCAL_INSTALL_FLAGS, NONZERO_EXIT_NOTE, NPM_NAMES,
+    OFFICIAL_SOURCES, PACKAGE_PROGRAMS, PIP_NAMES, PIP_REQUIREMENT_FLAGS, PIP_SOURCE_FLAGS,
+    REG_EXE_WRITES, REGISTRY_NAMES, REGISTRY_WRITERS, REQUIREMENTS_DEPTH_MAX,
+    REQUIREMENTS_MAX_BYTES, RESULT_MAX_CHARS, SHELL_BY_NAME, SHELL_CAREFUL, SHELL_CHAINING,
+    SHELL_CUSTOM_SOURCE_NOTE, SHELL_DEFAULT_TIMEOUT_SECS, SHELL_DELETERS, SHELL_DELETES_NOTE,
+    SHELL_MAX_TIMEOUT_SECS, SHELL_MOVERS, SHELL_RECURSIVE, SHELL_RISKY, SHELL_RISKY_NOTE,
+    SHELL_STOPPERS, SHELL_SYSTEM_NOTE, SHELL_WRITERS, SHORT_SOURCE_FLAGS, SHORT_SOURCE_PROGRAMS,
+    STOPPED_DETACHED_NOTE, STOPPED_NOTE, SYSTEM_CHANGE_NEEDS, UNTRACKED_PROGRAMS, UNTRACKED_STARTS,
 };
 use crate::paths::inside;
 use crate::process::{self, Finished};
@@ -109,9 +110,10 @@ fn system_change(command: &str, workspace: &Path) -> bool {
 }
 
 /// Whether the command installs something from a place that isn't the official one: a web or git
-/// address, another index or registry, a package file, or a source flag naming an unofficial
-/// source.
-fn custom_source_install(command: &str) -> bool {
+/// address, another index or registry, a package file, a source flag naming an unofficial
+/// source, a local folder, an npm `user/repo` shorthand, or a requirements file naming any of
+/// these (or that can't be read to check).
+fn custom_source_install(command: &str, workspace: &Path) -> bool {
     let lower = command.to_lowercase();
     if !INSTALL_PIECES.iter().any(|r| lower.contains(r)) {
         return false;
@@ -129,6 +131,102 @@ fn custom_source_install(command: &str) -> bool {
         || words
             .windows(2)
             .any(|pair| source_flag(&pair[0]) && !OFFICIAL_SOURCES.contains(&pair[1].as_str()))
+        || command
+            .split(COMMAND_SEPARATORS)
+            .any(|one| unofficial_packages(one, workspace))
+}
+
+/// A command's words with their case kept (file names on Linux and macOS), quotes taken off.
+fn cased_words(command: &str) -> Vec<&str> {
+    command
+        .split(|c: char| c.is_whitespace() || c == '=')
+        .map(|w| w.trim_matches(|c| c == '\'' || c == '"'))
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+
+/// Whether `word` names a folder or file on this computer rather than a package.
+fn local_place(word: &str) -> bool {
+    word == "."
+        || word == ".."
+        || word.starts_with("./")
+        || word.starts_with(".\\")
+        || word.starts_with("../")
+        || word.starts_with("..\\")
+        || full_path(word)
+}
+
+/// Whether one command of a chain installs with pip, npm's family or cargo from a local folder,
+/// a `user/repo` shorthand, or a requirements file that isn't all official.
+fn unofficial_packages(one: &str, workspace: &Path) -> bool {
+    let words = cased_words(one);
+    let lower: Vec<String> = words.iter().map(|w| w.to_lowercase()).collect();
+    let Some(verb) = lower
+        .iter()
+        .position(|w| INSTALL_VERBS.contains(&w.as_str()))
+    else {
+        return false;
+    };
+    let before = |list: &[&str]| lower[..verb].iter().any(|w| list.contains(&w.as_str()));
+    if !before(PACKAGE_PROGRAMS) {
+        return false;
+    }
+    let (pip, npm) = (before(PIP_NAMES), before(NPM_NAMES));
+    let mut skip = false;
+    for (i, word) in lower.iter().enumerate().skip(verb + 1) {
+        let previous = lower[i - 1].as_str();
+        if pip && PIP_REQUIREMENT_FLAGS.contains(&previous) {
+            if requirements_unofficial(&workspace.join(words[i]), 0) {
+                return true;
+            }
+        } else if LOCAL_INSTALL_FLAGS.contains(&words[i - 1]) {
+            // Case kept: npm's -E is --save-exact, pip's -e is a folder.
+            return true;
+        } else if skip || word.starts_with('-') {
+            // A flag, or the folder after one like --target.
+        } else if local_place(word) || (npm && word.contains('/') && !word.starts_with('@')) {
+            return true;
+        }
+        skip = INSTALL_VALUE_FLAGS.contains(&word.as_str());
+    }
+    false
+}
+
+/// Whether a pip requirements file names an unofficial place: another index, a web or git
+/// address, a package file, a local folder, or another such file. One that can't be read (not
+/// there yet, too big, too deep) counts as unofficial, as what it installs can't be seen.
+fn requirements_unofficial(file: &Path, depth: usize) -> bool {
+    if depth >= REQUIREMENTS_DEPTH_MAX {
+        return true;
+    }
+    let readable =
+        std::fs::metadata(file).is_ok_and(|m| m.is_file() && m.len() <= REQUIREMENTS_MAX_BYTES);
+    let text = if readable {
+        std::fs::read_to_string(file).ok()
+    } else {
+        None
+    };
+    let Some(text) = text else {
+        return true;
+    };
+    let folder = file.parent().unwrap_or(Path::new("."));
+    text.lines().any(|line| {
+        let line = line.split(" #").next().unwrap_or("").trim();
+        if line.starts_with('#') {
+            return false;
+        }
+        let lower = line.to_lowercase();
+        let words = cased_words(line);
+        let first = words.first().map(|w| w.to_lowercase()).unwrap_or_default();
+        INSTALL_CUSTOM_SOURCES.iter().any(|r| lower.contains(r))
+            || PIP_SOURCE_FLAGS.contains(&first.as_str())
+            || LOCAL_INSTALL_FLAGS.contains(&first.as_str())
+            || local_place(&first)
+            || (PIP_REQUIREMENT_FLAGS.contains(&first.as_str())
+                && words
+                    .get(1)
+                    .is_none_or(|next| requirements_unofficial(&folder.join(next), depth + 1)))
+    })
 }
 
 /// How risky a shell command looks, for a session working in `workspace`:
@@ -148,7 +246,7 @@ fn shell_risk(command: &str, workspace: &Path) -> Risk {
         || system_change(command, workspace)
         || (stops && has(SHELL_BY_NAME))
         || (deletes && has(SHELL_RECURSIVE) && reaches_outside(command, &words, workspace))
-        || custom_source_install(command)
+        || custom_source_install(command, workspace)
     {
         Risk::High
     } else if deletes || stops || SHELL_CAREFUL.iter().any(|r| lower.contains(r)) {
@@ -179,7 +277,7 @@ fn shell_summary(args: &Value, workspace: &Path) -> String {
     }
     let note = if shell_deletes(command) {
         SHELL_DELETES_NOTE
-    } else if custom_source_install(command) {
+    } else if custom_source_install(command, workspace) {
         SHELL_CUSTOM_SOURCE_NOTE
     } else if shell_risk(command, workspace) == Risk::High {
         SHELL_RISKY_NOTE
@@ -795,8 +893,11 @@ mod tests {
         let ws = ws();
         for command in [
             "pip install requests pyserial",
-            "pip3 install -r requirements.txt",
+            "pip install --target ./lib requests",
             "npm install left-pad",
+            "npm install -E left-pad",
+            "npm i @types/node",
+            "npm install left-pad && cd src/app",
             "cargo install ripgrep",
             "winget install Git.Git --source winget",
             "winget install 9NBLGGH4NNS1 -s msstore",
@@ -830,6 +931,14 @@ mod tests {
             "winget install pkg --source mysource",
             "choco install pkg -s https://example.com/feed",
             "Install-Module pkg -Repository MyFeed",
+            "npm i me/pkg",
+            "yarn add me/pkg#main",
+            "pip install .",
+            "pip install -e .",
+            "python -m pip install ..\\tool",
+            "npm install ./folder",
+            "cargo install --path .",
+            "pip install -r requirements-that-are-not-there.txt",
         ] {
             assert_eq!(shell_risk(command, &ws), Risk::High, "{command}");
             assert!(
@@ -838,6 +947,42 @@ mod tests {
                 "{command}"
             );
         }
+    }
+
+    #[test]
+    fn a_requirements_file_is_read_for_where_it_installs_from() {
+        let ws = std::env::temp_dir().join(format!("thrall-requirements-{}", std::process::id()));
+        std::fs::create_dir_all(&ws).unwrap();
+        let files = [
+            (
+                "plain.txt",
+                "# tools\nrequests>=2.0  # http\npyserial==3.5\n\n-r more.txt\n",
+            ),
+            ("more.txt", "mido\n"),
+            (
+                "index.txt",
+                "--index-url https://example.com/simple\nrequests\n",
+            ),
+            (
+                "git.txt",
+                "requests\npkg @ git+https://example.com/me/pkg\n",
+            ),
+            ("folder.txt", "-e .\n"),
+            ("nested.txt", "-r git.txt\n"),
+        ];
+        for (name, text) in files {
+            std::fs::write(ws.join(name), text).unwrap();
+        }
+        let risk = |file: &str| shell_risk(&format!("pip install -r {file}"), &ws);
+        assert_eq!(risk("plain.txt"), Risk::Medium);
+        assert_eq!(
+            shell_risk("pip install -c plain.txt requests", &ws),
+            Risk::Medium
+        );
+        for file in ["index.txt", "git.txt", "folder.txt", "nested.txt"] {
+            assert_eq!(risk(file), Risk::High, "{file}");
+        }
+        std::fs::remove_dir_all(&ws).unwrap();
     }
 
     #[test]

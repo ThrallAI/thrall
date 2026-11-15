@@ -75,6 +75,12 @@ class ProtocolTest {
             """{"v":1,"id":"g","type":"folder.read","session":"s_1","path":"out/a.md","offset":0}""",
             Protocol.frame("g", Request.FolderRead("s_1", "out/a.md")),
         )
+        assertEquals(
+            """{"v":1,"id":"h","type":"step.file.read","session":"s_1","step":"p_3","index":0,"offset":0}""",
+            Protocol.frame("h", Request.StepFileRead("s_1", "p_3", 0)),
+        )
+        val wrote = Protocol.parse("""{"v":1,"session":"s_1","seq":47,"at":0,"type":"step.completed","step":"p_3","status":"ok","summary":"Saved","saved":[{"path":"D:\\out\\a.pdf","name":"a.pdf","size":10}]}""") as Incoming.EventFrame
+        assertEquals("a.pdf", (wrote.event as Event.StepCompleted).saved.single().name)
         val listed = Protocol.parse("""{"v":1,"re":"f","type":"folder.listed","session":"s_1","path":"","items":[{"name":"out","folder":true,"size":0,"modified":5},{"name":"a.md","size":8,"modified":4}]}""") as Incoming.ReplyFrame
         val items = (listed.reply as Reply.FolderListed).items
         assertEquals(listOf(true, false), items.map { it.folder })

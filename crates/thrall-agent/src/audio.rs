@@ -15,7 +15,8 @@ use thrall_gates::{Effect, Mode};
 use thrall_llm::{AudioPart, ChatMessage, ChatRequest, ChatRole, SpeechRequest, StreamEvent};
 use thrall_protocol::{Event, StepStatus, Usage};
 use thrall_store::UsageRecord;
-use thrall_tools::paths::{display, inside, resolve};
+use thrall_tools::constants::DOWNLOAD_SYSTEM_FOLDER;
+use thrall_tools::paths::{display, resolve};
 use thrall_tools::tools::{TRANSCRIBE, VIDEO_TRANSCRIPT};
 use thrall_tools::{Cancel, ToolOutput};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
@@ -27,7 +28,7 @@ use crate::constants::{
 };
 use crate::error::AgentError;
 use crate::state::AppState;
-use crate::steps::gate_call;
+use crate::steps::{gate_call, save_effect, save_in_system};
 use crate::turn::Emitter;
 
 /// The format name models take for a recording, from its extension.
@@ -302,6 +303,7 @@ pub(crate) async fn transcribe_attachment(
             summary,
             diff: None,
             files: Vec::new(),
+            saved: Vec::new(),
         })
         .await?;
     Ok(out)
@@ -342,33 +344,39 @@ pub(crate) async fn transcribe_tool(
             format!("{words} words"),
         ));
     }
+    // Next to the recording, wherever it is, asked like a file change.
     let saved = path.with_extension("transcript.txt");
-    let note = if inside(workspace, &saved) {
-        let effect = Effect::Edit {
-            path: display(workspace, &saved),
-            diff: None,
-        };
-        match gate_call(emitter, state, step_id, TRANSCRIBE, &effect, mode, cancel).await? {
-            Ok(()) => match std::fs::write(&saved, &text) {
-                Ok(()) => format!(
-                    "the whole transcript is saved as {}",
-                    display(workspace, &saved)
-                ),
-                Err(e) => format!("the whole transcript couldn't be saved: {e}"),
-            },
-            Err((why, _, _)) => format!("the whole transcript wasn't saved: {why}"),
+    let mut wrote = false;
+    let note = match save_effect(state, workspace, &saved) {
+        Ok(effect) => {
+            match gate_call(emitter, state, step_id, TRANSCRIBE, &effect, mode, cancel).await? {
+                Ok(()) => match std::fs::write(&saved, &text) {
+                    Ok(()) => {
+                        wrote = true;
+                        format!(
+                            "the whole transcript is saved as {}",
+                            display(workspace, &saved)
+                        )
+                    }
+                    Err(e) => format!("the whole transcript couldn't be saved: {e}"),
+                },
+                Err((why, _, _)) => format!("the whole transcript wasn't saved: {why}"),
+            }
         }
-    } else {
-        "the whole transcript wasn't saved: the recording is outside the working folder".to_owned()
+        Err(why) => format!("the whole transcript wasn't saved: {why}"),
     };
     let head: String = text.chars().take(TRANSCRIPT_SHOWN_MAX_CHARS).collect();
-    Ok(ToolOutput::ok(
+    let mut output = ToolOutput::ok(
         format!(
             "Transcript of {shown}: the first {TRANSCRIPT_SHOWN_MAX_CHARS} of {total} characters \
              ({note}):\n{head}"
         ),
         format!("{words} words"),
-    ))
+    );
+    if wrote {
+        output.saved.push(saved);
+    }
+    Ok(output)
 }
 
 #[derive(Deserialize)]
@@ -382,7 +390,8 @@ struct VideoTranscriptArgs {
 
 /// A transcript saved in the working folder, and as much of it as fits for the model.
 fn transcript_output(workspace: &Path, saved: &Path, text: &str, from: &str) -> ToolOutput {
-    let note = match std::fs::write(saved, text) {
+    let wrote = std::fs::write(saved, text);
+    let note = match &wrote {
         Ok(()) => format!("saved as {}", display(workspace, saved)),
         Err(e) => format!("not saved ({e})"),
     };
@@ -397,10 +406,14 @@ fn transcript_output(workspace: &Path, saved: &Path, text: &str, from: &str) -> 
     } else {
         String::new()
     };
-    ToolOutput::ok(
+    let mut output = ToolOutput::ok(
         format!("Transcript from {from}, {note}.{cut}\n\n{head}"),
         format!("From {from} · {words} words · {note}"),
-    )
+    );
+    if wrote.is_ok() {
+        output.saved.push(saved.to_path_buf());
+    }
+    output
 }
 
 /// The `video_transcript` tool: the video's own captions when it has them; otherwise its sound,
@@ -444,10 +457,10 @@ pub(crate) async fn video_transcript_tool(
         workspace,
         a.folder.as_deref().unwrap_or(VIDEO_FOLDER_DEFAULT),
     );
-    if !inside(workspace, &folder) {
-        return Ok(Ok(ToolOutput::error(
-            "transcripts go inside the working folder",
-        )));
+    match save_in_system(state, workspace, &folder) {
+        Ok(false) => {}
+        Ok(true) => return Ok(Ok(ToolOutput::error(DOWNLOAD_SYSTEM_FOLDER))),
+        Err(why) => return Ok(Ok(ToolOutput::error(why))),
     }
     let show = |text: String| Event::StepOutput {
         step: step_id.to_owned(),
@@ -552,19 +565,15 @@ pub(crate) async fn speak_tool(
             {
                 path.set_extension("wav");
             }
-            if !inside(workspace, &path) {
-                return Ok(Ok(ToolOutput::error(format!(
-                    "{name} is outside this session's folder"
-                ))));
-            }
             Some(path)
         }
         None => None,
     };
     if let Some(copy) = &save_to {
-        let effect = Effect::Edit {
-            path: display(workspace, copy),
-            diff: None,
+        // Any folder, asked like a file change; the system's folders ask every time.
+        let effect = match save_effect(state, workspace, copy) {
+            Ok(e) => e,
+            Err(why) => return Ok(Ok(ToolOutput::error(why))),
         };
         if let Err(no) = gate_call(emitter, state, step_id, "speak", &effect, mode, cancel).await? {
             return Ok(Err(no));
@@ -646,5 +655,6 @@ pub(crate) async fn speak_tool(
     }
     let mut output = ToolOutput::ok(content, format!("{seconds:.0} s · {voice} · {cost}"));
     output.files = vec![crate::extras::file_ref(&path)];
+    output.saved.extend(save_to);
     Ok(Ok(output))
 }

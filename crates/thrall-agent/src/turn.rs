@@ -458,6 +458,7 @@ impl<'a> Emitter<'a> {
             summary,
             diff: None,
             files: Vec::new(),
+            saved: Vec::new(),
         })
         .await?;
         Ok(result.ok_or_else(|| errors.join("; ")))

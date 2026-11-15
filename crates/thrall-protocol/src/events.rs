@@ -145,6 +145,11 @@ pub enum Event {
         /// Files the step made (pictures), fetched with `GET /v1/files/{file}`.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         files: Vec<FileRef>,
+        /// Files the step wrote on the computer (a saved document, a picture's copy, a download):
+        /// the desktop app opens them with `step.file.open`, other clients fetch them with
+        /// `step.file.read`, both by their place in this list.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        saved: Vec<SavedFile>,
     },
     /// The session's task list changed (the whole list each time).
     #[serde(rename = "tasks.updated")]
@@ -294,6 +299,16 @@ pub enum Event {
     /// Sent only to the owner's desktop app, with an empty `session`.
     #[serde(rename = "update.requested")]
     UpdateRequested {},
+    /// Open a file a step wrote, or show it in its folder (`step.file.open`): the desktop app does
+    /// it. Sent only to that person's desktop app on this computer, with an empty `session`.
+    #[serde(rename = "file.open")]
+    FileOpen {
+        /// The file's full path.
+        path: String,
+        /// Show it in its folder instead of opening it.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        reveal: bool,
+    },
     /// The PCs asking to join changed (one asked, or its request ended): ask `pc.requests` for
     /// the list. Sent only to the owner's clients on this computer, with an empty `session`.
     #[serde(rename = "pc.asked")]
@@ -354,6 +369,7 @@ impl Event {
             Self::MemorySaved { .. } => "memory.saved",
             Self::Notice { .. } => "notice",
             Self::UpdateRequested {} => "update.requested",
+            Self::FileOpen { .. } => "file.open",
             Self::PcAsked {} => "pc.asked",
             Self::RunnerCall { .. } => "runner.call",
             Self::Error { .. } => "error",
@@ -394,6 +410,17 @@ pub struct FileRef {
     /// `image` · `document` · `text` · `other`, so clients know how to show it.
     pub kind: String,
     /// Size in bytes.
+    pub size: u64,
+}
+
+/// A file a step wrote on the computer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SavedFile {
+    /// Where it is, as a full path.
+    pub path: String,
+    /// Its name.
+    pub name: String,
+    /// Size in bytes, when it was written.
     pub size: u64,
 }
 

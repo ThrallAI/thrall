@@ -647,6 +647,13 @@
                 "$ref": "#/$defs/FileRef"
               }
             },
+            "saved": {
+              "description": "Files the step wrote on the computer (a saved document, a picture's copy, a download):\nthe desktop app opens them with `step.file.open`, other clients fetch them with\n`step.file.read`, both by their place in this list.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/SavedFile"
+              }
+            },
             "status": {
               "description": "How it went.",
               "$ref": "#/$defs/StepStatus"
@@ -1086,6 +1093,28 @@
           },
           "required": [
             "type"
+          ]
+        },
+        {
+          "description": "Open a file a step wrote, or show it in its folder (`step.file.open`): the desktop app does\nit. Sent only to that person's desktop app on this computer, with an empty `session`.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "description": "The file's full path.",
+              "type": "string"
+            },
+            "reveal": {
+              "description": "Show it in its folder instead of opening it.",
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "const": "file.open"
+            }
+          },
+          "required": [
+            "type",
+            "path"
           ]
         },
         {
@@ -2841,7 +2870,7 @@
           ]
         },
         {
-          "description": "Answer to `folder.read`: one piece of a file in a session's folder.",
+          "description": "Answer to `folder.read` and `step.file.read`: one piece of a file in a session's folder,\nor of a file a step wrote.",
           "type": "object",
           "properties": {
             "data": {
@@ -2855,7 +2884,7 @@
               "minimum": 0
             },
             "path": {
-              "description": "The file, relative to the session's folder.",
+              "description": "The file, relative to the session's folder (for `step.file.read`, its name).",
               "type": "string"
             },
             "session": {
@@ -4674,6 +4703,78 @@
           ]
         },
         {
+          "description": "Open a file a step wrote (`step.completed`'s `saved`), or show it in its folder, in the\ndesktop app on the computer Thrall runs on. Answered by `ack`.",
+          "type": "object",
+          "properties": {
+            "index": {
+              "description": "Its place in the step's `saved` list.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "reveal": {
+              "description": "Show it in its folder instead of opening it.",
+              "type": "boolean",
+              "default": false
+            },
+            "session": {
+              "description": "The session.",
+              "type": "string"
+            },
+            "step": {
+              "description": "The step that wrote it.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "step.file.open"
+            }
+          },
+          "required": [
+            "type",
+            "session",
+            "step",
+            "index"
+          ]
+        },
+        {
+          "description": "Read a file a step wrote (`step.completed`'s `saved`), a piece at a time. Answered by\n`folder.part`.",
+          "type": "object",
+          "properties": {
+            "index": {
+              "description": "Its place in the step's `saved` list.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "offset": {
+              "description": "Where to start, in bytes.",
+              "type": "integer",
+              "format": "uint64",
+              "default": 0,
+              "minimum": 0
+            },
+            "session": {
+              "description": "The session.",
+              "type": "string"
+            },
+            "step": {
+              "description": "The step that wrote it.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "step.file.read"
+            }
+          },
+          "required": [
+            "type",
+            "session",
+            "step",
+            "index"
+          ]
+        },
+        {
           "description": "Read a file attached to a message, a piece at a time. Answered by `file.part`.",
           "type": "object",
           "properties": {
@@ -4835,6 +4936,31 @@
           "type": "string",
           "const": "assistant"
         }
+      ]
+    },
+    "SavedFile": {
+      "description": "A file a step wrote on the computer.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Its name.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Where it is, as a full path.",
+          "type": "string"
+        },
+        "size": {
+          "description": "Size in bytes, when it was written.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "path",
+        "name",
+        "size"
       ]
     },
     "ServerFrame": {

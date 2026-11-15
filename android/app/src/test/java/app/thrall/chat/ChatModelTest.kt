@@ -121,6 +121,16 @@ class ChatModelTest {
     }
 
     @Test
+    fun filesAStepWroteAnywhereAreKept() {
+        val m = ChatModel()
+        m.apply(Event.StepStarted("t1", "p1", "download_video", "Downloading a video"), 1)
+        val saved = app.thrall.protocol.SavedFile("C:\\Users\\me\\Videos\\clip.mp4", "clip.mp4", 5000)
+        m.apply(Event.StepCompleted("p1", "ok", "Saved clip.mp4", saved = listOf(saved)), 2)
+        val step = m.rows.single() as ChatItem.Step
+        assertEquals(listOf(saved), step.saved)
+    }
+
+    @Test
     fun onlyRepliesFinishedLiveAreNew() {
         val m = ChatModel()
         // History, replayed: no deltas, so nothing to read aloud.
