@@ -249,6 +249,7 @@ pub(crate) async fn make_image(
         {
             continue;
         }
+        emitter.first_showing(&bytes);
         if n == 0
             && let Some(copy) = &save_to
         {
@@ -379,7 +380,11 @@ pub(crate) async fn view_image(
         format!("{shown}, as seen by {reader}:\n{text}"),
         format!("Read by {reader}"),
     );
-    // Show the picture on the step: a copy where clients can fetch it.
+    // Show the picture on the step: a copy where clients can fetch it. Not when this turn already
+    // showed it (checking a picture make_image just made): the person would see it twice.
+    if !emitter.first_showing(&bytes) {
+        return Ok(output);
+    }
     if let Some(uploads) = state.my_dir().map(|d| d.join(UPLOADS_DIR)) {
         let name = path.file_name().map_or_else(
             || "picture.png".to_owned(),

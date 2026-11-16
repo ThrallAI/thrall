@@ -103,6 +103,9 @@ pub(crate) struct Emitter<'a> {
     /// Held while a permission card is out: clients show one card at a time, so helpers working
     /// side by side ask one after another.
     pub(crate) asking: tokio::sync::Mutex<()>,
+    /// Pictures this turn already showed on a step (by their bytes' hash), so looking at one again
+    /// doesn't show it twice.
+    shown_pictures: std::sync::Mutex<std::collections::HashSet<u64>>,
 }
 
 impl<'a> Emitter<'a> {
@@ -123,7 +126,18 @@ impl<'a> Emitter<'a> {
             plan_rejected: std::sync::atomic::AtomicBool::new(false),
             side_usage: std::sync::Mutex::new(Usage::default()),
             asking: tokio::sync::Mutex::new(()),
+            shown_pictures: std::sync::Mutex::new(std::collections::HashSet::new()),
         }
+    }
+
+    /// Note a picture shown on a step; true the first time this turn shows it.
+    pub(crate) fn first_showing(&self, picture: &[u8]) -> bool {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        picture.hash(&mut hasher);
+        self.shown_pictures
+            .lock()
+            .map_or(true, |mut shown| shown.insert(hasher.finish()))
     }
 
     /// Record usage that isn't one of the turn's own model calls, and count it in the turn's total.

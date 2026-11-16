@@ -87,7 +87,6 @@ function saveFolder(folder: string): void {
   }
 }
 
-const SESSION_COMMANDS = new Set(["cost", "title", "tasks", "status", "compact"]);
 const NEAR_BOTTOM_PX = 80;
 const CARD_MARK_PX = 160;
 const CONNECTING_MARK_PX = 96;
@@ -587,10 +586,16 @@ export function App() {
         note(terminal);
         return;
       }
-      const session = currentId.current;
-      if (SESSION_COMMANDS.has(name) && !session) {
-        note("Send a message first; that starts the session.");
-        return;
+      let session = currentId.current;
+      // Naming a new chat starts it now, so the name sticks (as Full auto does). Every other
+      // command answers in a new chat without making a session for it.
+      if (!session && name === "title" && args.trim()) {
+        try {
+          session = await ensureSession();
+        } catch (err) {
+          fail(err);
+          return;
+        }
       }
       if (name === "mode" && !session) {
         const wanted = Object.keys(MODE_LABELS).find((m) => m === args || m.startsWith(args));
@@ -610,7 +615,7 @@ export function App() {
         fail(err);
       }
     },
-    [commands, fail, newSession, note, setMode],
+    [commands, ensureSession, fail, newSession, note, setMode],
   );
 
   const stop = useCallback(() => {

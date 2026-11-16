@@ -5,7 +5,10 @@
 use thrall_core::ids::now_ms;
 use thrall_gates::Mode;
 
-use crate::constants::{COST_BALANCE_LINE, COST_BALANCE_UNAVAILABLE, MEMORY_COMMAND_LIMIT};
+use crate::constants::{
+    COST_BALANCE_LINE, COST_BALANCE_UNAVAILABLE, MEMORY_COMMAND_LIMIT, NO_SESSION_COMPACT,
+    NO_SESSION_COST, NO_SESSION_NEEDED, NO_SESSION_STATUS, NO_SESSION_TASKS, NO_SESSION_TITLE,
+};
 use crate::error::AgentError;
 use crate::session;
 use crate::state::AppState;
@@ -111,6 +114,16 @@ pub async fn run(
     args: &str,
 ) -> Result<String, AgentError> {
     let args = args.trim();
+    // A new chat has no session until its first message: answer what can be answered without one.
+    if session_id.is_empty() {
+        match name {
+            "tasks" => return Ok(NO_SESSION_TASKS.to_owned()),
+            "compact" => return Ok(NO_SESSION_COMPACT.to_owned()),
+            "title" if args.is_empty() => return Ok(NO_SESSION_TITLE.to_owned()),
+            "title" | "folder" => return Ok(NO_SESSION_NEEDED.to_owned()),
+            _ => {}
+        }
+    }
     match name {
         "help" => Ok(help()),
         "cost" => cost(state, session_id).await,
@@ -272,16 +285,23 @@ fn money(usd: f64) -> String {
 }
 
 async fn cost(state: &AppState, session_id: &str) -> Result<String, AgentError> {
-    let here = state
-        .store
-        .usage_totals(&state.user_id, Some(session_id))
-        .await?;
+    let here = if session_id.is_empty() {
+        NO_SESSION_COST.to_owned()
+    } else {
+        let here = state
+            .store
+            .usage_totals(&state.user_id, Some(session_id))
+            .await?;
+        format!(
+            "**This session:** {} · {} in · {} out",
+            money(here.cost_usd),
+            here.input_tokens,
+            here.output_tokens
+        )
+    };
     let all = state.store.usage_totals(&state.user_id, None).await?;
     let mut out = format!(
-        "**This session:** {} · {} in · {} out\n\n**All time:** {} · {} in · {} out",
-        money(here.cost_usd),
-        here.input_tokens,
-        here.output_tokens,
+        "{here}\n\n**All time:** {} · {} in · {} out",
         money(all.cost_usd),
         all.input_tokens,
         all.output_tokens
@@ -449,6 +469,12 @@ async fn memory(state: &AppState, args: &str) -> Result<String, AgentError> {
 }
 
 async fn status(state: &AppState, session_id: &str) -> Result<String, AgentError> {
+    if session_id.is_empty() {
+        return Ok(format!(
+            "- **Model:** `{}`\n- {NO_SESSION_STATUS}",
+            state.model()
+        ));
+    }
     let s = session::get(state, session_id).await?;
     let usage = state
         .store

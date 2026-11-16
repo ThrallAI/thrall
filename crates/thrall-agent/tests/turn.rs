@@ -569,6 +569,43 @@ async fn commands_answer_in_markdown() {
 }
 
 #[tokio::test]
+async fn commands_in_a_new_chat_answer_without_a_session() {
+    let (state, provider) = setup(vec![reply(&["x"])]).await;
+    *provider.credit.lock().unwrap() = Some(12.345);
+    let run = |name: &'static str, args: &'static str| commands::run(&state, "", name, args);
+    let cost = run("cost", "").await.unwrap();
+    assert!(cost.contains("This session:** nothing yet"), "{cost}");
+    assert!(cost.contains("All time:"), "{cost}");
+    assert!(cost.contains("$12.35 left"), "{cost}");
+    let status = run("status", "").await.unwrap();
+    assert!(status.contains("not started yet"), "{status}");
+    assert!(status.contains(&state.model()), "{status}");
+    assert!(run("tasks", "").await.unwrap().contains("No tasks yet"));
+    assert!(
+        run("compact", "")
+            .await
+            .unwrap()
+            .contains("Nothing to summarise yet")
+    );
+    assert!(
+        run("title", "")
+            .await
+            .unwrap()
+            .contains("/title <new title>")
+    );
+    for (name, args) in [("title", "New name"), ("folder", ""), ("folder", "C:\\x")] {
+        assert!(
+            run(name, args)
+                .await
+                .unwrap()
+                .contains("Send a message first"),
+            "{name} {args}"
+        );
+    }
+    assert!(run("help", "").await.unwrap().contains("/cost"));
+}
+
+#[tokio::test]
 async fn cost_shows_the_balance_only_for_models_that_spend_it() {
     let (state, provider) = setup(vec![reply(&["x"])]).await;
     let s = session::create(&state, None).await.unwrap();
@@ -2472,6 +2509,43 @@ async fn view_image_describes_a_picture_file_and_shows_it() {
         Event::StepCompleted { status: StepStatus::Ok, files, summary, .. }
             if files.len() == 1 && summary.starts_with("Read by")
     )));
+}
+
+#[tokio::test]
+async fn a_picture_made_then_checked_in_the_same_turn_is_shown_once() {
+    let (mut state, provider) = setup(vec![
+        tool_call(
+            "c1",
+            "make_image",
+            r#"{"prompt":"a cat in a top hat","save_as":"cat.png"}"#,
+        ),
+        tool_call("v1", "view_image", r#"{"path":"cat.png"}"#),
+        reply(&["Here's your cat."]),
+        reply(&["Cat picture"]),
+    ])
+    .await;
+    state.config.provider.vision_model = PICTURE_MODEL.into();
+    state.config.provider.vision_backup_model = String::new();
+    let dir = workspace("made-then-checked");
+    state.data_dir = Some(std::path::PathBuf::from(&dir).join("data"));
+    let s = session::create(&state, Some(dir.clone())).await.unwrap();
+    let (_, frames) = run_answering(&state, &s.id, "draw me a cat", PermissionChoice::Yes).await;
+    assert_eq!(provider.made.lock().unwrap().len(), 1);
+    // The check still ran: the picture reader looked at it.
+    let seen = provider.seen.lock().unwrap().clone();
+    assert!(seen.iter().any(|r| r.model == PICTURE_MODEL));
+    // But only the step that made it shows it.
+    let showing: Vec<String> = frames
+        .iter()
+        .filter_map(|f| match &f.event {
+            Event::StepCompleted { files, summary, .. } if !files.is_empty() => {
+                Some(summary.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(showing.len(), 1, "{showing:?}");
+    assert!(showing[0].starts_with("Made with"), "{showing:?}");
 }
 
 #[tokio::test]
