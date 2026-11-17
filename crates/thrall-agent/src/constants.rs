@@ -273,6 +273,20 @@ pub const LOW_BALANCE_NOTICE: &str = "Your {provider} credit is running low: {le
 /// `/cost`'s last line when the provider didn't say how much credit is left ({provider}).
 pub const COST_BALANCE_UNAVAILABLE: &str = "**{provider} balance:** unavailable right now";
 
+/// `/cost`'s first line in a new chat, before its first message makes the session.
+pub const NO_SESSION_COST: &str = "**This session:** nothing yet";
+/// `/status`'s session line in a new chat.
+pub const NO_SESSION_STATUS: &str = "**Session:** not started yet (your first message starts it)";
+/// `/tasks` in a new chat.
+pub const NO_SESSION_TASKS: &str = "No tasks yet: this chat hasn't started.";
+/// `/compact` in a new chat.
+pub const NO_SESSION_COMPACT: &str = "Nothing to summarise yet: this chat hasn't started.";
+/// `/title` with no new title in a new chat.
+pub const NO_SESSION_TITLE: &str = "This chat hasn't started yet. Name it with `/title <new \
+     title>`, or Thrall names it from your first message.";
+/// A command that changes the session (`/title <new title>`, `/folder <path>`) with none to change.
+pub const NO_SESSION_NEEDED: &str = "Send a message first; that starts the session.";
+
 /// Instructions for the call that names a session. The first message is quoted after this, so the
 /// model names it instead of answering it.
 pub const TITLE_PROMPT: &str = "You name conversations. Do not answer or carry out the message \

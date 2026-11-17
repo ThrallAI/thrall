@@ -576,12 +576,8 @@ async fn run_command(client: &Client, app: &mut App, name: &str, args: &str) -> 
         }
         return Ok(());
     }
-    let needs_session = matches!(name, "cost" | "title" | "tasks" | "status" | "compact");
+    // Before the first message there's no session; the engine answers what it can without one.
     let session = app.session.as_ref().map(|s| s.session.clone());
-    if needs_session && session.is_none() {
-        app.info("Send a message first; that starts the session.");
-        return Ok(());
-    }
     // Before the first message, /mode only changes what the new session will start with.
     if name == "mode" && session.is_none() {
         match Mode::parse(args) {
