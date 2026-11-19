@@ -433,6 +433,36 @@ async fn a_long_turn_is_told_to_wrap_up_then_stopped_at_the_limit() {
     assert_eq!(note(&seen[9]), 1);
 }
 
+/// Runs twelve steps and a reply, returning the tool results kept, whether the turn was stopped
+/// and whether the wrap-up note was given.
+async fn twelve_steps(state: &thrall_agent::state::AppState, name: &str) -> (usize, bool, bool) {
+    let s = session::create(state, Some(workspace(name))).await.unwrap();
+    let (_, frames) = run(state, &s.id, "keep looking").await;
+    let stopped = frames.iter().any(
+        |f| matches!(&f.event, Event::Notice { text, .. } if text.starts_with("Stopped after")),
+    );
+    let messages = state.store.context_messages("u_test", &s.id).await.unwrap();
+    let nudged = messages
+        .iter()
+        .any(|m| m.content.contains("of this turn's"));
+    let calls = messages.iter().filter(|m| m.role == "tool").count();
+    (calls, stopped, nudged)
+}
+
+#[tokio::test]
+async fn no_step_limit_at_0() {
+    let mut script: Vec<_> = (0..12)
+        .map(|i| tool_call(&format!("c{i}"), "list_dir", "{}"))
+        .collect();
+    script.push(reply(&["Done."]));
+    script.push(reply(&["Steps test"]));
+    // 0: no limit, so all twelve steps run, with no stop and no wrap-up note (10 would stop
+    // at 10, as the test above shows).
+    let (mut state, _) = setup(script).await;
+    state.config.agent.max_steps = 0;
+    assert_eq!(twelve_steps(&state, "nolimit").await, (12, false, false));
+}
+
 #[tokio::test]
 async fn shell_asks_and_a_no_stops_it() {
     let marker = std::env::temp_dir().join(format!("thrall-denied-{}", std::process::id()));

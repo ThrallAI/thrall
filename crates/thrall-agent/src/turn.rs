@@ -41,8 +41,9 @@ use crate::constants::{
     HOME_NOTE, LOW_BALANCE_NOTICE, LOW_CREDIT_NOTICE, LOW_CREDIT_USD, MID_TASK_NOTE,
     PICTURE_FAILED_MARK, PICTURE_MAX_BYTES, PICTURES_PER_REQUEST, PLAN_QUESTION_MAX_CHARS,
     SCANNED_PDF_MAX_BYTES, SESSION_TITLE_MAX_CHARS, SHELL_TOOL, SKIPPED_INTERRUPTED,
-    SPLIT_EDIT_REMINDER, SPLIT_EDIT_WINDOW_STEPS, STEP_TAG, STEP_TAG_CHANGED, STEP_TAG_EVERY,
-    STEP_TAG_FIRST, STEPS_STOPPED_NOTICE, STEPS_WARNING_NUDGE, STEPS_WARNING_PERCENT,
+    SPLIT_EDIT_REMINDER, SPLIT_EDIT_WINDOW_STEPS, STEP_TAG, STEP_TAG_CHANGED,
+    STEP_TAG_CHANGED_NO_LIMIT, STEP_TAG_EVERY, STEP_TAG_FIRST, STEP_TAG_FIRST_NO_LIMIT,
+    STEP_TAG_NO_LIMIT, STEPS_STOPPED_NOTICE, STEPS_WARNING_NUDGE, STEPS_WARNING_PERCENT,
     SUMMARY_PREFIX, SUMMARY_PREFIX_OLD, SYSTEM_PROMPT, TITLE_MAX_TOKENS, TITLE_MAX_WORDS,
     TITLE_PROMPT, TITLE_SOURCE_MAX_CHARS, TRANSCRIBE_MAX_TOKENS, TRANSCRIBE_PROMPT,
     TRANSCRIPT_MAX_CHARS, UNTRACKED_START_REMINDER, VISION_MAX_TOKENS, VISION_MODEL_HINT,
@@ -635,9 +636,11 @@ fn annotate(
     mut content: String,
     call: &ToolCall,
     step: usize,
-    max_steps: usize,
+    max_steps: Option<usize>,
     notes: &mut ResultNotes,
 ) -> String {
+    // No limit is kept as the largest number, so a change to or from it is still noticed.
+    let limit = max_steps.unwrap_or(usize::MAX);
     let args = serde_json::from_str::<serde_json::Value>(&call.arguments).unwrap_or_default();
     let mut added: Vec<String> = Vec::new();
     if call.name == EDIT_TOOL
@@ -662,22 +665,23 @@ fn annotate(
     {
         added.push(UNTRACKED_START_REMINDER.to_owned());
     }
-    let changed = notes.limit != 0 && notes.limit != max_steps;
+    let changed = notes.limit != 0 && notes.limit != limit;
     if (step > notes.counted && (step == 1 || step.is_multiple_of(STEP_TAG_EVERY)))
         || (changed && step >= notes.counted)
     {
         notes.counted = step;
-        notes.limit = max_steps;
-        let tag = if changed {
-            STEP_TAG_CHANGED
-        } else if step == 1 {
-            STEP_TAG_FIRST
-        } else {
-            STEP_TAG
+        notes.limit = limit;
+        let tag = match (changed, step == 1, max_steps.is_some()) {
+            (true, _, true) => STEP_TAG_CHANGED,
+            (true, _, false) => STEP_TAG_CHANGED_NO_LIMIT,
+            (false, true, true) => STEP_TAG_FIRST,
+            (false, true, false) => STEP_TAG_FIRST_NO_LIMIT,
+            (false, false, true) => STEP_TAG,
+            (false, false, false) => STEP_TAG_NO_LIMIT,
         };
         added.push(
             tag.replace("{step}", &step.to_string())
-                .replace("{max}", &max_steps.to_string()),
+                .replace("{max}", &limit.to_string()),
         );
     }
     for note in added {
@@ -837,23 +841,29 @@ async fn run_turn(
         }
         mode = current_mode(state, session_id, mode).await?;
         // Read each step, so switching Full auto on or off mid-task changes the limit too.
+        // A setting of 0 means no limit.
         let max_steps = state.config.agent.max_steps(mode == Mode::FullAuto);
-        if calls >= max_steps {
+        if let Some(max) = max_steps
+            && calls >= max
+        {
             emitter
                 .emit(Event::Notice {
                     level: NoticeLevel::Warning,
-                    text: STEPS_STOPPED_NOTICE.replace("{max}", &max_steps.to_string()),
+                    text: STEPS_STOPPED_NOTICE.replace("{max}", &max.to_string()),
                 })
                 .await?;
             break;
         }
         // Near the limit, Thrall is told once to wrap up instead of being cut off mid-edit.
-        if !warned_steps && calls >= steps_warning_at(max_steps) {
+        if let Some(max) = max_steps
+            && !warned_steps
+            && calls >= steps_warning_at(max)
+        {
             warned_steps = true;
             let nudge = STEPS_WARNING_NUDGE
                 .replace("{used}", &calls.to_string())
-                .replace("{max}", &max_steps.to_string())
-                .replace("{left}", &(max_steps - calls).to_string());
+                .replace("{max}", &max.to_string())
+                .replace("{left}", &(max - calls).to_string());
             emitter
                 .save_message(
                     role::USER,
@@ -1910,35 +1920,48 @@ mod tests {
         let mut notes = ResultNotes::default();
         let n = &mut notes;
         // The first step says the limit; later steps show the count only every so often, once.
-        let first = annotate("text".into(), &call("read_file", "a.rs"), 1, 250, n);
+        let first = annotate("text".into(), &call("read_file", "a.rs"), 1, Some(250), n);
         assert_eq!(first, "text\n\n[this message has 250 steps; step 1 used]");
         assert_eq!(
-            annotate("t".into(), &call("read_file", "a.rs"), 1, 250, n),
+            annotate("t".into(), &call("read_file", "a.rs"), 1, Some(250), n),
             "t"
         );
         assert_eq!(
-            annotate("t".into(), &call("read_file", "a.rs"), 3, 250, n),
+            annotate("t".into(), &call("read_file", "a.rs"), 3, Some(250), n),
             "t"
         );
         let every = annotate(
             "t".into(),
             &call("read_file", "a.rs"),
             STEP_TAG_EVERY,
-            250,
+            Some(250),
             n,
         );
         assert_eq!(every, format!("t\n\n[step {STEP_TAG_EVERY} of 250]"));
         // The limit changing mid-turn (the mode changed) is said once, on the next result.
-        let changed = annotate("t".into(), &call("read_file", "a.rs"), 30, 100, n);
+        let changed = annotate("t".into(), &call("read_file", "a.rs"), 30, Some(100), n);
         assert_eq!(changed, "t\n\n[the step limit changed: step 30 of 100]");
         assert_eq!(
-            annotate("t".into(), &call("read_file", "a.rs"), 31, 100, n),
+            annotate("t".into(), &call("read_file", "a.rs"), 31, Some(100), n),
             "t"
         );
+        // Switching to no limit is said too, and the count then carries no "of".
+        let none = annotate("t".into(), &call("read_file", "a.rs"), 32, None, n);
+        assert_eq!(none, "t\n\n[the step limit changed: step 32, no limit now]");
+        let every = annotate("t".into(), &call("read_file", "a.rs"), 50, None, n);
+        assert_eq!(every, "t\n\n[step 50; no step limit]");
+        let first = annotate(
+            "t".into(),
+            &call("read_file", "a.rs"),
+            1,
+            None,
+            &mut ResultNotes::default(),
+        );
+        assert_eq!(first, "t\n\n[this message has no step limit; step 1 used]");
         let n = &mut ResultNotes::default();
 
         let edit = |text: &str, path: &str, step, n: &mut ResultNotes| {
-            annotate(text.into(), &call("edit_file", path), step, 250, n)
+            annotate(text.into(), &call("edit_file", path), step, Some(250), n)
         };
         assert!(!edit("Edited a.rs", "a.rs", 4, n).contains("already edited"));
         assert!(
@@ -1969,15 +1992,17 @@ mod tests {
             "ok".into(),
             &shell("Start-Process python -ArgumentList app.py", false),
             2,
-            250,
+            Some(250),
             n,
         );
         assert!(started.contains("Add a todo item to stop it"));
         assert!(
-            !annotate("ok".into(), &shell("python app.py", true), 3, 250, n).contains("todo item")
+            !annotate("ok".into(), &shell("python app.py", true), 3, Some(250), n)
+                .contains("todo item")
         );
         assert!(
-            !annotate("ok".into(), &shell("cargo test", false), 4, 250, n).contains("todo item")
+            !annotate("ok".into(), &shell("cargo test", false), 4, Some(250), n)
+                .contains("todo item")
         );
     }
 

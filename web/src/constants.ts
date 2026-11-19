@@ -211,6 +211,13 @@ export const MAX_HELPERS_AT_ONCE = 8;
 export const MIN_MAX_STEPS = 10;
 export const MAX_MAX_STEPS = 500;
 
+/** The step fields' hint: the range, and 0 for no limit (the engine's NO_STEP_LIMIT). */
+export const STEPS_HINT = `${MIN_MAX_STEPS} to ${MAX_MAX_STEPS}, or 0 for no limit`;
+
+/** The Steps group's note. */
+export const STEPS_NOTE =
+  'A step is one go of thinking, which can use several tools. When a task runs out of steps Thrall stops and you can say "carry on"; near the limit it\'s told to wrap up first. 0 means no limit: he keeps going until the job is done, and only your spending limits stop him.';
+
 /** Log detail levels, least to most. */
 export const LOG_LEVELS = ["error", "warn", "info", "debug", "trace"] as const;
 
