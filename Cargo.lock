@@ -7302,7 +7302,7 @@ checksum = "3bf63baf9f5039dadc247375c29eb13706706cfde997d0330d05aa63a77d8820"
 
 [[package]]
 name = "thrall"
-version = "0.2.5"
+version = "0.3.0"
 dependencies = [
  "anstream",
  "anyhow",
@@ -7328,7 +7328,7 @@ dependencies = [
 
 [[package]]
 name = "thrall-agent"
-version = "0.2.5"
+version = "0.3.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -7353,7 +7353,7 @@ dependencies = [
 
 [[package]]
 name = "thrall-bench"
-version = "0.2.5"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -7375,7 +7375,7 @@ dependencies = [
 
 [[package]]
 name = "thrall-core"
-version = "0.2.5"
+version = "0.3.0"
 dependencies = [
  "directories",
  "keyring",
@@ -7391,7 +7391,7 @@ dependencies = [
 
 [[package]]
 name = "thrall-desktop"
-version = "0.2.5"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -7416,7 +7416,7 @@ dependencies = [
 
 [[package]]
 name = "thrall-gates"
-version = "0.2.5"
+version = "0.3.0"
 dependencies = [
  "regex",
  "serde",
@@ -7425,7 +7425,7 @@ dependencies = [
 
 [[package]]
 name = "thrall-llm"
-version = "0.2.5"
+version = "0.3.0"
 dependencies = [
  "base64 0.23.1",
  "eventsource-stream",
@@ -7442,7 +7442,7 @@ dependencies = [
 
 [[package]]
 name = "thrall-mcp"
-version = "0.2.5"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -7457,7 +7457,7 @@ dependencies = [
 
 [[package]]
 name = "thrall-memory"
-version = "0.2.5"
+version = "0.3.0"
 dependencies = [
  "futures",
  "thrall-core",
@@ -7469,7 +7469,7 @@ dependencies = [
 
 [[package]]
 name = "thrall-protocol"
-version = "0.2.5"
+version = "0.3.0"
 dependencies = [
  "schemars 1.2.3",
  "serde",
@@ -7478,7 +7478,7 @@ dependencies = [
 
 [[package]]
 name = "thrall-server"
-version = "0.2.5"
+version = "0.3.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -7506,7 +7506,7 @@ dependencies = [
 
 [[package]]
 name = "thrall-store"
-version = "0.2.5"
+version = "0.3.0"
 dependencies = [
  "futures",
  "serde_json",
@@ -7517,7 +7517,7 @@ dependencies = [
 
 [[package]]
 name = "thrall-tools"
-version = "0.2.5"
+version = "0.3.0"
 dependencies = [
  "arboard",
  "base64 0.23.1",
@@ -7557,7 +7557,7 @@ dependencies = [
 
 [[package]]
 name = "thrall-tui"
-version = "0.2.5"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "futures",

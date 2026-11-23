@@ -7,6 +7,35 @@ number (0.2.0) and a fix-only release bumps the last (0.1.1).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-23
+
+The Beta. Long jobs can run with no step limit, pictures show once, slash commands work in a new
+chat, and the dependencies are past the latest security advisories. Installers are not signed
+yet, so Windows may show a SmartScreen warning. Phone app: no change (0.5.1).
+
+### Added
+
+- A step setting of 0 means no step limit: Thrall keeps going until the job is done, with no stop
+  and no wrap-up note, and only your spending limits stop it. Other values are still kept between
+  10 and 500. Settings → Steps says so; in the terminal, `/settings agent.max_steps 0` and
+  `agent.full_auto_max_steps`. The step counts Thrall sees say "no step limit" when there is none.
+
+### Fixed
+
+- A picture Thrall makes and then checks in the same message shows once, not twice.
+- `/cost`, `/status`, `/tasks`, `/compact` and `/title` answer in a new chat before its first
+  message, instead of "Send a message first". `/title <name>` in a new chat starts the chat so the
+  name sticks.
+
+### Security
+
+- Updated url (RUSTSEC-2026-0592), zip 9 (RUSTSEC-2026-0548) and cookie (RUSTSEC-2026-0594).
+- The zip 8 advisories RUSTSEC-2026-0545 to 0548 come only through the Office file libraries,
+  which have no newer release on zip 9 yet. They read files in memory and never extract, stream or
+  decrypt, so the one that can be reached is 0547: a deliberately broken .docx or .xlsx can make
+  Thrall run out of memory and close. It can't run code. chrono's "unmaintained" notice
+  (RUSTSEC-2026-0543) is not a vulnerability.
+
 ## [0.2.5] - 2026-11-15
 
 Files Thrall makes come to you as cards, risky actions ask in every mode, and long jobs get more
@@ -315,7 +344,8 @@ The first public preview.
 - First-run key setup in the desktop app, a welcome screen and a one-minute tour.
 - Installers built by CI for every release, with `SHA256SUMS.txt`.
 
-[Unreleased]: https://github.com/ThrallAI/thrall/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/ThrallAI/thrall/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/ThrallAI/thrall/compare/v0.2.5...v0.3.0
 [0.2.5]: https://github.com/ThrallAI/thrall/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/ThrallAI/thrall/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/ThrallAI/thrall/compare/v0.2.2...v0.2.3
