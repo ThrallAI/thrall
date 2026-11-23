@@ -458,9 +458,9 @@ pub struct AgentConfig {
     pub helpers_at_once: u32,
     /// What one helper may spend before it's stopped, in US cents (0: no limit).
     pub helper_cost_limit_cents: u32,
-    /// Most steps in one turn (`MIN_MAX_STEPS` to `MAX_MAX_STEPS`).
+    /// Most steps in one turn (`MIN_MAX_STEPS` to `MAX_MAX_STEPS`; 0: no limit).
     pub max_steps: u32,
-    /// Most steps in one turn in Full auto (`MIN_MAX_STEPS` to `MAX_MAX_STEPS`).
+    /// Most steps in one turn in Full auto (`MIN_MAX_STEPS` to `MAX_MAX_STEPS`; 0: no limit).
     pub full_auto_max_steps: u32,
 }
 
@@ -476,17 +476,21 @@ impl AgentConfig {
         (self.helper_cost_limit_cents > 0).then(|| f64::from(self.helper_cost_limit_cents) / 100.0)
     }
 
-    /// Most steps one turn may take, kept within `MIN_MAX_STEPS` and `MAX_MAX_STEPS`.
-    pub fn max_steps(&self, full_auto: bool) -> usize {
+    /// Most steps one turn may take, kept within `MIN_MAX_STEPS` and `MAX_MAX_STEPS`; `None` when
+    /// the setting is `NO_STEP_LIMIT` (0).
+    pub fn max_steps(&self, full_auto: bool) -> Option<usize> {
         let steps = if full_auto {
             self.full_auto_max_steps
         } else {
             self.max_steps
         };
-        steps.clamp(
+        if steps == crate::constants::NO_STEP_LIMIT {
+            return None;
+        }
+        Some(steps.clamp(
             crate::constants::MIN_MAX_STEPS,
             crate::constants::MAX_MAX_STEPS,
-        ) as usize
+        ) as usize)
     }
 }
 
@@ -946,11 +950,11 @@ mod tests {
     fn step_limits_are_set_and_kept_in_range() {
         let p = Path::new("config.toml");
         let agent = Config::default().agent;
-        assert_eq!(agent.max_steps(false), 100);
-        assert_eq!(agent.max_steps(true), 250);
+        assert_eq!(agent.max_steps(false), Some(100));
+        assert_eq!(agent.max_steps(true), Some(250));
         let (text, config) =
             with_setting("", "agent.max_steps", &serde_json::json!(150), p).unwrap();
-        assert_eq!(config.agent.max_steps(false), 150);
+        assert_eq!(config.agent.max_steps(false), Some(150));
         let (_, config) = with_setting(
             &text,
             "agent.full_auto_max_steps",
@@ -958,9 +962,13 @@ mod tests {
             p,
         )
         .unwrap();
-        assert_eq!(config.agent.max_steps(true), 500);
+        assert_eq!(config.agent.max_steps(true), Some(500));
+        let (_, config) = with_setting("", "agent.max_steps", &serde_json::json!(5), p).unwrap();
+        assert_eq!(config.agent.max_steps(false), Some(10));
+        // 0: no limit.
         let (_, config) = with_setting("", "agent.max_steps", &serde_json::json!(0), p).unwrap();
-        assert_eq!(config.agent.max_steps(false), 10);
+        assert_eq!(config.agent.max_steps(false), None);
+        assert_eq!(config.agent.max_steps(true), Some(250));
     }
 
     #[test]

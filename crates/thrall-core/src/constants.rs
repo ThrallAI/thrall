@@ -54,6 +54,10 @@ pub const MIN_MAX_STEPS: u32 = 10;
 /// Most steps a turn may be given, whatever the settings say. Stops runaway loops.
 pub const MAX_MAX_STEPS: u32 = 500;
 
+/// A step setting of this means no step limit at all (the person's choice; the spending limits
+/// are then the only stop for a looping model).
+pub const NO_STEP_LIMIT: u32 = 0;
+
 /// The engine's access token (local mode): clients read it to connect. Created at first start.
 pub const TOKEN_FILE: &str = "access-token";
 

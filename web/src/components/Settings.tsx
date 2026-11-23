@@ -9,8 +9,8 @@ import {
   HUMANISE_LEVELS,
   LOG_LEVELS,
   MAX_HELPERS_AT_ONCE,
-  MAX_MAX_STEPS,
-  MIN_MAX_STEPS,
+  STEPS_HINT,
+  STEPS_NOTE,
   QUESTION_MODE_LABELS,
   QUESTION_MODES,
   RATING_LABELS,
@@ -945,12 +945,12 @@ export function Settings({
           </Group>
           <Group
             title="Steps"
-            note="A step is one go of thinking, which can use several tools. When a task runs out of steps Thrall stops and you can say &quot;carry on&quot;; near the limit it's told to wrap up first."
+            note={STEPS_NOTE}
           >
-            <Row label="Most steps per message" hint={`${MIN_MAX_STEPS} to ${MAX_MAX_STEPS}`}>
+            <Row label="Most steps per message" hint={STEPS_HINT}>
               <Field k="agent.max_steps" v={agent.max_steps} label="Most steps per message" onSave={save} number />
             </Row>
-            <Row label="Most steps in Full auto" hint={`${MIN_MAX_STEPS} to ${MAX_MAX_STEPS}`}>
+            <Row label="Most steps in Full auto" hint={STEPS_HINT}>
               <Field k="agent.full_auto_max_steps" v={agent.full_auto_max_steps} label="Most steps in Full auto" onSave={save} number />
             </Row>
           </Group>

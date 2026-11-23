@@ -216,7 +216,12 @@ pub(crate) async fn run_helper(
             (
                 d.model.clone(),
                 usage_role::DOER,
-                state.config.agent.max_steps(mode == Mode::FullAuto),
+                // The doer works the chat's own turn, so it has the chat's limit (none: no end).
+                state
+                    .config
+                    .agent
+                    .max_steps(mode == Mode::FullAuto)
+                    .unwrap_or(usize::MAX),
             )
         }
         None => (

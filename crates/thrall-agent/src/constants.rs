@@ -39,6 +39,11 @@ pub const STEP_TAG_EVERY: usize = 25;
 /// isn't planning around the old one. `{step}` and `{max}` are filled in.
 pub const STEP_TAG_CHANGED: &str = "[the step limit changed: step {step} of {max}]";
 
+/// The step tags when the person set no step limit (0). `{step}` is filled in.
+pub const STEP_TAG_FIRST_NO_LIMIT: &str = "[this message has no step limit; step 1 used]";
+pub const STEP_TAG_NO_LIMIT: &str = "[step {step}; no step limit]";
+pub const STEP_TAG_CHANGED_NO_LIMIT: &str = "[the step limit changed: step {step}, no limit now]";
+
 /// The shell tool, whose results get the untracked-program reminder.
 pub const SHELL_TOOL: &str = "shell";
 
