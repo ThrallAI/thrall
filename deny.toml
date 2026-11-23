@@ -22,6 +22,23 @@ ignore = [
     { id = "RUSTSEC-2026-0368", reason = "zip 8 only via Office libraries reading in memory; no extract() to disk" },
     { id = "RUSTSEC-2026-0369", reason = "zip 8 only via Office libraries reading in memory; no extract() to disk" },
     { id = "RUSTSEC-2026-0429", reason = "zip 8 only via Office libraries reading in memory; no extract() to disk" },
+    # Four more zip 8 advisories, same two Office libraries (docx-rs 0.4.22 is the newest and still on
+    # zip ^8.6; umya-spreadsheet's only newer release is a 4.0 beta). Both open files with
+    # ZipArchive and never call extract(), ZipStreamReader or a decrypt/password reader (checked in
+    # their sources), so 0546 and 0548 are unreachable and 0545 (AES entries) is too: no password is
+    # ever given, so encrypted entries are refused. 0547 is the one that can be reached: a crafted
+    # .docx/.xlsx using the old Shrink/Reduce/Implode methods can make the reader reserve a large
+    # buffer, so opening such a file can run Thrall out of memory. That needs the person to open a
+    # hostile Office file and ends in a crash, not code running. Thrall's own zip 9 is on 9.0.5,
+    # past 0548. Revisit when both libraries move to zip 9.
+    { id = "RUSTSEC-2026-0545", reason = "zip 8 via Office libraries; never reads encrypted entries (no password given)" },
+    { id = "RUSTSEC-2026-0546", reason = "zip 8 via Office libraries; extract() never called" },
+    { id = "RUSTSEC-2026-0547", reason = "zip 8 via Office libraries; a hostile Office file can exhaust memory (crash only)" },
+    { id = "RUSTSEC-2026-0548", reason = "zip 8 via Office libraries; ZipStreamReader never used (zip 9 is on 9.0.5)" },
+    # chrono marked unmaintained (announcement, not a vulnerability; no replacement release). Used by
+    # croner, lopdf, oauth2, rmcp, schemars, umya-spreadsheet and Thrall's own crates for dates and
+    # times. Revisit if a fork is blessed or the ecosystem moves to jiff/time.
+    { id = "RUSTSEC-2026-0543", reason = "chrono: unmaintained notice, no vulnerability; used across the dependency tree" },
     # Only on Linux, through zbus 5 (keyring's secret-service and notify-rust). zbus's helper crates
     # (zvariant, zvariant_derive, zbus_names) are marked unmaintained, not vulnerable; no newer zbus
     # drops them yet. Revisit when keyring / notify-rust move off zbus 5.
