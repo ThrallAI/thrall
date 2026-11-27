@@ -14,6 +14,11 @@ import {
   QUESTION_MODE_LABELS,
   QUESTION_MODES,
   RATING_LABELS,
+  skillUses,
+  helpersSplit,
+  HELPERS_SPLIT_HINT,
+  HELPER_LIGHT_HINT,
+  HELPER_LIGHT_LABEL,
   SETTINGS_SECTIONS,
   SIGN_IN_POLL_MS,
   SIGN_IN_WATCH_MS,
@@ -956,8 +961,11 @@ export function Settings({
           </Group>
           <Group
             title="Helpers"
-            note="Thrall can hand parts of a task to helpers, each with a fresh start. Helpers asked for together work at the same time; their steps show under their own row. Ones that only look can't change anything, and the rest ask you just as Thrall does. Add your own type as a file in agents/ in Thrall's data folder."
+            note="Thrall can hand parts of a task to helpers, each with a fresh start. Helpers asked for together work at the same time; their steps show under their own row, and two of them never change the same file at once. Ones that only look can't change anything, and the rest ask you just as Thrall does. Add your own type as a file in agents/ in Thrall's data folder, or Thrall can offer you one."
           >
+            <Row label="Splitting work" hint={HELPERS_SPLIT_HINT}>
+              <span className="th-badge">{helpersSplit(shown?.helpers_side_by_side ?? 0, shown?.helpers_alone ?? 0)}</span>
+            </Row>
             <Row label="At the same time" hint={`How many helpers work at once (1 to ${MAX_HELPERS_AT_ONCE})`}>
               <Field k="agent.helpers_at_once" v={agent.helpers_at_once} label="Helpers at the same time" onSave={save} number />
             </Row>
@@ -969,7 +977,16 @@ export function Settings({
                 <span className="th-badge" title={h.read_only ? "Works in plan mode: reads and searches, changes nothing" : "Can change files, asking you as Thrall does"}>
                   {h.read_only ? "Looks only" : "Makes changes"}
                 </span>
-                {h.model ? <span className="th-badge th-set-mono">{h.model}</span> : null}
+                {h.model ? (
+                  <span className="th-badge th-set-mono">{h.model}</span>
+                ) : h.light ? (
+                  <span className="th-badge" title={HELPER_LIGHT_HINT}>
+                    {HELPER_LIGHT_LABEL}
+                  </span>
+                ) : null}
+                <span className="th-badge" title={h.last_used ? `Last used ${new Date(h.last_used).toLocaleDateString()}` : "Not used yet"}>
+                  {skillUses(h.uses ?? 0)}
+                </span>
                 <span className="th-badge">{h.source === "built_in" ? "Thrall's" : "Yours"}</span>
               </Row>
             ))}

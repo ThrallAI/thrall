@@ -1049,6 +1049,14 @@ export type ReplyFrame = {
        */
       helper_types?: HelperTypeInfo[];
       /**
+       * Replies that started just one helper.
+       */
+      helpers_alone?: number;
+      /**
+       * Replies of Thrall's that started several helpers at once.
+       */
+      helpers_side_by_side?: number;
+      /**
        * Keys Thrall knows about and whether each is stored.
        */
       keys: KeyStatus[];
@@ -2590,6 +2598,14 @@ export interface HelperTypeInfo {
    */
   description: string;
   /**
+   * When last (Unix ms).
+   */
+  last_used?: number | null;
+  /**
+   * Runs on the helper model (`agent.helper_model`) when one is set.
+   */
+  light?: boolean;
+  /**
    * Its own model, if it has one.
    */
   model?: string | null;
@@ -2605,6 +2621,10 @@ export interface HelperTypeInfo {
    * `built_in` or `personal`.
    */
   source: string;
+  /**
+   * Times Thrall has started one.
+   */
+  uses?: number;
 }
 /**
  * Whether a key is stored (`thrall key set <name>`). Never the key itself.

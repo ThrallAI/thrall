@@ -1638,6 +1638,69 @@ async fn helpers_asked_for_together_work_side_by_side_each_as_its_type() {
 }
 
 #[tokio::test]
+async fn reading_helpers_run_on_the_helper_model_with_only_their_tools_and_are_counted() {
+    let (mut state, provider) = setup(vec![
+        tool_calls(&[
+            (
+                "c1",
+                "agent",
+                r#"{"title": "find it", "type": "explorer", "task": "Where is main?"}"#,
+            ),
+            (
+                "c2",
+                "agent",
+                r#"{"title": "fix it", "type": "coder", "task": "Fix main."}"#,
+            ),
+        ]),
+        reply(&["Both done."]),
+        reply(&["Helper model test"]),
+    ])
+    .await;
+    checks_off(&mut state);
+    state.config.agent.helper_model = "cheap/reader".into();
+    let dir = workspace("helper-model");
+    let data = std::path::PathBuf::from(&dir).join("data");
+    std::fs::create_dir_all(&data).unwrap();
+    state.data_dir = Some(data.clone());
+    *provider.helper.lock().unwrap() = vec![reply(&["In src/main.rs."]), reply(&["Fixed."])].into();
+    let s = session::create(&state, Some(dir)).await.unwrap();
+    let (summary, _) = run_with(&state, &s.id, "find and fix", yes(), |_, _| {}).await;
+    assert_eq!(summary.reply, "Both done.");
+    let seen = provider.seen.lock().unwrap().clone();
+    let helper = |task: &str| {
+        seen.iter()
+            .find(|r| {
+                r.messages[0].content.starts_with("You are a helper")
+                    && r.messages[1].content == task
+            })
+            .unwrap()
+            .clone()
+    };
+    let explorer = helper("Where is main?");
+    assert_eq!(
+        explorer.model, "cheap/reader",
+        "a reading helper uses the helper model"
+    );
+    let has = |r: &thrall_llm::ChatRequest, tool: &str| r.tools.iter().any(|t| t.name == tool);
+    assert!(has(&explorer, "grep"));
+    assert!(!has(&explorer, "write_file") && !has(&explorer, "shell"));
+    let coder = helper("Fix main.");
+    assert_ne!(
+        coder.model, "cheap/reader",
+        "the coder stays on Thrall's model"
+    );
+    assert!(has(&coder, "write_file"));
+    // Counted: one reply with two helpers side by side.
+    let used = thrall_tools::agents::usage(&data);
+    assert_eq!(used.side_by_side, 1);
+    assert_eq!(used.alone, 0);
+    assert_eq!(used.types["explorer"].uses, 1);
+    assert_eq!(used.types["coder"].uses, 1);
+    // Thrall is told to split independent work.
+    assert!(seen[0].messages[0].content.contains("one helper per part"));
+}
+
+#[tokio::test]
 async fn a_helper_stops_at_its_spending_limit() {
     let (mut state, provider) = setup(vec![
         tool_call(

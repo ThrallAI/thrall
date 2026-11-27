@@ -222,6 +222,15 @@ pub fn skill_file(
     out
 }
 
+/// How much one skill has been used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub struct Usage {
+    /// Times it was used.
+    pub uses: u32,
+    /// When last (Unix ms).
+    pub last: i64,
+}
+
 /// Where a learned skill's knowledge came from (`skill_propose {learned_from}`).
 pub fn source_rating(source: &str) -> Rating {
     match source.trim().to_ascii_lowercase().as_str() {

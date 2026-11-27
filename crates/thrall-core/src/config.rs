@@ -462,6 +462,9 @@ pub struct AgentConfig {
     pub max_steps: u32,
     /// Most steps in one turn in Full auto (`MIN_MAX_STEPS` to `MAX_MAX_STEPS`; 0: no limit).
     pub full_auto_max_steps: u32,
+    /// The model reading and summing-up helpers use (researcher, explorer, summariser, and any
+    /// with `light: yes`); empty: Thrall's model.
+    pub helper_model: String,
 }
 
 impl AgentConfig {
@@ -505,6 +508,7 @@ impl Default for AgentConfig {
             helper_cost_limit_cents: crate::constants::DEFAULT_HELPER_COST_LIMIT_CENTS,
             max_steps: crate::constants::DEFAULT_MAX_STEPS,
             full_auto_max_steps: crate::constants::DEFAULT_FULL_AUTO_MAX_STEPS,
+            helper_model: String::new(),
         }
     }
 }

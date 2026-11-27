@@ -23,10 +23,10 @@ use tokio::sync::mpsc;
 use crate::checks::Track;
 use crate::constants::{
     BACKGROUND_CANT_CHANGE, BLOCKED_BY_HOOK, BLOCKED_BY_PLAN, BLOCKED_UNATTENDED, CHECK_IN_BLOCKED,
-    CHECK_IN_READ_ONLY, COMMAND_TOOLS, COMMANDS_OFF, FLAG_COMMAND, FLAG_SYSTEM_FOLDER, NOT_ALLOWED,
-    NOT_LOOKING, SKILL_HELPER_DONE, SKILL_HELPER_TASK, SYSTEM_EDIT_NOTE, SYSTEM_FOLDERS_OFF,
-    THINKER_BLOCKED, THINKER_CANT, THINKER_LOOK_ONLY, TOOL_MAX_SECS, TOOL_STOP_GRACE_SECS,
-    step_status,
+    CHECK_IN_READ_ONLY, COMMAND_TOOLS, COMMANDS_OFF, FILE_TAKEN, FLAG_COMMAND, FLAG_SYSTEM_FOLDER,
+    HELPER_FILE_TAKEN, NOT_ALLOWED, NOT_LOOKING, SKILL_HELPER_DONE, SKILL_HELPER_TASK,
+    SYSTEM_EDIT_NOTE, SYSTEM_FOLDERS_OFF, THINKER_BLOCKED, THINKER_CANT, THINKER_LOOK_ONLY,
+    TOOL_MAX_SECS, TOOL_STOP_GRACE_SECS, step_status,
 };
 use crate::error::AgentError;
 use crate::hooks;
@@ -342,7 +342,29 @@ pub(crate) async fn run_step(
                     workspace,
                 )
                 .await;
+                // Helpers side by side: a file one of them is changing is its own until it ends.
+                let taken = match (&effect, &track.helper_step) {
+                    (Effect::Edit { path, .. }, Some(owner)) if track.in_helper => state
+                        .claim_file(&thrall_tools::paths::resolve(workspace, path), owner)
+                        .err(),
+                    _ => None,
+                };
                 let allowed = match hook.blocked {
+                    _ if taken.is_some() => {
+                        audit(
+                            state,
+                            gate::TOOL,
+                            &call.name,
+                            decision::DENY,
+                            json!({ "helper_file": taken }),
+                        )
+                        .await?;
+                        Ok(Err((
+                            HELPER_FILE_TAKEN.to_owned(),
+                            StepStatus::Denied,
+                            FILE_TAKEN.to_owned(),
+                        )))
+                    }
                     // Split mode's Thinker only looks; the Doer makes changes.
                     _ if track.look_only && !matches!(effect, Effect::Read) => {
                         audit(

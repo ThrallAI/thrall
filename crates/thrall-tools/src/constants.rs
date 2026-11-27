@@ -143,45 +143,185 @@ pub const SKILL_SOURCE_FILES: &str = "files";
 pub const AGENTS_DIR: &str = "agents";
 /// A helper type's file extension.
 pub const AGENT_FILE_EXT: &str = "md";
+/// Helpers' use counts, in the person's data folder.
+pub const HELPER_USAGE_FILE: &str = "helper-usage.json";
+/// How a helper started without a type is counted.
+pub const HELPER_NO_TYPE: &str = "general";
+/// A proposed helper type's name: its role in at most this many words (`data-cleaner`).
+pub const HELPER_NAME_MAX_WORDS: usize = 3;
+/// How a helper type's description starts.
+pub const HELPER_DESCRIPTION_START: &str = "Use when";
+/// How it goes on, saying what it's not for.
+pub const HELPER_NOT_FOR: &str = "Not for";
+/// Longest description (with what it's not for) Thrall sees in its helper list.
+pub const HELPER_DESCRIPTION_MAX_CHARS: usize = 300;
 
-/// Thrall's own helper types: (name, what it's for, read only, instructions).
-pub const AGENT_TYPES: &[(&str, &str, bool, &str)] = &[
-    (
-        "researcher",
-        "Finds things out: searches the web, the codebase or documents and reports back with sources",
-        true,
-        "You are a researcher. Find out what the task asks and report it plainly. Search broadly \
-         first, then read the best sources in full. Say where each fact came from (a link, or a \
-         file and line). Separate what you found from what you think. If sources disagree, say so. \
-         Don't change anything.",
-    ),
-    (
-        "coder",
-        "Writes and changes code or files for one well-defined piece of work",
-        false,
-        "You are a coder. Make the change the task describes, and only that. Read the code around \
-         it first and match its style. Keep changes small. After changing something, check it: \
-         build, run the tests or read the result back. Finish with what you changed (files) and \
-         how you checked it.",
-    ),
-    (
-        "reviewer",
-        "Reviews work for mistakes: bugs, security problems, missing cases, things that don't match the request",
-        true,
-        "You are a reviewer. Look for real problems in the work the task names: bugs, security \
-         holes, missing cases, and places it doesn't do what was asked. For each, say where it is, \
-         what goes wrong and how you know. Put the most serious first. Don't report style \
-         preferences as problems, and don't change anything. If you find nothing wrong, say so.",
-    ),
-    (
-        "planner",
-        "Works out how to do something bigger: the steps, their order, and the risks",
-        true,
-        "You are a planner. Work out how to do what the task asks: look at what's there now, then \
-         give the steps in order, what each changes, what could go wrong, and how to check each \
-         one. Pick one approach and say why; mention another only when it's a real choice. Don't \
-         change anything.",
-    ),
+/// One of Thrall's own helper types.
+pub struct BuiltInHelper {
+    pub name: &'static str,
+    /// When to use it and when not, as Thrall sees it in its list of helper types.
+    pub description: &'static str,
+    /// It works in plan mode: it can look but not change anything.
+    pub read_only: bool,
+    /// It runs on the helper model (`agent.helper_model`) when one is set: reading, searching
+    /// and summing up don't need Thrall's main model.
+    pub light: bool,
+    /// The only tools it's offered (MCP tools come with `mcp_search` / `mcp_call`); none: every
+    /// helper tool.
+    pub tools: Option<&'static [&'static str]>,
+    pub prompt: &'static str,
+}
+
+/// Tools for helpers that read and search (files, documents, the web).
+const LOOKING_TOOLS: &[&str] = &[
+    "read_file",
+    "read_document",
+    "grep",
+    "glob",
+    "list_dir",
+    "git",
+    "web_search",
+    "web_fetch",
+    "browser",
+    "view_image",
+    "video_transcript",
+    "memory_search",
+    "session_read",
+    "sessions_list",
+    "system_info",
+    "calc",
+    "mcp_search",
+    "mcp_call",
+];
+
+/// Thrall's own helper types.
+pub const AGENT_TYPES: &[BuiltInHelper] = &[
+    BuiltInHelper {
+        name: "researcher",
+        description: "Use when something needs finding out (the web, the codebase or documents) \
+                      and reporting back with sources. Not for changing anything.",
+        read_only: true,
+        light: true,
+        tools: Some(LOOKING_TOOLS),
+        prompt: "You are a researcher. Find out what the task asks and report it plainly. Search \
+                 broadly first, then read the best sources in full. Say where each fact came from \
+                 (a link, or a file and line). Separate what you found from what you think. If \
+                 sources disagree, say so. Don't change anything.",
+    },
+    BuiltInHelper {
+        name: "coder",
+        description: "Use when one well-defined piece of code or files needs writing or \
+                      changing. Not for open-ended exploring or deciding what to build.",
+        read_only: false,
+        light: false,
+        tools: None,
+        prompt: "You are a coder. Make the change the task describes, and only that. Read the \
+                 code around it first and match its style. Keep changes small. After changing \
+                 something, check it: build, run the tests or read the result back. Finish with \
+                 what you changed (files) and how you checked it.",
+    },
+    BuiltInHelper {
+        name: "reviewer",
+        description: "Use when finished work needs checking for bugs, security problems, missing \
+                      cases or not matching the request. Not for fixing them (a coder does).",
+        read_only: true,
+        light: false,
+        tools: Some(&[
+            "read_file",
+            "read_document",
+            "grep",
+            "glob",
+            "list_dir",
+            "git",
+            "shell",
+            "shell_output",
+            "web_search",
+            "web_fetch",
+            "view_image",
+            "calc",
+        ]),
+        prompt: "You are a reviewer. Look for real problems in the work the task names: bugs, \
+                 security holes, missing cases, and places it doesn't do what was asked. For each, \
+                 say where it is, what goes wrong and how you know. Put the most serious first. \
+                 Don't report style preferences as problems, and don't change anything. If you \
+                 find nothing wrong, say so.",
+    },
+    BuiltInHelper {
+        name: "planner",
+        description: "Use when something bigger needs working out first: the steps, their order \
+                      and the risks. Not for small, clear changes.",
+        read_only: true,
+        light: false,
+        tools: Some(LOOKING_TOOLS),
+        prompt: "You are a planner. Work out how to do what the task asks: look at what's there \
+                 now, then give the steps in order, what each changes, what could go wrong, and \
+                 how to check each one. Pick one approach and say why; mention another only when \
+                 it's a real choice. Don't change anything.",
+    },
+    BuiltInHelper {
+        name: "tester",
+        description: "Use when the tests or a build need running and the failures reporting \
+                      exactly. Not for fixing what fails (a coder does).",
+        read_only: false,
+        light: false,
+        tools: Some(&[
+            "read_file",
+            "read_document",
+            "grep",
+            "glob",
+            "list_dir",
+            "git",
+            "shell",
+            "shell_output",
+            "shell_stop",
+            "system_info",
+        ]),
+        prompt: "You are a tester. Run the tests, build or check the task names, the way the \
+                 project does (look for its scripts first). Don't change any files. Report the \
+                 real result: the command you ran, how many passed and failed, and for each \
+                 failure its name, the file and line, and the key lines of the error. Never say \
+                 something passed unless you saw it pass.",
+    },
+    BuiltInHelper {
+        name: "explorer",
+        description: "Use when you need to know where things are in a big codebase or folder \
+                      (which files, which functions). Not for reading whole files back or changing \
+                      anything.",
+        read_only: true,
+        light: true,
+        tools: Some(&[
+            "read_file",
+            "read_document",
+            "grep",
+            "glob",
+            "list_dir",
+            "git",
+        ]),
+        prompt: "You are an explorer. Find where the things the task asks about are. Search \
+                 widely with grep and glob, open only what you need to be sure. Answer with \
+                 locations (file and line, and a few words on each), not file contents. Say what \
+                 you looked for and didn't find. Don't change anything.",
+    },
+    BuiltInHelper {
+        name: "summariser",
+        description: "Use when something long (a log, a PDF, a long page, an old chat) needs \
+                      boiling down to what matters. Not for deciding or changing anything.",
+        read_only: true,
+        light: true,
+        tools: Some(&[
+            "read_file",
+            "read_document",
+            "web_fetch",
+            "view_image",
+            "video_transcript",
+            "session_read",
+            "grep",
+        ]),
+        prompt: "You are a summariser. Read what the task names in full and give back what \
+                 matters for the task: the main points first, then any numbers, names, dates, \
+                 errors or decisions exactly as written. Keep it short. Say what you couldn't \
+                 read. Don't change anything.",
+    },
 ];
 
 /// The shortest repeat a scheduled job may have.
