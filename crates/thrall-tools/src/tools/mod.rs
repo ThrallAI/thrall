@@ -8,6 +8,7 @@ mod clipboard;
 mod control;
 mod documents;
 pub(crate) mod files;
+mod helper_type;
 mod images;
 mod mcp;
 mod office;
@@ -37,6 +38,7 @@ pub use control::{
 };
 pub use documents::ReadDocument;
 pub use files::{EditFile, ListDir, ReadFile, ShowFile, WriteFile};
+pub use helper_type::{PROPOSE_HELPER, ProposeHelper};
 pub use images::{MAKE_IMAGE, MAKE_VIDEO, MakeImage, MakeVideo, VIEW_IMAGE, ViewImage};
 pub use mcp::{MCP_CALL, MCP_SEARCH, McpCall, McpSearch};
 pub use office::{EditPdf, EditSpreadsheet, EditWord, MakePdf};
@@ -92,6 +94,7 @@ pub fn core() -> Vec<Arc<dyn Tool>> {
         Arc::new(SessionRead),
         Arc::new(UseSkill),
         Arc::new(ProposeSkill),
+        Arc::new(ProposeHelper),
         Arc::new(Delegate),
         Arc::new(AgentResult),
         Arc::new(Schedule),
@@ -117,8 +120,9 @@ pub const NOT_FOR_HELPERS: &[&str] = &[
     "schedule",
     "schedule_remove",
     "todo_write",
-    // Skills are offered to the person by Thrall itself.
+    // Skills and helper types are offered to the person by Thrall itself.
     PROPOSE_SKILL,
+    PROPOSE_HELPER,
     // Pictures cost money; only Thrall itself asks for them.
     MAKE_IMAGE,
     MAKE_VIDEO,

@@ -41,6 +41,10 @@ pub async fn shown(state: &AppState, pending: bool) -> Reply {
                 || state.keys.get(name).is_some(),
         })
         .collect();
+    let helper_use = state
+        .my_dir()
+        .map(|d| thrall_tools::agents::usage(&d))
+        .unwrap_or_default();
     Reply::SettingsShown {
         config,
         config_file: state
@@ -63,14 +67,22 @@ pub async fn shown(state: &AppState, pending: bool) -> Reply {
             .collect(),
         helper_types: thrall_tools::agents::personal(state.my_dir().as_deref())
             .into_iter()
-            .map(|a| HelperTypeInfo {
-                name: a.name,
-                description: a.description,
-                read_only: a.read_only,
-                model: a.model,
-                source: a.source.as_str().to_owned(),
+            .map(|a| {
+                let used = helper_use.types.get(&a.name).copied();
+                HelperTypeInfo {
+                    uses: used.map(|u| u.uses).unwrap_or_default(),
+                    last_used: used.map(|u| u.last),
+                    light: a.light,
+                    name: a.name,
+                    description: a.description,
+                    read_only: a.read_only,
+                    model: a.model,
+                    source: a.source.as_str().to_owned(),
+                }
             })
             .collect(),
+        helpers_side_by_side: helper_use.side_by_side,
+        helpers_alone: helper_use.alone,
     }
 }
 

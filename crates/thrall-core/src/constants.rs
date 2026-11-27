@@ -278,6 +278,7 @@ pub const EDITABLE_SETTINGS: &[&str] = &[
     "agent.helper_cost_limit_cents",
     "agent.max_steps",
     "agent.full_auto_max_steps",
+    "agent.helper_model",
     "memory.remember_conversations",
     "memory.context_limit_tokens",
     "memory.embedding_model",

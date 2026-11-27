@@ -1085,6 +1085,7 @@ async fn run_turn(
         }
         let step = calls;
         let calls = &outcome.tool_calls;
+        crate::workers::count_helpers(state, calls);
         let mut next = 0;
         while next < calls.len() {
             let call = &calls[next];

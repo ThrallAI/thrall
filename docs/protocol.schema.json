@@ -1317,6 +1317,18 @@
           "description": "What it's for.",
           "type": "string"
         },
+        "last_used": {
+          "description": "When last (Unix ms).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "light": {
+          "description": "Runs on the helper model (`agent.helper_model`) when one is set.",
+          "type": "boolean"
+        },
         "model": {
           "description": "Its own model, if it has one.",
           "type": [
@@ -1335,6 +1347,13 @@
         "source": {
           "description": "`built_in` or `personal`.",
           "type": "string"
+        },
+        "uses": {
+          "description": "Times Thrall has started one.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 0,
+          "minimum": 0
         }
       },
       "required": [
@@ -2380,6 +2399,20 @@
               "items": {
                 "$ref": "#/$defs/HelperTypeInfo"
               }
+            },
+            "helpers_alone": {
+              "description": "Replies that started just one helper.",
+              "type": "integer",
+              "format": "uint32",
+              "default": 0,
+              "minimum": 0
+            },
+            "helpers_side_by_side": {
+              "description": "Replies of Thrall's that started several helpers at once.",
+              "type": "integer",
+              "format": "uint32",
+              "default": 0,
+              "minimum": 0
             },
             "keys": {
               "description": "Keys Thrall knows about and whether each is stored.",

@@ -785,6 +785,21 @@ pub const THINKER_LOOK_ONLY: &str = "you are the Thinker: you can only look. Put
 hand_off brief and the Doer will do it.";
 /// What the person sees on a step the Thinker wasn't allowed.
 pub const THINKER_BLOCKED: &str = "The Thinker only looks";
+/// What a helper is told when another helper working at the same time is changing that file.
+pub const HELPER_FILE_TAKEN: &str = "another helper working at the same time is changing this \
+file. Leave it alone: finish the rest of your task, and say in your answer what you couldn't \
+change in it, so Thrall can do it after.";
+/// What the person sees on that step.
+pub const FILE_TAKEN: &str = "Another helper is changing this file";
+/// Told to Thrall with its helper types: split independent work so it runs side by side.
+pub const HELPER_SPLIT_NOTE: &str = ". When a job has parts that don't depend on each other \
+(three folders to look through, two sources to read, tests to run while a reviewer reads), start \
+one helper per part in the same reply instead of one helper for all of it. Give reading, \
+searching and summing up to researcher, explorer or summariser. Never give two helpers the same \
+files to change: a file one helper is changing is refused to the others until it finishes:";
+/// Why a background helper can't start: only a one-off command (`thrall run`) has no runner.
+pub const BACKGROUND_NOT_HERE: &str = "background helpers can't run in a one-off command; do it \
+in the foreground instead (background: false)";
 /// Tools the Thinker isn't offered: they spend money, make things, or start other helpers.
 pub const THINKER_CANT: &[&str] = &[
     thrall_tools::tools::DELEGATE,

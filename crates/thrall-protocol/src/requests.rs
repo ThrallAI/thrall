@@ -1111,6 +1111,12 @@ pub enum Reply {
         /// Helper types Thrall can hand work to: its own and the person's (`agents/<name>.md`).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         helper_types: Vec<HelperTypeInfo>,
+        /// Replies of Thrall's that started several helpers at once.
+        #[serde(default)]
+        helpers_side_by_side: u32,
+        /// Replies that started just one helper.
+        #[serde(default)]
+        helpers_alone: u32,
     },
     /// Answer to `local.find`.
     #[serde(rename = "local.found")]
@@ -1581,6 +1587,15 @@ pub struct HelperTypeInfo {
     pub model: Option<String>,
     /// `built_in` or `personal`.
     pub source: String,
+    /// Runs on the helper model (`agent.helper_model`) when one is set.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub light: bool,
+    /// Times Thrall has started one.
+    #[serde(default)]
+    pub uses: u32,
+    /// When last (Unix ms).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_used: Option<i64>,
 }
 
 /// A file a rewind would put back.

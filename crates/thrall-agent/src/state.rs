@@ -1,7 +1,7 @@
 //! `AppState`: everything a turn needs, built once at startup and passed explicitly.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -127,6 +127,36 @@ pub struct AppState {
     pub(crate) home_lock: Arc<tokio::sync::Mutex<()>>,
     /// People already warned their credit is low (until it's topped up again).
     low_balance_warned: Arc<Mutex<HashSet<String>>>,
+    /// Files a helper is changing, by full path, with the helper's step: helpers working side by
+    /// side can't change the same file.
+    file_claims: Arc<HelperFiles>,
+}
+
+/// Which helper is changing which file (full path -> the helper's step).
+#[derive(Default)]
+pub(crate) struct HelperFiles(Mutex<HashMap<PathBuf, String>>);
+
+impl HelperFiles {
+    /// Let `owner` change `path`; `Err` names the other helper changing it.
+    fn claim(&self, path: &Path, owner: &str) -> Result<(), String> {
+        let Ok(mut claims) = self.0.lock() else {
+            return Ok(());
+        };
+        match claims.get(path) {
+            Some(other) if other != owner => Err(other.clone()),
+            _ => {
+                claims.insert(path.to_path_buf(), owner.to_owned());
+                Ok(())
+            }
+        }
+    }
+
+    /// Free everything `owner` was changing.
+    fn release(&self, owner: &str) {
+        if let Ok(mut claims) = self.0.lock() {
+            claims.retain(|_, o| o != owner);
+        }
+    }
 }
 
 impl AppState {
@@ -197,7 +227,19 @@ impl AppState {
             last_beat: Arc::new(AtomicI64::new(thrall_core::ids::now_ms())),
             home_lock: Arc::new(tokio::sync::Mutex::new(())),
             low_balance_warned: Arc::new(Mutex::new(HashSet::new())),
+            file_claims: Arc::new(HelperFiles::default()),
         })
+    }
+
+    /// Let the helper at step `owner` change `path`. `Err` names the other helper's step when
+    /// one is already changing it.
+    pub(crate) fn claim_file(&self, path: &Path, owner: &str) -> Result<(), String> {
+        self.file_claims.claim(path, owner)
+    }
+
+    /// Free every file the helper at step `owner` was changing (it finished).
+    pub(crate) fn release_files(&self, owner: &str) {
+        self.file_claims.release(owner);
     }
 
     /// Whether to warn this copy's person that their credit is low: only the first time it's
@@ -526,5 +568,30 @@ impl AppState {
             Ok(mut reads) => reads.entry(session_id.to_owned()).or_default().clone(),
             Err(_) => ReadLog::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn helpers_side_by_side_cant_change_the_same_file() {
+        let files = HelperFiles::default();
+        let a = Path::new("/w/a.txt");
+        let b = Path::new("/w/b.txt");
+        assert!(files.claim(a, "s1").is_ok());
+        assert!(
+            files.claim(a, "s1").is_ok(),
+            "the same helper again is fine"
+        );
+        assert!(files.claim(b, "s2").is_ok(), "a different file is fine");
+        assert_eq!(files.claim(a, "s2"), Err("s1".to_owned()));
+        files.release("s1");
+        assert!(
+            files.claim(a, "s2").is_ok(),
+            "free once the first helper ends"
+        );
+        assert_eq!(files.claim(b, "s3"), Err("s2".to_owned()));
     }
 }

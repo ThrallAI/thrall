@@ -11,9 +11,9 @@ use thrall_tools::paths::{display, resolve};
 use thrall_tools::tool::modified;
 
 use crate::constants::{
-    HUMANISE_COMMAND, HUMANISE_COMMAND_ALT, HUMANISE_DETECTOR_NOTE, HUMANISE_RUN_NOTE,
-    INSTRUCTIONS_MAX_CHARS, MENTION_MAX_BYTES, MENTION_MAX_CHARS, MENTIONS_MAX, PERSONAL_FILE,
-    PROJECT_FILES, SKILL_RUN_NOTE,
+    HELPER_SPLIT_NOTE, HUMANISE_COMMAND, HUMANISE_COMMAND_ALT, HUMANISE_DETECTOR_NOTE,
+    HUMANISE_RUN_NOTE, INSTRUCTIONS_MAX_CHARS, MENTION_MAX_BYTES, MENTION_MAX_CHARS, MENTIONS_MAX,
+    PERSONAL_FILE, PROJECT_FILES, SKILL_RUN_NOTE,
 };
 use crate::state::AppState;
 
@@ -85,7 +85,7 @@ pub fn helper_types(state: &AppState, workspace: &Path) -> String {
     let types = thrall_tools::agents::discover(state.my_dir().as_deref(), workspace);
     let mut out = format!(
         "\n\n# Helper types\n\nWith the agent tool, pick the type that fits. Up to {} helpers work \
-         at the same time when you call agent several times in one reply:",
+         at the same time when you call agent several times in one reply{HELPER_SPLIT_NOTE}",
         state.config.agent.helpers_at_once()
     );
     for t in types {

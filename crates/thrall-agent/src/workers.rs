@@ -20,8 +20,8 @@ use thrall_tools::{Cancel, ToolOutput};
 
 use crate::checks::Track;
 use crate::constants::{
-    ASK_THINKER, BACKGROUND_HELPER_NOTE, HELPER_PROMPT, HELPER_ROLE_HEADING, LOOKING_HELPER_NOTE,
-    MAX_HELPER_CALLS, SPLIT_DOER_NOTE,
+    ASK_THINKER, BACKGROUND_HELPER_NOTE, BACKGROUND_NOT_HERE, HELPER_PROMPT, HELPER_ROLE_HEADING,
+    LOOKING_HELPER_NOTE, MAX_HELPER_CALLS, SPLIT_DOER_NOTE,
 };
 use crate::error::AgentError;
 use crate::state::{AppState, BackgroundTask};
@@ -36,6 +36,24 @@ pub(crate) struct Helping<'a> {
     pub kind: Option<&'a AgentType>,
     /// The step that started it, so clients list its steps under that one.
     pub step: Option<&'a str>,
+}
+
+/// Count the helpers one reply of Thrall's started (for Settings: uses per type, and how often
+/// it splits work across several at once).
+pub(crate) fn count_helpers(state: &AppState, calls: &[thrall_llm::ToolCall]) {
+    let types: Vec<String> = calls
+        .iter()
+        .filter(|c| c.name == DELEGATE)
+        .map(|c| {
+            serde_json::from_str::<Value>(&c.arguments)
+                .ok()
+                .and_then(|a| a.get("type").and_then(Value::as_str).map(str::to_owned))
+                .unwrap_or_default()
+        })
+        .collect();
+    if let Some(dir) = state.my_dir() {
+        agents::record_use(&dir, &types, now_ms());
+    }
 }
 
 /// Whether `call` is an `agent` call that runs in the foreground (those can run side by side).
@@ -119,10 +137,7 @@ async fn start_background(
     kind: Option<AgentType>,
 ) -> Result<ToolOutput, AgentError> {
     if !state.can_run_background() {
-        return Ok(ToolOutput::error(
-            "background helpers only run in the terminal app; do it in the foreground instead \
-             (background: false)",
-        ));
+        return Ok(ToolOutput::error(BACKGROUND_NOT_HERE));
     }
     let agent_id = new_id(id_prefix::AGENT);
     state
@@ -186,6 +201,29 @@ fn helper_tools(state: &AppState, kind: Option<&AgentType>) -> Vec<ToolSpec> {
         .collect()
 }
 
+/// The model a helper of `kind` works on: its own, else the helper model for reading and
+/// summing-up helpers (when one is set), else Thrall's.
+fn helper_model(state: &AppState, kind: Option<&AgentType>) -> String {
+    let light = state.config.agent.helper_model.trim();
+    kind.and_then(|k| k.model.clone())
+        .or_else(|| (kind.is_some_and(|k| k.light) && !light.is_empty()).then(|| light.to_owned()))
+        .unwrap_or_else(|| state.model())
+}
+
+/// The files a helper claimed, freed when it's dropped.
+struct FileClaims<'a> {
+    state: &'a AppState,
+    owner: Option<String>,
+}
+
+impl Drop for FileClaims<'_> {
+    fn drop(&mut self) {
+        if let Some(owner) = &self.owner {
+            self.state.release_files(owner);
+        }
+    }
+}
+
 /// Work on `task` until the helper answers. Its conversation stays its own; only the answer comes
 /// back. With `doer`, the helper is split mode's Doer: its model, its step limit, and a way to ask
 /// the Thinker. A helper type that only looks works in plan mode, whatever `mode` is.
@@ -201,6 +239,11 @@ pub(crate) async fn run_helper(
     helping: Helping<'_>,
 ) -> Result<String, AgentError> {
     let kind = helping.kind;
+    // Whichever way the helper ends, the files it was changing are free again.
+    let _claims = FileClaims {
+        state,
+        owner: helping.step.map(str::to_owned),
+    };
     let mut mode = if kind.is_some_and(|k| k.read_only) {
         Mode::Plan
     } else {
@@ -225,8 +268,7 @@ pub(crate) async fn run_helper(
             )
         }
         None => (
-            kind.and_then(|k| k.model.clone())
-                .unwrap_or_else(|| state.model()),
+            helper_model(state, kind),
             usage_role::CHAT,
             MAX_HELPER_CALLS,
         ),

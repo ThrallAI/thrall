@@ -195,6 +195,25 @@ export const RATING_LABELS: Readonly<Record<string, string>> = {
   high: "High risk",
 };
 
+/** How often a helper type (or skill) has been used, for its row in Settings. */
+export function skillUses(n: number): string {
+  if (n === 0) return "Never used";
+  if (n === 1) return "Used once";
+  return `Used ${n} times`;
+}
+/** How often Thrall's replies that used helpers started several at once. */
+export function helpersSplit(sideBySide: number, alone: number): string {
+  const total = sideBySide + alone;
+  if (total === 0) return "No helpers used yet";
+  return `${sideBySide} of ${total} times side by side`;
+}
+export const HELPERS_SPLIT_HINT =
+  "Of Thrall's replies that started helpers, how many started several at once (work split into parts done side by side)";
+/** A helper type that runs on the reading helpers' model. */
+export const HELPER_LIGHT_LABEL = "Reading model";
+export const HELPER_LIGHT_HINT =
+  "Runs on the Reading helpers model (Providers, under what each job uses) when one is set; with none set, on Thrall's Chat model";
+
 /** The personality written in the person's own words (`personality.set {preset}`). */
 export const PERSONALITY_CUSTOM = "custom";
 
@@ -266,6 +285,7 @@ export const SUPPLIERS: readonly Supplier[] = [
 /** Thrall's jobs, the setting holding each one's model, and the suppliers that can do it. */
 export const JOBS: ReadonlyArray<{ key: string; label: string; suppliers: readonly string[] }> = [
   { key: "provider.model", label: "Chat", suppliers: ["openrouter", "chatgpt", "openai", "anthropic", "google", "local"] },
+  { key: "agent.helper_model", label: "Reading helpers", suppliers: ["openrouter", "chatgpt", "openai", "anthropic", "google", "local"] },
   { key: "provider.vision_model", label: "Reads pictures", suppliers: ["openrouter", "openai", "anthropic", "google", "local"] },
   { key: "provider.image_model", label: "Makes pictures", suppliers: ["openrouter", "program"] },
   { key: "provider.speech_model", label: "Speaks", suppliers: ["openrouter", "openai", "elevenlabs", "program"] },
