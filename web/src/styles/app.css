@@ -2540,6 +2540,30 @@ select.th-input {
   color: var(--ink);
   font-size: 12px;
 }
+/* Unleashed: in every chat while Thrall doesn't ask, with Chain him to turn it off. */
+.th-unleashed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--danger);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 12px;
+}
+.th-unleashed > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.th-unleashed-chip {
+  font: 700 11px/14px var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--danger);
+}
 /* Settings → People → Chats: one of someone's chats, read only. */
 .th-reader {
   margin-top: var(--space-3);

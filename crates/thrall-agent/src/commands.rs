@@ -6,8 +6,9 @@ use thrall_core::ids::now_ms;
 use thrall_gates::Mode;
 
 use crate::constants::{
-    COST_BALANCE_LINE, COST_BALANCE_UNAVAILABLE, MEMORY_COMMAND_LIMIT, NO_SESSION_COMPACT,
-    NO_SESSION_COST, NO_SESSION_NEEDED, NO_SESSION_STATUS, NO_SESSION_TASKS, NO_SESSION_TITLE,
+    ALREADY_CHAINED, CHAINED, COST_BALANCE_LINE, COST_BALANCE_UNAVAILABLE, MEMORY_COMMAND_LIMIT,
+    NO_SESSION_COMPACT, NO_SESSION_COST, NO_SESSION_NEEDED, NO_SESSION_STATUS, NO_SESSION_TASKS,
+    NO_SESSION_TITLE,
 };
 use crate::error::AgentError;
 use crate::session;
@@ -92,6 +93,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         args_hint: "[remove <id>]",
     },
     CommandInfo {
+        name: "chain",
+        summary: "Turn Unleashed off: Thrall asks before risky actions again",
+        args_hint: "",
+    },
+    CommandInfo {
         name: "mode",
         summary: "Show or set the permission mode: ask, auto, plan, full (full 30m, full on)",
         args_hint: "[mode] [30m | 2h | on]",
@@ -137,7 +143,19 @@ pub async fn run(
         "jobs" => jobs(state, args).await,
         "compact" => compact(state, session_id).await,
         "mcp" => Ok(mcp(state)),
+        "chain" => Ok(chain(state)),
         other => Err(AgentError::UnknownCommand(other.to_owned())),
+    }
+}
+
+/// `/chain`: turn Unleashed off now (owner only).
+fn chain(state: &AppState) -> String {
+    if !state.unleashed_on() {
+        return ALREADY_CHAINED.to_owned();
+    }
+    match crate::safety::set(state, false, "") {
+        Ok(()) => CHAINED.to_owned(),
+        Err(why) => why,
     }
 }
 

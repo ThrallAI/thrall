@@ -10,6 +10,8 @@ pub const DIM: Color = Color::Rgb(140, 140, 155);
 pub const OK: Color = Color::Rgb(74, 222, 128);
 /// Failure.
 pub const ERROR: Color = Color::Rgb(255, 107, 107);
+/// Unleashed's tag: as red as an error, so it's never missed.
+pub const DANGER: Color = ERROR;
 /// Caution.
 pub const WARN: Color = Color::Rgb(250, 204, 21);
 /// Inline code.

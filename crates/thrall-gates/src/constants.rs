@@ -78,6 +78,23 @@ pub const SYSTEM_FOLDERS: &[&str] = &[
     "\\applications",
 ];
 
+/// Unleashed's hard floor: what wipes or formats a disk (lower-case match). These still ask when
+/// Thrall is unleashed: one misread instruction mustn't cost a drive.
+pub const DISK_WIPE_PIECES: &[&str] = &[
+    "format ",
+    "format-volume",
+    "clear-disk",
+    "initialize-disk",
+    "remove-partition",
+    "diskpart",
+    "mkfs",
+    "wipefs",
+    "dd if=",
+    "> /dev/sd",
+    "> /dev/nvme",
+    "cipher /w",
+];
+
 /// Where people's user folders are (each person's is theirs only).
 pub const USER_ROOTS: &[&str] = &["c:\\users\\", "\\home\\", "\\users\\"];
 

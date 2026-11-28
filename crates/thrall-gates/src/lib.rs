@@ -18,7 +18,8 @@ use serde::{Deserialize, Serialize};
 use thrall_protocol::{Diff, Risk};
 
 use crate::constants::{
-    INPUT_MAX_CHARS, REDACTED, SECRET_PATTERNS, SHARED_USERS, SYSTEM_FOLDERS, USER_ROOTS,
+    DISK_WIPE_PIECES, INPUT_MAX_CHARS, REDACTED, SECRET_PATTERNS, SHARED_USERS, SYSTEM_FOLDERS,
+    USER_ROOTS,
 };
 
 // ---------- permission modes ----------
@@ -218,6 +219,25 @@ pub fn tool_gate(mode: Mode, effect: &Effect, granted: bool) -> Decision {
             ),
         },
         Effect::AlwaysAsk { .. } => Decision::Ask { always: false },
+    }
+}
+
+/// Whether `text` (a command, or a step's summary of one) wipes or formats a disk: Unleashed's
+/// hard floor.
+pub fn wipes_disk(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    DISK_WIPE_PIECES.iter().any(|p| lower.contains(p))
+}
+
+/// Decide a tool call in an unleashed chat: everything runs without asking (high-risk actions
+/// too) except the hard floor (`floor`: it wipes or formats a disk), which asks every time. Plan
+/// mode still plans: nothing changes until the plan is approved.
+pub fn unleashed_gate(mode: Mode, effect: &Effect, granted: bool, floor: bool) -> Decision {
+    match effect {
+        Effect::Read => Decision::Allow,
+        _ if mode == Mode::Plan => tool_gate(mode, effect, granted),
+        _ if floor => Decision::Ask { always: false },
+        _ => Decision::Allow,
     }
 }
 
@@ -493,6 +513,44 @@ mod tests {
             tool_gate(Mode::FullAuto, &restart, true),
             Decision::Ask { always: false }
         );
+    }
+
+    #[test]
+    fn unleashed_runs_everything_but_a_disk_wipe() {
+        let risky = Effect::Run {
+            summary: "Risky: git push --force".to_owned(),
+            risk: Risk::High,
+            grant: None,
+            everyday: false,
+        };
+        let restart = Effect::AlwaysAsk {
+            summary: "Restart Thrall".to_owned(),
+            risk: Risk::High,
+            diff: None,
+        };
+        let edit = Effect::Edit {
+            path: "a.rs".to_owned(),
+            diff: None,
+        };
+        for mode in [Mode::Ask, Mode::AutoEdits, Mode::FullAuto] {
+            for effect in [&risky, &restart, &edit] {
+                assert_eq!(unleashed_gate(mode, effect, false, false), Decision::Allow);
+            }
+            assert_eq!(
+                unleashed_gate(mode, &risky, false, true),
+                Decision::Ask { always: false }
+            );
+        }
+        // Planning still plans.
+        assert!(matches!(
+            unleashed_gate(Mode::Plan, &edit, false, false),
+            Decision::Deny(_)
+        ));
+        assert!(wipes_disk("Risky: Format-Volume -DriveLetter D"));
+        assert!(wipes_disk("diskpart /s wipe.txt"));
+        assert!(wipes_disk("sudo dd if=/dev/zero of=/dev/sdb"));
+        assert!(!wipes_disk("cargo fmt --all"));
+        assert!(!wipes_disk("git format-patch HEAD~1"));
     }
 
     #[test]

@@ -131,3 +131,13 @@ pub const REWIND_BOTH: &str = "both";
 
 /// Characters of each message `/rewind` shows.
 pub const REWIND_LINE_CHARS: usize = 70;
+
+/// The status bar's tag while Thrall is unleashed (in place of the mode).
+pub const UNLEASHED_TAG: &str = "UNLEASHED";
+
+/// Said when Unleashed is switched on (anywhere).
+pub const UNLEASHED_NOTE: &str = "Thrall is unleashed: it won't ask before acting, except before wiping a disk. Type /chain to turn it off.";
+
+/// Said when it's switched off.
+pub const CHAINED_NOTE: &str =
+    "Thrall is chained again: it asks before risky actions, as the mode says.";

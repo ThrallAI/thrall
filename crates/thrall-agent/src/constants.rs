@@ -321,6 +321,23 @@ pub const SANDBOX_LINK: &str = r"\[([^\]]*)\]\(\s*(?:sandbox:)?/mnt/data/([^)\s]
 /// The same address written out without a link (not inside a web address).
 pub const SANDBOX_PATH: &str = r#"(^|[\s(])(?:sandbox:)?/mnt/data/([^\s)\]`'"<>]+)"#;
 
+/// What the person types to turn Unleashed on.
+pub const UNLEASH_CONFIRM: &str = "UNLEASH";
+/// Why Unleashed didn't turn on: the confirmation wasn't typed.
+pub const UNLEASH_NEEDS_CONFIRM: &str = "Type UNLEASH to turn Unleashed on.";
+/// Why someone else can't change Unleashed.
+pub const UNLEASH_OWNER_ONLY: &str =
+    "Only the person who runs this Thrall can unleash or chain it.";
+/// `/chain` when Unleashed was on.
+pub const CHAINED: &str =
+    "**Chained.** Thrall asks again before risky actions, as your chats' modes say.";
+/// `/chain` when it was already off.
+pub const ALREADY_CHAINED: &str =
+    "Thrall isn't unleashed: it asks before risky actions, as your chats' modes say.";
+
+/// The start of the card for an edit of Thrall's own settings file (asked every time).
+pub const OWN_SETTINGS_EDIT_NOTE: &str = "Changes Thrall's own settings file: ";
+
 /// Starts every message Thrall's own checks add to the conversation.
 pub const CHECK_PREFIX: &str = "[Thrall check]";
 

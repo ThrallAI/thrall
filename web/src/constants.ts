@@ -216,7 +216,7 @@ export const STEPS_HINT = `${MIN_MAX_STEPS} to ${MAX_MAX_STEPS}, or 0 for no lim
 
 /** The Steps group's note. */
 export const STEPS_NOTE =
-  'A step is one go of thinking, which can use several tools. When a task runs out of steps Thrall stops and you can say "carry on"; near the limit it\'s told to wrap up first. 0 means no limit: he keeps going until the job is done, and only your spending limits stop him.';
+  'A step is one go of thinking, which can use several tools. When a task runs out of steps Thrall stops and you can say "carry on"; near the limit it\'s told to wrap up first. 0 means no limit: he keeps going until the job is done, and only your spending limits stop him. While Unleashed is on, every chat gets 500 (or no limit if set to 0).';
 
 /** Log detail levels, least to most. */
 export const LOG_LEVELS = ["error", "warn", "info", "debug", "trace"] as const;
@@ -318,3 +318,6 @@ export const NEAR_TOP_PX = 600;
 
 /** Pictures, recordings and videos kept loaded at once; the oldest are let go after that. */
 export const KEPT_FILES = 40;
+
+/** What the person types to turn Unleashed on (the engine checks it too). */
+export const UNLEASH_WORD = "UNLEASH";

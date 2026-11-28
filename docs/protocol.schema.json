@@ -1096,6 +1096,24 @@
           ]
         },
         {
+          "description": "Unleashed was turned on or off. Sent to every connection of the owner, with an empty\n`session`: clients show or hide the Unleashed chip.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "safety.changed"
+            },
+            "unleashed": {
+              "description": "On or off now.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "unleashed"
+          ]
+        },
+        {
           "description": "Open a file a step wrote, or show it in its folder (`step.file.open`): the desktop app does\nit. Sent only to that person's desktop app on this computer, with an empty `session`.",
           "type": "object",
           "properties": {
@@ -2909,6 +2927,24 @@
             "offset",
             "size",
             "data"
+          ]
+        },
+        {
+          "description": "Answer to `safety.set`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "safety.shown"
+            },
+            "unleashed": {
+              "description": "Unleashed is on.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "unleashed"
           ]
         },
         {
@@ -4854,6 +4890,29 @@
           "required": [
             "type"
           ]
+        },
+        {
+          "description": "Turn Unleashed on or off (owner only): on, the owner's chats stop asking, even about\nhigh-risk actions, except wiping or formatting a disk. Turning it on needs `confirm` to be\n`UNLEASH` (typed by the person); turning it off (Chain him) never does. Answered by\n`safety.shown`; every connection of the owner also gets `safety.changed`.",
+          "type": "object",
+          "properties": {
+            "confirm": {
+              "description": "`UNLEASH` to turn it on.",
+              "type": "string",
+              "default": ""
+            },
+            "type": {
+              "type": "string",
+              "const": "safety.set"
+            },
+            "unleashed": {
+              "description": "On or off.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "unleashed"
+          ]
         }
       ],
       "required": [
@@ -5342,6 +5401,10 @@
           "description": "`owner` (runs this engine) or `member`.",
           "type": "string",
           "default": ""
+        },
+        "unleashed": {
+          "description": "Unleashed is on: this person's chats don't ask (the owner only). Clients show it in every\nchat, with a way to turn it off.",
+          "type": "boolean"
         }
       },
       "required": [

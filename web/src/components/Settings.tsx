@@ -32,6 +32,7 @@ import { Personality } from "./Personality";
 import { Phones } from "./Phones";
 import { PCs } from "./PCs";
 import { Providers } from "./Providers";
+import { Safety } from "./Safety";
 import { SkillEditor } from "./SkillEditor";
 
 type Shown = ReplyOf<"settings.shown">;
@@ -235,6 +236,7 @@ function ProfileAdder({ onAdd }: { onAdd: (name: string, model: string, about: s
 
 export function Settings({
   engine,
+  unleashed,
   theme,
   onTheme,
   onClose,
@@ -243,6 +245,8 @@ export function Settings({
   onTour,
 }: {
   engine: Engine | null;
+  /** Unleashed is on now (kept live by the app: Chain him in a chat, /chain, the phone). */
+  unleashed: boolean;
   theme: Theme;
   onTheme: (t: Theme) => void;
   onClose: () => void;
@@ -833,6 +837,15 @@ export function Settings({
                 <Value v="thrall remove-everything" mono />
               </Row>
             </Group>
+          ) : null}
+          {thrallFolders ? (
+            <Safety
+              engine={engine}
+              on={unleashed}
+              onStatus={setStatus}
+              Row={Row}
+              Group={Group}
+            />
           ) : null}
           <Group
             title="Notifications"

@@ -299,6 +299,13 @@ pub enum Event {
     /// Sent only to the owner's desktop app, with an empty `session`.
     #[serde(rename = "update.requested")]
     UpdateRequested {},
+    /// Unleashed was turned on or off. Sent to every connection of the owner, with an empty
+    /// `session`: clients show or hide the Unleashed chip.
+    #[serde(rename = "safety.changed")]
+    SafetyChanged {
+        /// On or off now.
+        unleashed: bool,
+    },
     /// Open a file a step wrote, or show it in its folder (`step.file.open`): the desktop app does
     /// it. Sent only to that person's desktop app on this computer, with an empty `session`.
     #[serde(rename = "file.open")]
@@ -369,6 +376,7 @@ impl Event {
             Self::MemorySaved { .. } => "memory.saved",
             Self::Notice { .. } => "notice",
             Self::UpdateRequested {} => "update.requested",
+            Self::SafetyChanged { .. } => "safety.changed",
             Self::FileOpen { .. } => "file.open",
             Self::PcAsked {} => "pc.asked",
             Self::RunnerCall { .. } => "runner.call",
