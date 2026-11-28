@@ -24,9 +24,9 @@ use crate::checks::Track;
 use crate::constants::{
     BACKGROUND_CANT_CHANGE, BLOCKED_BY_HOOK, BLOCKED_BY_PLAN, BLOCKED_UNATTENDED, CHECK_IN_BLOCKED,
     CHECK_IN_READ_ONLY, COMMAND_TOOLS, COMMANDS_OFF, FLAG_COMMAND, FLAG_SYSTEM_FOLDER, NOT_ALLOWED,
-    NOT_LOOKING, SKILL_HELPER_DONE, SKILL_HELPER_TASK, SYSTEM_EDIT_NOTE, SYSTEM_FOLDERS_OFF,
-    THINKER_BLOCKED, THINKER_CANT, THINKER_LOOK_ONLY, TOOL_MAX_SECS, TOOL_STOP_GRACE_SECS,
-    step_status,
+    NOT_LOOKING, OWN_SETTINGS_EDIT_NOTE, SKILL_HELPER_DONE, SKILL_HELPER_TASK, SYSTEM_EDIT_NOTE,
+    SYSTEM_FOLDERS_OFF, THINKER_BLOCKED, THINKER_CANT, THINKER_LOOK_ONLY, TOOL_MAX_SECS,
+    TOOL_STOP_GRACE_SECS, step_status,
 };
 use crate::error::AgentError;
 use crate::hooks;
@@ -377,7 +377,9 @@ pub(crate) async fn run_step(
                     None => {
                         // A file in the system's folders asks every time; the checkpoint below
                         // still keeps it as it was, so the change can be undone.
-                        let asked = system_edit(&effect, workspace);
+                        let asked = system_edit(&effect, workspace).or_else(|| {
+                            own_settings_edit(&effect, workspace, state.data_dir.as_deref())
+                        });
                         let gated = asked.as_ref().unwrap_or(&effect);
                         gate_call(emitter, state, &step_id, &call.name, gated, *mode, cancel).await
                     }
@@ -768,7 +770,12 @@ pub(crate) async fn gate_call(
         }
         None => false,
     };
-    let detail = json!({ "mode": mode.as_str(), "effect": effect_name(effect), "scope": scope });
+    let detail = json!({
+        "mode": mode.as_str(),
+        "effect": effect_name(effect),
+        "scope": scope,
+        "unleashed": state.is_unleashed(),
+    });
     // A check-in only looks.
     if state.is_check_in(emitter.session_id) && !matches!(effect, Effect::Read) {
         audit(state, gate::TOOL, tool, decision::DENY, detail).await?;
@@ -778,7 +785,19 @@ pub(crate) async fn gate_call(
             CHECK_IN_BLOCKED.to_owned(),
         )));
     }
-    match tool_gate(mode, effect, granted) {
+    // Unleashed (the owner's chats, with someone there): nothing asks but wiping a disk.
+    let decision = if state.is_unleashed() && emitter.records() {
+        let floor = match effect {
+            Effect::Run { summary, .. }
+            | Effect::Probe { summary, .. }
+            | Effect::AlwaysAsk { summary, .. } => thrall_gates::wipes_disk(summary),
+            Effect::Read | Effect::Edit { .. } => false,
+        };
+        thrall_gates::unleashed_gate(mode, effect, granted, floor)
+    } else {
+        tool_gate(mode, effect, granted)
+    };
+    match decision {
         Decision::Allow => {
             if !matches!(effect, Effect::Read) {
                 audit(state, gate::TOOL, tool, decision::ALLOW, detail).await?;
@@ -898,6 +917,46 @@ fn system_edit(effect: &Effect, workspace: &Path) -> Option<Effect> {
     };
     thrall_gates::system_folder(path, &workspace.to_string_lossy()).then(|| Effect::AlwaysAsk {
         summary: format!("{SYSTEM_EDIT_NOTE}{path}"),
+        risk: Risk::High,
+        diff: diff.clone(),
+    })
+}
+
+/// How an edit of Thrall's own settings file (`config.toml` in the data folder) is asked about:
+/// every time, whatever the mode. Thrall mustn't change its own rules (Unleashed among them)
+/// without the person seeing it.
+fn own_settings_edit(effect: &Effect, workspace: &Path, data_dir: Option<&Path>) -> Option<Effect> {
+    let Effect::Edit { path, diff } = effect else {
+        return None;
+    };
+    let config = data_dir?.join(thrall_core::constants::CONFIG_FILE);
+    let full = if Path::new(path).is_absolute() {
+        PathBuf::from(path)
+    } else {
+        workspace.join(path)
+    };
+    // The real place when it's there (links, short names), else `..` and `.` worked out by hand.
+    let same = |p: &Path| {
+        let real = std::fs::canonicalize(p).unwrap_or_else(|_| {
+            let mut out = PathBuf::new();
+            for part in p.components() {
+                match part {
+                    std::path::Component::ParentDir => {
+                        out.pop();
+                    }
+                    std::path::Component::CurDir => {}
+                    other => out.push(other),
+                }
+            }
+            out
+        });
+        real.to_string_lossy()
+            .trim_start_matches(r"\\?\")
+            .replace('\\', "/")
+            .to_lowercase()
+    };
+    (same(&full) == same(&config)).then(|| Effect::AlwaysAsk {
+        summary: format!("{OWN_SETTINGS_EDIT_NOTE}{path}"),
         risk: Risk::High,
         diff: diff.clone(),
     })
@@ -1175,5 +1234,28 @@ mod tests {
         // The person's own files, in the session or elsewhere, follow the mode as before.
         assert!(system_edit(&edit("notes.txt"), ws).is_none());
         assert!(system_edit(&edit(r"C:\Users\me\Projects\a.txt"), ws).is_none());
+    }
+
+    #[test]
+    fn thralls_own_settings_file_asks_in_every_mode() {
+        let data = std::env::temp_dir().join(format!("thrall-own-config-{}", std::process::id()));
+        let ws = data.join("work");
+        // By its full path, or reached from the session's folder.
+        for path in [
+            data.join("config.toml").to_string_lossy().into_owned(),
+            "../config.toml".to_owned(),
+        ] {
+            let Some(effect) = own_settings_edit(&edit(&path), &ws, Some(&data)) else {
+                panic!("{path} wasn't asked about");
+            };
+            for mode in [Mode::Ask, Mode::AutoEdits, Mode::FullAuto] {
+                assert_eq!(
+                    tool_gate(mode, &effect, true),
+                    Decision::Ask { always: false }
+                );
+            }
+        }
+        assert!(own_settings_edit(&edit("config.toml"), &ws, Some(&data)).is_none());
+        assert!(own_settings_edit(&edit("../config.toml"), &ws, None).is_none());
     }
 }

@@ -478,6 +478,8 @@ where
                     Some(_) => crate::people::owner_name(shared).await,
                     None => None,
                 },
+                unleashed: person.role == thrall_core::constants::person_role::OWNER
+                    && state.unleashed_on(),
             },
             capabilities: CAPABILITIES.iter().map(|c| (*c).to_owned()).collect(),
             limits: Limits {
@@ -1456,6 +1458,12 @@ impl Connection {
                         Err(why) => vec![error(id, ErrorCode::NotFound, why)],
                     }
                 }
+                Request::SafetySet { unleashed, confirm } => {
+                    match thrall_agent::safety::set(&self.me(), unleashed, &confirm) {
+                        Ok(()) => vec![reply(id, Reply::SafetyShown { unleashed })],
+                        Err(why) => vec![error(id, ErrorCode::Invalid, why)],
+                    }
+                }
                 Request::FolderList { session, path } => {
                     let s = session::get(&self.me(), &session).await?;
                     let ws = session::folder_of(&s);
@@ -1775,6 +1783,11 @@ impl Connection {
     /// Whether this client gets a live event, and the frame to send. Only events from its own
     /// person's sessions ever go out.
     async fn on_event(&mut self, frame: EventFrame) -> Option<ServerFrame> {
+        // Unleashed on or off: every connection of the owner hears it, whatever it has open.
+        if matches!(frame.event, Event::SafetyChanged { .. }) {
+            let owner = self.person.role == thrall_core::constants::person_role::OWNER;
+            return owner.then_some(ServerFrame::Event(frame));
+        }
         if !self.attached.contains_key(&frame.session) && !self.is_mine(&frame.session).await {
             return None;
         }
@@ -1878,7 +1891,8 @@ fn owner_only(request: &Request) -> bool {
         | Request::PeopleRules { .. }
         | Request::PeopleChats { .. }
         | Request::PeopleChat { .. }
-        | Request::SigninCreate { .. } => true,
+        | Request::SigninCreate { .. }
+        | Request::SafetySet { .. } => true,
         Request::CommandRun { name, args, .. } => {
             let first = args.split_whitespace().next().unwrap_or_default();
             match name.as_str() {

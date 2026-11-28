@@ -735,6 +735,18 @@ pub enum Request {
         #[serde(default)]
         offset: u64,
     },
+    /// Turn Unleashed on or off (owner only): on, the owner's chats stop asking, even about
+    /// high-risk actions, except wiping or formatting a disk. Turning it on needs `confirm` to be
+    /// `UNLEASH` (typed by the person); turning it off (Chain him) never does. Answered by
+    /// `safety.shown`; every connection of the owner also gets `safety.changed`.
+    #[serde(rename = "safety.set")]
+    SafetySet {
+        /// On or off.
+        unleashed: bool,
+        /// `UNLEASH` to turn it on.
+        #[serde(default)]
+        confirm: String,
+    },
 }
 
 impl Request {
@@ -830,6 +842,7 @@ impl Request {
             Self::FolderCreate { .. } => "folder.create",
             Self::AppLatest {} => "app.latest",
             Self::AppGet { .. } => "app.get",
+            Self::SafetySet { .. } => "safety.set",
         }
     }
 }
@@ -1274,6 +1287,12 @@ pub enum Reply {
         /// This piece, base64.
         data: String,
     },
+    /// Answer to `safety.set`.
+    #[serde(rename = "safety.shown")]
+    SafetyShown {
+        /// Unleashed is on.
+        unleashed: bool,
+    },
     /// Answer to `file.get`: one piece of a file.
     #[serde(rename = "file.part")]
     FilePart {
@@ -1697,6 +1716,10 @@ pub struct UserInfo {
     /// Who can see it (the owner's name).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overseer: Option<String>,
+    /// Unleashed is on: this person's chats don't ask (the owner only). Clients show it in every
+    /// chat, with a way to turn it off.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unleashed: bool,
 }
 
 /// Limits a client must respect.

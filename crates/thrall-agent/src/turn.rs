@@ -841,8 +841,11 @@ async fn run_turn(
         }
         mode = current_mode(state, session_id, mode).await?;
         // Read each step, so switching Full auto on or off mid-task changes the limit too.
-        // A setting of 0 means no limit.
-        let max_steps = state.config.agent.max_steps(mode == Mode::FullAuto);
+        // Unleashed (the owner's own chats) gets the most; a setting of 0 means no limit.
+        let max_steps = state.config.agent.max_steps(
+            mode == Mode::FullAuto,
+            state.is_unleashed() && emitter.records(),
+        );
         if let Some(max) = max_steps
             && calls >= max
         {

@@ -51,7 +51,8 @@ pub const DEFAULT_FULL_AUTO_MAX_STEPS: u32 = 250;
 /// Fewest steps a turn may be given, whatever the settings say.
 pub const MIN_MAX_STEPS: u32 = 10;
 
-/// Most steps a turn may be given, whatever the settings say. Stops runaway loops.
+/// Most steps a turn may be given, whatever the settings say. Stops runaway loops. Also every
+/// turn's limit while Unleashed is on.
 pub const MAX_MAX_STEPS: u32 = 500;
 
 /// A step setting of this means no step limit at all (the person's choice; the spending limits

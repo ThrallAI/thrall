@@ -127,6 +127,9 @@ pub struct AppState {
     pub(crate) home_lock: Arc<tokio::sync::Mutex<()>>,
     /// People already warned their credit is low (until it's topped up again).
     low_balance_warned: Arc<Mutex<HashSet<String>>>,
+    /// Unleashed (`[safety] unleashed`): the owner's chats stop asking, except wiping a disk.
+    /// Shared, so turning it off (Chain him) holds at once, even mid-turn.
+    unleashed: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -150,6 +153,7 @@ impl AppState {
         let terms = crate::people::Terms::default();
         let own_keys: Arc<dyn crate::people::OwnKeys> = Arc::new(crate::people::NoOwnKeys);
         Ok(Self {
+            unleashed: Arc::new(AtomicBool::new(config.safety.unleashed)),
             model: Arc::new(RwLock::new(config.provider.model.clone())),
             config,
             llm: Arc::new(crate::people::PersonLlm::new(
@@ -212,6 +216,22 @@ impl AppState {
             warned.remove(&self.user_id);
             false
         }
+    }
+
+    /// Whether Unleashed is on for the engine (the owner's switch).
+    pub fn unleashed_on(&self) -> bool {
+        self.unleashed.load(Ordering::SeqCst)
+    }
+
+    /// Whether this copy's person's chats run unleashed: Unleashed is on and they're the owner
+    /// (it's the owner's machine and the owner's risk; anyone else keeps asking).
+    pub fn is_unleashed(&self) -> bool {
+        self.user_id == self.owner_id && self.unleashed_on()
+    }
+
+    /// Turn Unleashed on or off now (`safety.set` saves it to the config too).
+    pub fn set_unleashed(&self, on: bool) {
+        self.unleashed.store(on, Ordering::SeqCst);
     }
 
     /// The same engine, acting for `user_id`.

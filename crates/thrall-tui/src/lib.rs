@@ -58,9 +58,10 @@ pub async fn run(connected: Connected, launch: Launch) -> anyhow::Result<()> {
         client,
         mut events,
         engine,
-        ..
+        user,
     } = connected;
     let mut app = App::new(engine.model, plain::wanted());
+    app.unleashed = user.unleashed;
     if let Ok(Reply::CommandListed { items }) = client.request(Request::CommandList {}).await {
         app.commands = items;
     }
@@ -172,8 +173,11 @@ fn on_frame(app: &mut App, frame: EventFrame, replay: &mut Option<Replay>) {
         .as_ref()
         .is_some_and(|s| s.session == frame.session);
     if !here {
-        // Other sessions: only word that background work finished.
-        if matches!(frame.event, Event::AgentCompleted { .. }) {
+        // Other sessions: only word that background work finished, and Unleashed on or off.
+        if matches!(
+            frame.event,
+            Event::AgentCompleted { .. } | Event::SafetyChanged { .. }
+        ) {
             app.on_event(frame.event);
         }
         return;

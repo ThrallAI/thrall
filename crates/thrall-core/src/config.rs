@@ -51,6 +51,18 @@ pub struct Config {
     pub folders: FoldersConfig,
     /// Split mode (experimental): one model plans and checks, another does the work.
     pub split: SplitConfig,
+    /// Safety: Unleashed.
+    pub safety: SafetyConfig,
+}
+
+/// `[safety]`: Unleashed. Off by default; only the owner turns it on (`safety.set`, typing
+/// `UNLEASH`), never `settings.set`. On: the owner's chats stop asking, even about high-risk
+/// actions, except wiping or formatting a disk.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct SafetyConfig {
+    /// The owner's chats run unleashed.
+    pub unleashed: bool,
 }
 
 /// `[split]`: split mode, experimental and off unless switched on. The Thinker looks around (it
@@ -477,8 +489,8 @@ impl AgentConfig {
     }
 
     /// Most steps one turn may take, kept within `MIN_MAX_STEPS` and `MAX_MAX_STEPS`; `None` when
-    /// the setting is `NO_STEP_LIMIT` (0).
-    pub fn max_steps(&self, full_auto: bool) -> Option<usize> {
+    /// the setting is `NO_STEP_LIMIT` (0). Unleashed gets `MAX_MAX_STEPS` unless there's no limit.
+    pub fn max_steps(&self, full_auto: bool, unleashed: bool) -> Option<usize> {
         let steps = if full_auto {
             self.full_auto_max_steps
         } else {
@@ -486,6 +498,9 @@ impl AgentConfig {
         };
         if steps == crate::constants::NO_STEP_LIMIT {
             return None;
+        }
+        if unleashed {
+            return Some(crate::constants::MAX_MAX_STEPS as usize);
         }
         Some(steps.clamp(
             crate::constants::MIN_MAX_STEPS,
@@ -926,6 +941,35 @@ pub fn save_setting(
     Ok(config)
 }
 
+/// Turn Unleashed on or off in the config file at `path` (`[safety] unleashed`), keeping the
+/// rest of the file as it is. Only `safety.set` calls this: `settings.set` can't change it.
+pub fn set_unleashed(path: &Path, on: bool) -> Result<(), CoreError> {
+    let io_err = |source| CoreError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(io_err(e)),
+    };
+    let mut doc: toml_edit::DocumentMut =
+        text.parse()
+            .map_err(|e: toml_edit::TomlError| CoreError::Config {
+                path: path.to_path_buf(),
+                message: e.message().to_owned(),
+            })?;
+    if !doc.contains_table("safety") {
+        doc.insert("safety", toml_edit::table());
+    }
+    doc["safety"]["unleashed"] = toml_edit::value(on);
+    let text = doc.to_string();
+    Config::parse(&text, path)?;
+    let tmp = path.with_extension("toml.tmp");
+    std::fs::write(&tmp, text).map_err(io_err)?;
+    std::fs::rename(&tmp, path).map_err(io_err)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -950,11 +994,14 @@ mod tests {
     fn step_limits_are_set_and_kept_in_range() {
         let p = Path::new("config.toml");
         let agent = Config::default().agent;
-        assert_eq!(agent.max_steps(false), Some(100));
-        assert_eq!(agent.max_steps(true), Some(250));
+        assert_eq!(agent.max_steps(false, false), Some(100));
+        assert_eq!(agent.max_steps(true, false), Some(250));
+        // Unleashed: every mode gets the most.
+        assert_eq!(agent.max_steps(false, true), Some(500));
+        assert_eq!(agent.max_steps(true, true), Some(500));
         let (text, config) =
             with_setting("", "agent.max_steps", &serde_json::json!(150), p).unwrap();
-        assert_eq!(config.agent.max_steps(false), Some(150));
+        assert_eq!(config.agent.max_steps(false, false), Some(150));
         let (_, config) = with_setting(
             &text,
             "agent.full_auto_max_steps",
@@ -962,13 +1009,14 @@ mod tests {
             p,
         )
         .unwrap();
-        assert_eq!(config.agent.max_steps(true), Some(500));
+        assert_eq!(config.agent.max_steps(true, false), Some(500));
         let (_, config) = with_setting("", "agent.max_steps", &serde_json::json!(5), p).unwrap();
-        assert_eq!(config.agent.max_steps(false), Some(10));
-        // 0: no limit.
+        assert_eq!(config.agent.max_steps(false, false), Some(10));
+        // 0: no limit, unleashed or not.
         let (_, config) = with_setting("", "agent.max_steps", &serde_json::json!(0), p).unwrap();
-        assert_eq!(config.agent.max_steps(false), None);
-        assert_eq!(config.agent.max_steps(true), Some(250));
+        assert_eq!(config.agent.max_steps(false, false), None);
+        assert_eq!(config.agent.max_steps(false, true), None);
+        assert_eq!(config.agent.max_steps(true, false), Some(250));
     }
 
     #[test]

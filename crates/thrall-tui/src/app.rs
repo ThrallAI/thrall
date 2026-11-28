@@ -22,10 +22,10 @@ use thrall_protocol::{
 };
 
 use crate::constants::{
-    CARD_SETTLE, CARD_TYPING_GAP, CLIENT_COMMANDS, HELPER_STEP_MARK, HINTS, INPUT_MAX_LINES,
-    INPUT_PLACEHOLDER, PAGE_SCROLL_LINES, PASTE_ENTER_WINDOW, PERMISSION_DIFF_MAX_LINES,
-    PERMISSION_SUMMARY_MAX_LINES, QUESTION_TIMEOUT, QUESTION_TYPE_HINT, SUGGESTIONS_MAX,
-    TASKS_MAX_SHOWN,
+    CARD_SETTLE, CARD_TYPING_GAP, CHAINED_NOTE, CLIENT_COMMANDS, HELPER_STEP_MARK, HINTS,
+    INPUT_MAX_LINES, INPUT_PLACEHOLDER, PAGE_SCROLL_LINES, PASTE_ENTER_WINDOW,
+    PERMISSION_DIFF_MAX_LINES, PERMISSION_SUMMARY_MAX_LINES, QUESTION_TIMEOUT, QUESTION_TYPE_HINT,
+    SUGGESTIONS_MAX, TASKS_MAX_SHOWN, UNLEASHED_NOTE, UNLEASHED_TAG,
 };
 use crate::transcript::{Kind, Transcript};
 use crate::{plain, theme};
@@ -154,6 +154,8 @@ pub struct App {
     pub safer: Option<SkillDetail>,
     /// Helpers' step ids in the order they started, so each helper's steps share a number.
     helpers: Vec<String>,
+    /// Unleashed is on: Thrall doesn't ask before acting (`/chain` turns it off).
+    pub unleashed: bool,
 }
 
 fn new_input() -> TextArea<'static> {
@@ -196,6 +198,7 @@ impl App {
             turns: Vec::new(),
             safer: None,
             helpers: Vec::new(),
+            unleashed: false,
         }
     }
 
@@ -515,6 +518,14 @@ impl App {
             Event::AgentCompleted { agent, .. } if agent == CHECK_IN_AGENT => {}
             // Only the desktop app installs updates.
             Event::UpdateRequested {} | Event::FileOpen { .. } => {}
+            Event::SafetyChanged { unleashed } => {
+                self.unleashed = unleashed;
+                self.info(if unleashed {
+                    UNLEASHED_NOTE
+                } else {
+                    CHAINED_NOTE
+                });
+            }
             // PCs asking to join are answered in the desktop app's Settings.
             Event::PcAsked {} => {}
             // Only a companion PC's runner gets these.
@@ -1048,7 +1059,16 @@ impl App {
             Mode::AutoEdits | Mode::Plan => theme::accent(),
             Mode::FullAuto => Style::default().fg(theme::WARN),
         };
-        let mode = format!("{} · Shift+Tab ", self.mode.label());
+        let (mode, mode_style) = if self.unleashed {
+            (
+                format!("{UNLEASHED_TAG} · /chain "),
+                Style::default()
+                    .fg(theme::DANGER)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else {
+            (format!("{} · Shift+Tab ", self.mode.label()), mode_style)
+        };
         let [left, right] = Layout::horizontal([
             Constraint::Min(10),
             Constraint::Length(u16::try_from(mode.chars().count()).unwrap_or(30)),

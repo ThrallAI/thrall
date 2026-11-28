@@ -244,6 +244,11 @@ export function App() {
   useEffect(() => {
     const e = new Engine(endpoint(), {
       onEvent(frame) {
+        // Unleashed switched on or off (here, in Settings, on the phone or with /chain).
+        if (frame.type === "safety.changed") {
+          setMe((m) => (m ? { ...m, unleashed: frame.unleashed } : m));
+          return;
+        }
         if (frame.type === "pc.asked") {
           refreshAsks();
           return;
@@ -1056,6 +1061,23 @@ export function App() {
                     : "can see your chats' titles and when you had them."}
               </p>
             ) : null}
+            {me?.unleashed ? (
+              <div className="th-unleashed" role="status">
+                <span className="th-unleashed-chip">Unleashed</span>
+                <span>Thrall doesn't ask before acting, except before wiping a disk.</span>
+                <button
+                  type="button"
+                  className="th-btn th-btn-danger"
+                  onClick={() =>
+                    void engine.current
+                      ?.request({ type: "safety.set", unleashed: false, confirm: "" })
+                      .catch(fail)
+                  }
+                >
+                  Chain him
+                </button>
+              </div>
+            ) : null}
             <ModeBanner
               mode={view.mode}
               limit={view.modeLimit}
@@ -1151,6 +1173,7 @@ export function App() {
       {settingsOpen ? (
         <Settings
           engine={engine.current}
+          unleashed={me?.unleashed ?? false}
           theme={theme}
           onTheme={setTheme}
           version={info?.version ?? ""}

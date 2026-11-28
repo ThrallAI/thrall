@@ -450,17 +450,29 @@ async fn twelve_steps(state: &thrall_agent::state::AppState, name: &str) -> (usi
 }
 
 #[tokio::test]
-async fn no_step_limit_at_0() {
-    let mut script: Vec<_> = (0..12)
-        .map(|i| tool_call(&format!("c{i}"), "list_dir", "{}"))
-        .collect();
-    script.push(reply(&["Done."]));
-    script.push(reply(&["Steps test"]));
+async fn no_step_limit_at_0_and_unleashed_gets_the_most() {
+    let script = || {
+        let mut s: Vec<_> = (0..12)
+            .map(|i| tool_call(&format!("c{i}"), "list_dir", "{}"))
+            .collect();
+        s.push(reply(&["Done."]));
+        s.push(reply(&["Steps test"]));
+        s
+    };
     // 0: no limit, so all twelve steps run, with no stop and no wrap-up note (10 would stop
     // at 10, as the test above shows).
-    let (mut state, _) = setup(script).await;
+    let (mut state, _) = setup(script()).await;
     state.config.agent.max_steps = 0;
     assert_eq!(twelve_steps(&state, "nolimit").await, (12, false, false));
+
+    // Unleashed: the setting of 10 is lifted to the most (500), so twelve steps run.
+    let (mut state, _) = setup(script()).await;
+    state.config.agent.max_steps = 10;
+    thrall_agent::safety::set(&state, true, "UNLEASH").unwrap();
+    assert_eq!(
+        twelve_steps(&state, "unleashedsteps").await,
+        (12, false, false)
+    );
 }
 
 #[tokio::test]
@@ -496,6 +508,46 @@ async fn shell_asks_and_a_no_stops_it() {
         }
     )));
     assert!(!marker.exists(), "a denied command must not run");
+}
+
+#[tokio::test]
+async fn unleashed_runs_risky_steps_without_asking_but_a_disk_wipe_still_asks() {
+    let (state, _) = setup(vec![
+        // High risk (git clean): unleashed, it runs without a card (it just fails: no repository).
+        tool_call("c1", "shell", r#"{"command": "git clean -n"}"#),
+        // The hard floor: formatting a disk asks even unleashed (answered no here).
+        tool_call("c2", "shell", r#"{"command": "format Z: /q"}"#),
+        reply(&["Done."]),
+        reply(&["Unleashed test"]),
+    ])
+    .await;
+    // Turning it on needs UNLEASH; only the owner can; anyone else's chats keep asking.
+    assert!(thrall_agent::safety::set(&state, true, "unleash me").is_err());
+    assert!(thrall_agent::safety::set(&state.for_user("u_other"), true, "UNLEASH").is_err());
+    thrall_agent::safety::set(&state, true, "UNLEASH").unwrap();
+    assert!(state.is_unleashed());
+    assert!(!state.for_user("u_other").is_unleashed());
+
+    let s = session::create(&state, Some(workspace("unleashed")))
+        .await
+        .unwrap();
+    let (_, frames) = run_answering(&state, &s.id, "tidy up", PermissionChoice::No).await;
+    let asked: Vec<&str> = frames
+        .iter()
+        .filter_map(|f| match &f.event {
+            Event::PermissionRequest { summary, .. } => Some(summary.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(asked.len(), 1, "only the disk wipe asks: {asked:?}");
+    assert!(asked[0].contains("format Z:"), "{asked:?}");
+
+    // Chain him: off at once, and said so.
+    let chained = commands::run(&state, &s.id, "chain", "").await.unwrap();
+    assert!(chained.contains("Chained"), "{chained}");
+    assert!(!state.is_unleashed());
+    let again = commands::run(&state, &s.id, "chain", "").await.unwrap();
+    assert!(again.contains("isn't unleashed"), "{again}");
 }
 
 #[tokio::test]

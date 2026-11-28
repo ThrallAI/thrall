@@ -376,6 +376,7 @@ count as signs of life.
 | `file.get {file, offset}` | `file.part {file, name, offset, size, data}`: up to 512 KiB from `offset`; ask again from `offset + piece length` until `size` |
 | `app.latest {}` | `app.latest {release?: {version_code, version_name, size, sha256, notes}}`: the phone app this engine offers as an update (`scripts/release-android.ps1` puts it in the data folder's `phone-app` folder with a `release.json`); absent when there's none |
 | `app.get {offset}` | `file.part {file: "app", name, offset, size, data}`: that APK in pieces, like `file.get`. The phone checks `sha256` before installing |
+| `safety.set {unleashed, confirm}` | `safety.shown {unleashed}`: Unleashed on or off (owner only). On needs `confirm: "UNLEASH"` (typed by the person); off (Chain him) never does and holds at once, even mid-turn. Saved as `[safety] unleashed` (never changeable through `settings.set`). Unleashed, the owner's chats don't ask before acting, high-risk actions too, except wiping or formatting a disk; plan mode still plans; check-ins still only look; other people's chats keep asking. Every connection of the owner gets the event `safety.changed {unleashed}` (empty `session`), and `welcome`'s `user.unleashed` says it on connect. `/chain` turns it off from any client |
 
 **A session's folder, read only** (any client; the phone's Files view). Paths are relative to the
 session's folder; nothing outside it can be reached (no `..`, no drive or absolute paths, no links

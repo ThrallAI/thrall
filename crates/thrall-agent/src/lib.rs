@@ -23,6 +23,7 @@ pub mod personality;
 pub mod prompts;
 mod questions;
 pub mod runners;
+pub mod safety;
 pub mod session;
 pub mod settings;
 pub mod signin;

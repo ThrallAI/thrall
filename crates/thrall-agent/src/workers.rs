@@ -220,7 +220,10 @@ pub(crate) async fn run_helper(
                 state
                     .config
                     .agent
-                    .max_steps(mode == Mode::FullAuto)
+                    .max_steps(
+                        mode == Mode::FullAuto,
+                        state.is_unleashed() && emitter.records(),
+                    )
                     .unwrap_or(usize::MAX),
             )
         }

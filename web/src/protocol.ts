@@ -800,6 +800,17 @@ export type RequestFrame = {
       offset?: number;
       type: "app.get";
     }
+  | {
+      /**
+       * `UNLEASH` to turn it on.
+       */
+      confirm?: string;
+      type: "safety.set";
+      /**
+       * On or off.
+       */
+      unleashed: boolean;
+    }
 );
 /**
  * Answers a request.
@@ -1297,6 +1308,13 @@ export type ReplyFrame = {
       type: "folder.part";
     }
   | {
+      type: "safety.shown";
+      /**
+       * Unleashed is on.
+       */
+      unleashed: boolean;
+    }
+  | {
       /**
        * This piece, base64.
        */
@@ -1695,6 +1713,13 @@ export type EventFrame1 =
     }
   | {
       type: "update.requested";
+    }
+  | {
+      type: "safety.changed";
+      /**
+       * On or off now.
+       */
+      unleashed: boolean;
     }
   | {
       /**
@@ -2144,6 +2169,13 @@ export type EventFrame2 = {
       type: "update.requested";
     }
   | {
+      type: "safety.changed";
+      /**
+       * On or off now.
+       */
+      unleashed: boolean;
+    }
+  | {
       /**
        * The file's full path.
        */
@@ -2318,6 +2350,11 @@ export interface UserInfo {
    * `owner` (runs this engine) or `member`.
    */
   role?: string;
+  /**
+   * Unleashed is on: this person's chats don't ask (the owner only). Clients show it in every
+   * chat, with a way to turn it off.
+   */
+  unleashed?: boolean;
 }
 /**
  * A session is open on this connection.
